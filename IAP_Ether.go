@@ -1,13 +1,10 @@
 package main
 
 import (
-	"bufio"
 	"fmt"
 	"io"
 	"net"
-	"os"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 )
@@ -19,10 +16,9 @@ const (
 )
 
 type boardInfo struct {
-	CPUID string
-	IP    string
-	MAC   string
-	Raw   string
+	IP  string
+	MAC string
+	Raw string
 }
 
 func RunEtherUpgrade(filePath string) {
@@ -30,11 +26,14 @@ func RunEtherUpgrade(filePath string) {
 
 	if strings.TrimSpace(l_config.IP) == "" {
 		logf("[PATH] cache miss -> discover")
-		selected, err := discoverAndSelectBoard("")
+		boards, err := discoverBoardsViaDirectedBroadcast()
 		logf(err, "No board reply from UDP broadcast discovery")
+
+		selected, err := selectBoardAfterDiscovery(boards)
+		logf(err, "Discovery returned multiple devices. Please configure local_config.json and retry")
 		cacheBoardSelection(selected)
 	} else {
-		logf("[PATH] cache hit -> use ip=%s cpu_id=%s mac=%s", l_config.IP, getCachedCPUID(), l_config.MAC)
+		logf("[PATH] cache hit -> use ip=%s mac=%s", l_config.IP, l_config.MAC)
 	}
 
 	for attempt := 1; attempt <= MaxRetries+2; attempt++ {
@@ -64,33 +63,12 @@ func RunEtherUpgrade(filePath string) {
 	logf(true, "Unable to switch board to BOOT mode after retries")
 }
 
-func discoverAndSelectBoard(preferredCPUID string) (boardInfo, error) {
-	boards, err := discoverBoardsViaDirectedBroadcast()
-	if err != nil {
-		return boardInfo{}, err
-	}
-	printDiscoveredBoards(boards)
-
-	if preferredCPUID != "" {
-		for _, b := range boards {
-			if b.CPUID == preferredCPUID {
-				logf("Auto-selected board by cached CPUID=%s, ip=%s", b.CPUID, b.IP)
-				return b, nil
-			}
-		}
-	}
-
-	return chooseBoardFromList(boards)
-}
-
 func cacheBoardSelection(selected boardInfo) {
-	l_config.CPUID = selected.CPUID
-	l_config.UID = selected.CPUID // keep old config compatibility
 	l_config.IP = selected.IP
 	l_config.MAC = selected.MAC
 	err := SaveConfig()
 	logf(err, "Failed to save board cache")
-	logf("Cached selected board: cpu_id=%s ip=%s mac=%s", selected.CPUID, selected.IP, selected.MAC)
+	logf("Cached selected board: ip=%s mac=%s machine=%s", selected.IP, selected.MAC, selected.UID)
 }
 
 func discoverBoardsViaDirectedBroadcast() ([]boardInfo, error) {
@@ -186,43 +164,32 @@ func parseBoardInfoFromReply(reply, fallbackIP string) (boardInfo, bool) {
 	}
 
 	return boardInfo{
-		CPUID: cpuid,
-		IP:    ip,
-		MAC:   mac,
-		Raw:   raw,
+		IP:  ip,
+		MAC: mac,
+		Raw: raw,
 	}, true
 }
 
 func printDiscoveredBoards(boards []boardInfo) {
 	logf("Discovered %d board(s):", len(boards))
 	for i, b := range boards {
-		fmt.Printf("  [%d] IP=%s CPU_ID=%s MAC=%s\n", i+1, b.IP, b.CPUID, b.MAC)
+		fmt.Printf("  [%d] MACHINE=%s IP=%s MAC=%s\n", i+1, b.UID, b.IP, b.MAC)
 	}
 }
 
-func chooseBoardFromList(boards []boardInfo) (boardInfo, error) {
+func selectBoardAfterDiscovery(boards []boardInfo) (boardInfo, error) {
 	if len(boards) == 0 {
 		return boardInfo{}, fmt.Errorf("empty board list")
 	}
 	if len(boards) == 1 {
-		logf("Single board found, auto-selecting [1].")
+		logf("Single board found, auto-selecting machine=%s ip=%s mac=%s", boards[0].UID, boards[0].IP, boards[0].MAC)
 		return boards[0], nil
 	}
 
-	reader := bufio.NewReader(os.Stdin)
-	for {
-		fmt.Printf("Found %d boards. Choose one [1-%d] and press Enter: ", len(boards), len(boards))
-		line, err := reader.ReadString('\n')
-		if err != nil {
-			return boardInfo{}, fmt.Errorf("read selection failed: %w", err)
-		}
-		n, err := strconv.Atoi(strings.TrimSpace(line))
-		if err != nil || n < 1 || n > len(boards) {
-			fmt.Printf("Invalid selection: %q\n", strings.TrimSpace(line))
-			continue
-		}
-		return boards[n-1], nil
-	}
+	printDiscoveredBoards(boards)
+	fmt.Printf("Found %d machines from UDP broadcast.\n", len(boards))
+	fmt.Printf("Please edit %s and set the target 'ip' and 'mac', then retry.\n", GetLocalConfigPath())
+	return boardInfo{}, fmt.Errorf("multiple UDP responses")
 }
 
 type pingStatus struct {
@@ -261,13 +228,6 @@ func parsePingStatus(resp string) (pingStatus, error) {
 	}
 
 	return pingStatus{Raw: raw, Chip: chip, Mode: mode, Version: version}, nil
-}
-
-func getCachedCPUID() string {
-	if strings.TrimSpace(l_config.CPUID) != "" {
-		return strings.TrimSpace(l_config.CPUID)
-	}
-	return strings.TrimSpace(l_config.UID)
 }
 
 // ----------------------

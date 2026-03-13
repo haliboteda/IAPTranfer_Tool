@@ -11,8 +11,6 @@ type LocalConfig struct {
 	DataBits          int    `json:"DataBits"`
 	StopBits          int    `json:"StopBits"`
 	ReadTimeout       int    `json:"ReadTimeout"`
-	UID               string `json:"uid"` // backward compatibility
-	CPUID             string `json:"cpu_id"`
 	IP                string `json:"ip"`
 	MAC               string `json:"mac"`
 	UDPPort           string `json:"udp_port"`

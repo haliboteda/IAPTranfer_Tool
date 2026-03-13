@@ -41,7 +41,7 @@ func TestParseBoardInfoFromReply(t *testing.T) {
 		if !ok {
 			t.Fatalf("expected valid board")
 		}
-		if got.CPUID != "CPU123" || got.IP != "192.168.1.10" || got.MAC != "AA:BB:CC:DD:EE:FF" {
+		if got.UID != "CPU123" || got.IP != "192.168.1.10" || got.MAC != "AA:BB:CC:DD:EE:FF" {
 			t.Fatalf("unexpected board: %+v", got)
 		}
 	})
@@ -53,6 +53,30 @@ func TestParseBoardInfoFromReply(t *testing.T) {
 		}
 		if got.IP != "192.168.1.50" {
 			t.Fatalf("expected fallback ip, got %s", got.IP)
+		}
+	})
+}
+
+func TestSelectBoardAfterDiscovery(t *testing.T) {
+	t.Run("single_board_auto_select", func(t *testing.T) {
+		boards := []boardInfo{{UID: "CPU_A", IP: "192.168.1.10", MAC: "AA:BB:CC:DD:EE:01"}}
+		got, err := selectBoardAfterDiscovery(boards)
+		if err != nil {
+			t.Fatalf("unexpected error: %v", err)
+		}
+		if got.UID != "CPU_A" || got.IP != "192.168.1.10" {
+			t.Fatalf("unexpected selected board: %+v", got)
+		}
+	})
+
+	t.Run("multiple_boards_require_manual_config", func(t *testing.T) {
+		boards := []boardInfo{
+			{UID: "CPU_A", IP: "192.168.1.10", MAC: "AA:BB:CC:DD:EE:01"},
+			{UID: "CPU_B", IP: "192.168.1.11", MAC: "AA:BB:CC:DD:EE:02"},
+		}
+		_, err := selectBoardAfterDiscovery(boards)
+		if err == nil {
+			t.Fatalf("expected error for multiple boards")
 		}
 	})
 }

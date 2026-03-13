@@ -201,8 +201,6 @@ func LoadConfig() {
 		Parity:            defaultParity,
 		DataBits:          defaultDataBits,
 		StopBits:          defaultStopBits,
-		UID:               "",
-		CPUID:             "",
 		IP:                "",
 		MAC:               defaultMAC,
 		UDPPort:           defaultUDPPort,
