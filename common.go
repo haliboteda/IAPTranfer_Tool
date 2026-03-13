@@ -45,7 +45,7 @@ const defaultDataBits = 8
 const defaultStopBits = 0
 const defaultUDPPort = "16861"
 const defaultTCPPort = "8247"
-const defaultRebootWaitSeconds = 4
+const defaultRebootWaitSeconds = 5
 
 // Mode constants
 const (
@@ -63,7 +63,7 @@ type Args struct {
 // Parse command line arguments
 func ParseArgs() Args {
 	if len(os.Args) < 3 {
-		logf(true, "Usage: program <mode> <file_path> [port/ip]")
+		logf(true, "Usage: program <mode> <file_path> [port]")
 	}
 
 	args := Args{
@@ -73,7 +73,7 @@ func ParseArgs() Args {
 
 	if args.Mode == ModeCDC {
 		if len(os.Args) < 4 {
-			logf(true, "CDC mode requires port name (e.g. COM1)")
+			logf(true, "CDC mode requires port name. Usage: program cdc <file_path> <port>")
 		}
 		args.Port = os.Args[3]
 	}
@@ -197,15 +197,14 @@ func GetLocalConfigPath() string {
 // Load serial port configuration from JSON
 func LoadConfig() {
 	l_config = LocalConfig{
-		BaudRate: defaultBaudRate,
-		Parity:   defaultParity,
-		DataBits: defaultDataBits,
-		StopBits: defaultStopBits,
-		UID:      "",
-		IP:       "",
-		MAC:      defaultMAC,
-		UDPPort:          defaultUDPPort,
-		TCPPort:          defaultTCPPort,
+		BaudRate:          defaultBaudRate,
+		Parity:            defaultParity,
+		DataBits:          defaultDataBits,
+		StopBits:          defaultStopBits,
+		IP:                "",
+		MAC:               defaultMAC,
+		UDPPort:           defaultUDPPort,
+		TCPPort:           defaultTCPPort,
 		RebootWaitSeconds: defaultRebootWaitSeconds,
 	}
 
