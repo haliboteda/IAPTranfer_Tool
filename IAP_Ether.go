@@ -18,7 +18,6 @@ const (
 type boardInfo struct {
 	IP  string
 	MAC string
-	Raw string
 }
 
 func RunEtherUpgrade(filePath string) {
@@ -68,7 +67,7 @@ func cacheBoardSelection(selected boardInfo) {
 	l_config.MAC = selected.MAC
 	err := SaveConfig()
 	logf(err, "Failed to save board cache")
-	logf("Cached selected board: ip=%s mac=%s machine=%s", selected.IP, selected.MAC, selected.UID)
+	logf("Cached selected board: ip=%s mac=%s", selected.IP, selected.MAC)
 }
 
 func discoverBoardsViaDirectedBroadcast() ([]boardInfo, error) {
@@ -122,7 +121,7 @@ func discoverBoardsViaDirectedBroadcast() ([]boardInfo, error) {
 			continue
 		}
 
-		key := info.CPUID + "|" + info.IP
+		key := info.IP + "|" + info.MAC
 		if _, exists := seen[key]; exists {
 			continue
 		}
@@ -141,8 +140,7 @@ func discoverBoardsViaDirectedBroadcast() ([]boardInfo, error) {
 }
 
 func parseBoardInfoFromReply(reply, fallbackIP string) (boardInfo, bool) {
-	raw := strings.TrimSpace(reply)
-	parts := strings.Split(raw, ",")
+	parts := strings.Split(strings.TrimSpace(reply), ",")
 	if len(parts) < 3 {
 		return boardInfo{}, false
 	}
@@ -150,7 +148,6 @@ func parseBoardInfoFromReply(reply, fallbackIP string) (boardInfo, bool) {
 		return boardInfo{}, false
 	}
 
-	cpuid := strings.TrimSpace(parts[1])
 	ip := strings.TrimSpace(parts[2])
 	mac := ""
 	if len(parts) >= 4 {
@@ -159,21 +156,20 @@ func parseBoardInfoFromReply(reply, fallbackIP string) (boardInfo, bool) {
 	if ip == "" {
 		ip = fallbackIP
 	}
-	if cpuid == "" || ip == "" {
+	if ip == "" {
 		return boardInfo{}, false
 	}
 
 	return boardInfo{
 		IP:  ip,
 		MAC: mac,
-		Raw: raw,
 	}, true
 }
 
 func printDiscoveredBoards(boards []boardInfo) {
 	logf("Discovered %d board(s):", len(boards))
 	for i, b := range boards {
-		fmt.Printf("  [%d] MACHINE=%s IP=%s MAC=%s\n", i+1, b.UID, b.IP, b.MAC)
+		fmt.Printf("  [%d] IP=%s MAC=%s\n", i+1, b.IP, b.MAC)
 	}
 }
 
@@ -182,7 +178,7 @@ func selectBoardAfterDiscovery(boards []boardInfo) (boardInfo, error) {
 		return boardInfo{}, fmt.Errorf("empty board list")
 	}
 	if len(boards) == 1 {
-		logf("Single board found, auto-selecting machine=%s ip=%s mac=%s", boards[0].UID, boards[0].IP, boards[0].MAC)
+		logf("Single board found, auto-selecting ip=%s mac=%s", boards[0].IP, boards[0].MAC)
 		return boards[0], nil
 	}
 
@@ -274,52 +270,52 @@ func parsePingStatus(resp string) (pingStatus, error) {
 // 	return os.WriteFile(path, []byte(ip), 0644)
 // }
 
-func tryPing(serverAddr string) bool {
-	buffer, _, err := sendUDPWithResponse(serverAddr, CM_Ping)
-	if err != nil {
-		logf("tryPing receive failed:", err)
-		return false
-	}
+// func tryPing(serverAddr string) bool {
+// 	buffer, _, err := sendUDPWithResponse(serverAddr, CM_Ping)
+// 	if err != nil {
+// 		logf("tryPing receive failed:", err)
+// 		return false
+// 	}
+//
+// 	resp := string(buffer)
+// 	if resp == Rsp_Pong {
+// 		logf("Ping success.")
+// 		return true
+// 	}
+//
+// 	logf("Ping failed, response:", resp)
+// 	//deleteServerIPFile()
+// 	return false
+// }
 
-	resp := string(buffer)
-	if resp == Rsp_Pong {
-		logf("Ping success.")
-		return true
-	}
-
-	logf("Ping failed, response:", resp)
-	//deleteServerIPFile()
-	return false
-}
-
-func discoverServer() string {
-	broadcastAddr, err := getBroadcastAddress()
-	if err != nil {
-		logf("Broadcast address resolve failed:", err)
-		return ""
-	}
-
-	for attempt := 1; attempt <= MaxRetries; attempt++ {
-		logf("Broadcasting (", attempt, ")...")
-		_, addr, err := sendUDPWithResponse(broadcastAddr, CM_PullIP)
-		if err != nil {
-			logf("Broadcast receive failed:", err)
-			logf("Waiting for 2 seconds...", err)
-			time.Sleep(2 * time.Second)
-			continue
-		}
-		logf("Received from ", addr.IP.String())
-		return addr.IP.String()
-	}
-
-	return ""
-}
+// func discoverServer() string {
+// 	broadcastAddr, err := getBroadcastAddress()
+// 	if err != nil {
+// 		logf("Broadcast address resolve failed:", err)
+// 		return ""
+// 	}
+//
+// 	for attempt := 1; attempt <= MaxRetries; attempt++ {
+// 		logf("Broadcasting (", attempt, ")...")
+// 		_, addr, err := sendUDPWithResponse(broadcastAddr, CM_PullIP)
+// 		if err != nil {
+// 			logf("Broadcast receive failed:", err)
+// 			logf("Waiting for 2 seconds...", err)
+// 			time.Sleep(2 * time.Second)
+// 			continue
+// 		}
+// 		logf("Received from ", addr.IP.String())
+// 		return addr.IP.String()
+// 	}
+//
+// 	return ""
+// }
 
 // Send UDP message and wait for a response within Timeout duration.
 // Returns response bytes and error (nil if success).
-func sendUDPWithResponse(serverAddr, msg string) ([]byte, *net.UDPAddr, error) {
-	return sendUDPWithResponseOnPort(serverAddr, s_udp_port, msg, Timeout)
-}
+// func sendUDPWithResponse(serverAddr, msg string) ([]byte, *net.UDPAddr, error) {
+// 	return sendUDPWithResponseOnPort(serverAddr, s_udp_port, msg, Timeout)
+// }
 
 func sendUDPWithResponseOnPort(serverAddr, port, msg string, timeout time.Duration) ([]byte, *net.UDPAddr, error) {
 	// listen up from UDP port
@@ -357,9 +353,9 @@ func sendUDPWithResponseOnPort(serverAddr, port, msg string, timeout time.Durati
 }
 
 // Send UDP message without waiting for a response.
-func sendUDPNoResponse(serverAddr, msg string) error {
-	return sendUDPNoResponseOnPort(serverAddr, s_udp_port, msg)
-}
+// func sendUDPNoResponse(serverAddr, msg string) error {
+// 	return sendUDPNoResponseOnPort(serverAddr, s_udp_port, msg)
+// }
 
 func sendUDPNoResponseOnPort(serverAddr, port, msg string) error {
 	conn, err := net.Dial("udp", serverAddr+":"+port)
