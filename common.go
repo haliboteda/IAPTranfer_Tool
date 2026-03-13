@@ -214,6 +214,9 @@ func LoadConfig() {
 	} else {
 		err = json.Unmarshal(jsonFile, &l_config)
 		logf(err, "Failed to parse JSON config")
+		if strings.TrimSpace(l_config.CPUID) == "" && strings.TrimSpace(l_config.UID) != "" {
+			l_config.CPUID = strings.TrimSpace(l_config.UID)
+		}
 	}
 }
 

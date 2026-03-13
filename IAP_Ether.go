@@ -16,7 +16,6 @@ const (
 )
 
 type boardInfo struct {
-	UID string
 	IP  string
 	MAC string
 	Raw string
@@ -123,7 +122,7 @@ func discoverBoardsViaDirectedBroadcast() ([]boardInfo, error) {
 			continue
 		}
 
-		key := info.UID + "|" + info.IP
+		key := info.CPUID + "|" + info.IP
 		if _, exists := seen[key]; exists {
 			continue
 		}
@@ -151,7 +150,7 @@ func parseBoardInfoFromReply(reply, fallbackIP string) (boardInfo, bool) {
 		return boardInfo{}, false
 	}
 
-	uid := strings.TrimSpace(parts[1])
+	cpuid := strings.TrimSpace(parts[1])
 	ip := strings.TrimSpace(parts[2])
 	mac := ""
 	if len(parts) >= 4 {
@@ -160,12 +159,11 @@ func parseBoardInfoFromReply(reply, fallbackIP string) (boardInfo, bool) {
 	if ip == "" {
 		ip = fallbackIP
 	}
-	if uid == "" || ip == "" {
+	if cpuid == "" || ip == "" {
 		return boardInfo{}, false
 	}
 
 	return boardInfo{
-		UID: uid,
 		IP:  ip,
 		MAC: mac,
 		Raw: raw,
