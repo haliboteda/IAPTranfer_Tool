@@ -42,8 +42,12 @@ func main() {
 		port := os.Args[3]
 		RunCDC(port, filePath)
 	case "ether":
-		// "Usage: program <mode> <file_path> [ip]"
-		RunEtherUpgrade(filePath)
+		if len(os.Args) < 4 {
+			logf(true, "Usage: program <mode> <file_path> <ip>")
+		}
+
+		ip := os.Args[3]
+		RunEtherUpgrade(filePath, ip)
 	default:
 		logf(true, "Invalid mode: %s. Use 'cdc' or 'ether'", mode)
 	}

@@ -23,96 +23,70 @@ type boardInfo struct {
 	Raw     string
 }
 
-func RunEtherUpgrade(filePath string) {
-	logf("[PATH] start ether upgrade flow")
+const bootloaderDiscoveryRetries = 3
 
-	for attempt := 1; attempt <= 3; attempt++ {
-		if bootBoard, ok := ensureBootBoard(); ok {
-			logf("[PATH] bootloader ready -> tcp transfer")
-			RunEther_TCP(filePath, bootBoard.IP)
-			return
+func RunEtherUpgrade(filePath, ip string) {
+	logf("[PATH] start ether upgrade flow, target=%s", ip)
+
+	resp, err := udpPingAndGetStatus(ip)
+	if err != nil {
+		logf(true, "No response from %s, exiting.", ip)
+		return
+	}
+
+	board, ok := parseBoardInfoFromReply(resp, ip)
+	if !ok {
+		logf(true, "Unrecognized reply from %s: %q, exiting.", ip, resp)
+		return
+	}
+
+	targetUID := board.UID
+	logf("[PATH] target device UID=%s cached for this upgrade", targetUID)
+
+	switch strings.ToUpper(board.Role) {
+	case "BOOTLD":
+		logf("[PATH] %s is bootloader -> tcp transfer", ip)
+		RunEther_TCP(filePath, ip)
+
+	case "CUSAPP":
+		logf("[PATH] %s is app -> reboot to bootloader", ip)
+		if err := sendUDPNoResponseOnPort(ip, getUDPPort(), CM_Reboot); err != nil {
+			logf(err, "Failed to send reboot command to %s", ip)
 		}
-
-		appBoard, ok := ensureAppBoard()
-		if !ok {
-			logf("[PATH] no reachable app device, ending upgrade flow")
-			return
-		}
-
-		logf("[PATH] app detected -> reboot to bootloader")
-		err := sendUDPNoResponseOnPort(appBoard.IP, getUDPPort(), CM_Reboot)
-		logf(err, "Failed to send reboot command to app device %s", appBoard.IP)
 
 		wait := getRebootWaitDuration()
 		logf("Waiting %.1f seconds for reboot...", wait.Seconds())
 		time.Sleep(wait)
-	}
 
-	logf(true, "Failed to enter bootloader after multiple attempts.")
+		bootBoard, ok := discoverBootloader(bootloaderDiscoveryRetries, targetUID)
+		if !ok {
+			logf(true, "No bootloader with UID=%s found after %d attempts, exiting.", targetUID, bootloaderDiscoveryRetries)
+			return
+		}
+		logf("[PATH] bootloader found at %s (uid=%s) -> tcp transfer", bootBoard.IP, bootBoard.UID)
+		RunEther_TCP(filePath, bootBoard.IP)
+
+	default:
+		logf(true, "Unexpected role %q from %s, exiting.", board.Role, ip)
+	}
 }
 
-func ensureBootBoard() (boardInfo, bool) {
-	if strings.TrimSpace(l_config.BootIP) == "" {
-		logf("[PATH] bootIP empty -> discover bootloader")
+// discoverBootloader repeats the broadcast discovery until a bootloader reply
+// carrying targetUID is seen, since multiple devices on the LAN may answer the
+// broadcast and only the one that was just rebooted should be flashed.
+func discoverBootloader(maxAttempts int, targetUID string) (boardInfo, bool) {
+	for attempt := 1; attempt <= maxAttempts; attempt++ {
 		boards, err := discoverBoardsViaDirectedBroadcast("BOOTLD")
 		if err != nil {
-			logf("Bootloader discovery failed: %v", err)
-			return boardInfo{}, false
+			logf("Bootloader discovery attempt %d/%d: %v", attempt, maxAttempts, err)
+			continue
 		}
-		selected := selectDiscoveredBoard(boards, l_config.UID)
-		cacheBoardSelection(selected, true)
-		return selected, true
-	}
-
-	logf("[PATH] bootIP cached -> ping %s", l_config.BootIP)
-	info, err := udpPingAndValidateRole(l_config.BootIP, "BOOTLD")
-	if err != nil {
-		logf("Bootloader ping/status failed for bootIP=%s: %v", l_config.BootIP, err)
-		return boardInfo{}, false
-	}
-	cacheBoardSelection(info, true)
-	return info, true
-}
-
-func ensureAppBoard() (boardInfo, bool) {
-	if strings.TrimSpace(l_config.AppIP) == "" {
-		logf("[PATH] appIP empty -> discover app")
-		boards, err := discoverBoardsViaDirectedBroadcast("CUSAPP")
-		if err != nil {
-			logf("CUSAPP discovery failed: %v", err)
-			return boardInfo{}, false
+		if board, ok := selectDiscoveredBoard(boards, targetUID); ok {
+			return board, true
 		}
-		selected := selectDiscoveredBoard(boards, l_config.UID)
-		cacheBoardSelection(selected, false)
-		return selected, true
+		logf("Bootloader discovery attempt %d/%d: target UID=%s not among %d discovered device(s)", attempt, maxAttempts, targetUID, len(boards))
 	}
-
-	logf("[PATH] appIP cached -> ping %s", l_config.AppIP)
-	info, err := udpPingAndValidateRole(l_config.AppIP, "CUSAPP")
-	if err != nil {
-		logf("CUSAPP ping/status failed for appIP=%s: %v", l_config.AppIP, err)
-		return boardInfo{}, false
-	}
-	cacheBoardSelection(info, false)
-	return info, true
-}
-
-func cacheBoardSelection(selected boardInfo, isBoot bool) {
-	if selected.UID != "" {
-		l_config.UID = selected.UID
-	}
-	if isBoot {
-		l_config.BootIP = selected.IP
-	} else {
-		l_config.AppIP = selected.IP
-	}
-	err := SaveConfig()
-	logf(err, "Failed to save board cache")
-	if isBoot {
-		logf("Cached boot board: uid=%s bootIP=%s", l_config.UID, l_config.BootIP)
-		return
-	}
-	logf("Cached app board: uid=%s appIP=%s", l_config.UID, l_config.AppIP)
+	return boardInfo{}, false
 }
 
 func discoverBoardsViaDirectedBroadcast(expectedRole string) ([]boardInfo, error) {
@@ -216,17 +190,14 @@ func printDiscoveredBoards(boards []boardInfo, expectedRole string) {
 	fmt.Printf("\n")
 }
 
-func selectDiscoveredBoard(boards []boardInfo, preferredUID string) boardInfo {
-	if preferredUID != "" {
-		for _, b := range boards {
-			if b.UID == preferredUID {
-				logf("Auto-selected device by cached UID=%s at ip=%s", b.UID, b.IP)
-				return b
-			}
+func selectDiscoveredBoard(boards []boardInfo, targetUID string) (boardInfo, bool) {
+	for _, b := range boards {
+		if strings.EqualFold(b.UID, targetUID) {
+			logf("Matched cached target device: uid=%s ip=%s", b.UID, b.IP)
+			return b, true
 		}
 	}
-	logf("Defaulting to the first discovered device: uid=%s ip=%s", boards[0].UID, boards[0].IP)
-	return boards[0]
+	return boardInfo{}, false
 }
 
 func udpPingAndGetStatus(ip string) (string, error) {
@@ -240,22 +211,6 @@ func udpPingAndGetStatus(ip string) (string, error) {
 		return "", fmt.Errorf("unexpected UDP ping response: %q", resp)
 	}
 	return resp, nil
-}
-
-func udpPingAndValidateRole(ip, expectedRole string) (boardInfo, error) {
-	resp, err := udpPingAndGetStatus(ip)
-	if err != nil {
-		return boardInfo{}, err
-	}
-
-	info, ok := parseBoardInfoFromReply(resp, ip)
-	if !ok {
-		return boardInfo{}, fmt.Errorf("unexpected UDP ping response: %q", resp)
-	}
-	if !strings.EqualFold(info.Role, expectedRole) {
-		return boardInfo{}, fmt.Errorf("unexpected device role %s from %s, expected %s", info.Role, ip, expectedRole)
-	}
-	return info, nil
 }
 
 func tryPing(serverAddr string) bool {

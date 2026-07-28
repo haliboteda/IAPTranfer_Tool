@@ -232,40 +232,6 @@ func SaveConfig() error {
 	return os.WriteFile(GetLocalConfigPath(), data, 0644)
 }
 
-func GetLocalCIDRs() ([]string, error) {
-	var cidrs []string
-	ifaces, err := net.Interfaces()
-	if err != nil {
-		return nil, err
-	}
-
-	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
-		// Filter only WiFi or Ethernet interfaces
-		if !isWiFiOrEthernet(iface.Name) {
-			continue
-		}
-		if !isPhysicalDeviceLinux(iface.Name) {
-			continue
-		}
-
-		addrs, _ := iface.Addrs()
-		for _, addr := range addrs {
-			ipNet, ok := addr.(*net.IPNet)
-			if ok && ipNet.IP.To4() != nil && !ipNet.IP.IsLoopback() {
-				//Assume net mask of phiysical ethernet interface is less than or equal to 24
-				ones, _ := ipNet.Mask.Size()
-				if ones <= 24 {
-					cidrs = append(cidrs, ipNet.String())
-				}
-			}
-		}
-	}
-	return cidrs, nil
-}
-
 // get the broadcast address of the local network
 func getBroadcastAddress() (string, error) {
 	ifaces, err := net.Interfaces()
