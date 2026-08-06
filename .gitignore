@@ -2,3 +2,4 @@ Output/
 .gocache/
 .vscode/
 cmd/
+*.exe
