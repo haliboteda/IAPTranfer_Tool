@@ -2,37 +2,37 @@ package main
 
 import (
 	"bufio"
-	"crypto/hmac"
-	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+
+	"IAPTool/iapcrypto"
 )
 
-// *** PLACEHOLDER TEST-ONLY KEY ***
-// Must match iap_auth_key in open_plc_cube_ide/IAPServer/iap_auth.c and its
-// copy in the Arduino core's libraries/OpenPLC_Net/src/iap_auth.c. This lets
-// the whole challenge-response protocol be built and tested end to end
-// before a real per-device key provisioning process exists. Every device
-// built from this source tree shares this exact key until it is replaced.
-// See IAPServer/keys/README.md.
-var iapAuthKey = []byte("IAP-TEST-KEY-DO-NOT-USE-IN-PROD!")
+// deriveDeviceKeyFromUIDHex decodes a device's UID (as reported by "getuid"
+// or the UDP discovery/ping reply) and derives that device's own auth key.
+func deriveDeviceKeyFromUIDHex(uidHex string) ([]byte, error) {
+	machineID, err := hex.DecodeString(strings.TrimSpace(uidHex))
+	if err != nil {
+		return nil, fmt.Errorf("invalid device UID hex %q: %w", uidHex, err)
+	}
+	return iapcrypto.DeriveDeviceKey(machineID), nil
+}
 
-// computeAuthHMAC returns hex(HMAC-SHA256(iapAuthKey, nonce || msg)), where
+// computeAuthHMAC returns hex(HMAC-SHA256(deviceKey, nonce || msg)), where
 // nonce is decoded from nonceHex (as returned by "authchallenge" /
 // "openplc_server_reboot_challenge"). msg must be the exact command string
-// being authorized -- the device recomputes the same construction.
-func computeAuthHMAC(nonceHex string, msg string) (string, error) {
+// being authorized -- the device recomputes the same construction using its
+// own copy of deviceKey (derived from its own UID).
+func computeAuthHMAC(deviceKey []byte, nonceHex string, msg string) (string, error) {
 	nonce, err := hex.DecodeString(strings.TrimSpace(nonceHex))
 	if err != nil {
 		return "", fmt.Errorf("invalid nonce hex %q: %w", nonceHex, err)
 	}
-	mac := hmac.New(sha256.New, iapAuthKey)
-	mac.Write(nonce)
-	mac.Write([]byte(msg))
-	return hex.EncodeToString(mac.Sum(nil)), nil
+	data := append(append([]byte{}, nonce...), []byte(msg)...)
+	return hex.EncodeToString(iapcrypto.HMACSHA256(deviceKey, data)), nil
 }
 
 // loadSignature reads the raw 64-byte ECDSA signature produced by

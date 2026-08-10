@@ -25,12 +25,14 @@ const (
 	CM_Ping            = "ping"                            // Ping command
 	CM_AuthChallenge   = "authchallenge"                   // request a nonce before CM_Flash
 	CM_GetVersion      = "getversion"                      // ask device for its currently-installed firmware version
+	CM_GetUID          = "getuid"                          // ask device for its machine ID (STM32 UID hex), used to derive its device key
 	Rsp_OK             = "OK"
 
-	PingTimeout = 2 * time.Second // Ping response timeout
-	Timeout     = 5 * time.Second // delay
-	MagicBaud   = 1200            // Baud rate to reset PLC
-	MaxRetries  = 3               // Maximum retry attempts for ping and port opening
+	PingTimeout     = 2 * time.Second  // Ping response timeout
+	FlashAckTimeout = 10 * time.Second // "flash" ack timeout -- erasing the app region can take longer than a simple ping
+	Timeout         = 5 * time.Second  // delay
+	MagicBaud       = 1200             // Baud rate to reset PLC
+	MaxRetries      = 3                // Maximum retry attempts for ping and port opening
 )
 
 const configFile = "local_config.json"
@@ -106,21 +108,37 @@ func ReadResponse(port serial.Port, expected string, timeout time.Duration) bool
 			}
 		}
 	}
-	logf("Timeout waiting for response: expected %q", expected)
+	logf("Timeout waiting for response: expected %q, got so far %q", expected, buffer)
 	return false
 }
 
 // SendCommandReadResponse sends a command and returns whatever the device
 // replies with (trimmed), rather than checking against a specific expected
-// string. Used for reading back the nonce from an "authchallenge" request.
+// string. Used for reading back the nonce from an "authchallenge" request
+// and the UID from a "getuid" request.
+//
+// The device's CDC_Transmit_FS call can hand a short response to the USB
+// stack in more than one packet, and Windows' generic USB-CDC driver can in
+// turn deliver those packets to a single port.Read() call one at a time --
+// so a single Read() is not guaranteed to return the whole response (seen
+// in practice: "getuid"'s 24-char reply arriving as a 1-byte first read).
+// This accumulates reads until the port goes quiet for idleGap, the same
+// way ReadResponse above already accumulates while scanning for a known
+// substring; here there's no known substring to scan for, so "quiet for a
+// bit after receiving something" is the completion signal instead.
 func SendCommandReadResponse(port serial.Port, command string, timeout time.Duration) (string, error) {
-	if _, err := port.Write([]byte(command)); err != nil {
+	// Trailing "\n" frames the command -- see SendCommandWaitForResponse.
+	if _, err := port.Write([]byte(command + "\n")); err != nil {
 		return "", fmt.Errorf("failed to send command %q: %v", command, err)
 	}
 	logf("Send command: %s", command)
 
-	port.SetReadTimeout(timeout)
+	const idleGap = 100 * time.Millisecond
+	port.SetReadTimeout(idleGap)
 	response := make([]byte, 256)
+	var buffer []byte
+	var lastByteAt time.Time
+
 	start := time.Now()
 	for time.Since(start) < timeout {
 		n, err := port.Read(response)
@@ -128,10 +146,18 @@ func SendCommandReadResponse(port serial.Port, command string, timeout time.Dura
 			return "", fmt.Errorf("error reading from serial port: %v", err)
 		}
 		if n > 0 {
-			return strings.TrimSpace(string(response[:n])), nil
+			buffer = append(buffer, response[:n]...)
+			lastByteAt = time.Now()
+			continue
+		}
+		if len(buffer) > 0 && time.Since(lastByteAt) >= idleGap {
+			break
 		}
 	}
-	return "", fmt.Errorf("timeout waiting for response to %q", command)
+	if len(buffer) == 0 {
+		return "", fmt.Errorf("timeout waiting for response to %q", command)
+	}
+	return strings.TrimSpace(string(buffer)), nil
 }
 
 func SendFile(port serial.Port, file io.Reader, fileSize int64) error {

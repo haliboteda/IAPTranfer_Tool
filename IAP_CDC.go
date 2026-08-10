@@ -82,6 +82,17 @@ func runCDCAttempt(portName, filePath string) bool {
 		return false
 	}
 
+	uidHex, err := SendCommandReadResponse(port, CM_GetUID, PingTimeout)
+	if err != nil {
+		logf(err, "Failed to read device UID")
+		return true
+	}
+	deviceKey, err := deriveDeviceKeyFromUIDHex(uidHex)
+	if err != nil {
+		logf(err, "Failed to derive device key")
+		return true
+	}
+
 	logf("Proceeding with file transfer.")
 	checksum, fileSize, file := CalculateCRC32(filePath)
 	defer file.(io.Closer).Close()
@@ -119,7 +130,7 @@ func runCDCAttempt(portName, filePath string) bool {
 		logf(err, "Auth challenge failed")
 		return true
 	}
-	hmacHex, err := computeAuthHMAC(nonceResp, authMsg)
+	hmacHex, err := computeAuthHMAC(deviceKey, nonceResp, authMsg)
 	if err != nil {
 		logf(err, "Failed to compute auth HMAC")
 		return true
@@ -129,7 +140,7 @@ func runCDCAttempt(portName, filePath string) bool {
 	if haveVersion {
 		flashCmd = fmt.Sprintf("%s %s %d", base, hmacHex, localVersion)
 	}
-	if !SendCommandWaitForResponse(port, flashCmd, Rsp_OK, PingTimeout) {
+	if !SendCommandWaitForResponse(port, flashCmd, Rsp_OK, FlashAckTimeout) {
 		return true
 	}
 
@@ -140,8 +151,13 @@ func runCDCAttempt(portName, filePath string) bool {
 
 // SendCommandWaitForResponse sends a command through the serial port,
 // waits for a specific response string, and returns true if received within timeout.
+//
+// The trailing "\n" frames the command so the bootloader knows where it
+// ends -- without it, a command longer than one USB CDC packet (e.g.
+// "flash ... <sig> <hmac>") can arrive split across multiple reads on the
+// device side with no way to tell it's still the same command.
 func SendCommandWaitForResponse(port serial.Port, command string, expected string, timeout time.Duration) bool {
-	if _, err := port.Write([]byte(command)); err != nil {
+	if _, err := port.Write([]byte(command + "\n")); err != nil {
 		logf(err, "Failed to send command: %s", command)
 		return false
 	}

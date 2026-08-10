@@ -43,18 +43,24 @@ func RunEtherUpgrade(filePath, ip string) {
 	targetUID := board.UID
 	logf("[PATH] target device UID=%s cached for this upgrade", targetUID)
 
+	deviceKey, err := deriveDeviceKeyFromUIDHex(targetUID)
+	if err != nil {
+		logf(true, "Cannot derive device key: %v", err)
+		return
+	}
+
 	switch strings.ToUpper(board.Role) {
 	case "BOOTLD-INVALID":
 		logf("[PATH] %s is bootloader with NO valid signed app installed (previous update failed, was rejected, or flash was tampered with) -> proceeding to flash a new image", ip)
-		RunEther_TCP(filePath, ip)
+		RunEther_TCP(filePath, ip, deviceKey)
 
 	case "BOOTLD":
 		logf("[PATH] %s is bootloader -> tcp transfer", ip)
-		RunEther_TCP(filePath, ip)
+		RunEther_TCP(filePath, ip, deviceKey)
 
 	case "CUSAPP":
 		logf("[PATH] %s is app -> reboot to bootloader", ip)
-		if err := authenticatedUDPReboot(ip); err != nil {
+		if err := authenticatedUDPReboot(ip, deviceKey); err != nil {
 			logf(err, "Failed to send authenticated reboot command to %s", ip)
 		}
 
@@ -68,7 +74,7 @@ func RunEtherUpgrade(filePath, ip string) {
 			return
 		}
 		logf("[PATH] bootloader found at %s (uid=%s) -> tcp transfer", bootBoard.IP, bootBoard.UID)
-		RunEther_TCP(filePath, bootBoard.IP)
+		RunEther_TCP(filePath, bootBoard.IP, deviceKey)
 
 	default:
 		logf(true, "Unexpected role %q from %s, exiting.", board.Role, ip)
@@ -259,12 +265,12 @@ func sendUDPWithResponseOnPort(serverAddr, port, msg string, timeout time.Durati
 // HMAC-signing the exact reboot command, then send the authenticated form.
 // An unauthenticated "openplc_server_reboot" (no hmac) is now ignored by
 // the device.
-func authenticatedUDPReboot(ip string) error {
+func authenticatedUDPReboot(ip string, deviceKey []byte) error {
 	nonceResp, _, err := sendUDPWithResponseOnPort(ip, getPort(), CM_RebootChallenge, Timeout)
 	if err != nil {
 		return fmt.Errorf("reboot challenge request failed: %w", err)
 	}
-	hmacHex, err := computeAuthHMAC(string(nonceResp), CM_Reboot)
+	hmacHex, err := computeAuthHMAC(deviceKey, string(nonceResp), CM_Reboot)
 	if err != nil {
 		return err
 	}
@@ -331,7 +337,7 @@ func getDirectedBroadcastAddrs() ([]string, error) {
 }
 
 // TCP
-func RunEther_TCP(filePath, serverIP string) {
+func RunEther_TCP(filePath, serverIP string, deviceKey []byte) {
 	logf("Trying to connect to TCP server at %s...", serverIP)
 
 	conn, err := net.DialTimeout("tcp", serverIP+":"+getPort(), Timeout)
@@ -344,7 +350,7 @@ func RunEther_TCP(filePath, serverIP string) {
 		logf(true, "Ping failed: %v", err)
 	}
 
-	if err := sendFile(conn, filePath); err != nil {
+	if err := sendFile(conn, filePath, deviceKey); err != nil {
 		logf(err, "File send failed: %v", err)
 	}
 }
@@ -370,7 +376,7 @@ func ping(conn net.Conn) error {
 	var lastErr error
 	for attempt := 1; attempt <= MaxRetries; attempt++ {
 		logf("Sending ping...")
-		if err := sendAndWaitOK(conn, []byte(CM_Ping)); err != nil {
+		if err := sendAndWaitOK(conn, []byte(CM_Ping+"\n")); err != nil {
 			logf("ping failed: %v", err)
 			lastErr = err
 		} else {
@@ -387,7 +393,7 @@ func ping(conn net.Conn) error {
 }
 
 // 文件发送函数（按 buffer 分块发送，每块等 ok）
-func sendFile(conn net.Conn, filePath string) error {
+func sendFile(conn net.Conn, filePath string, deviceKey []byte) error {
 	// Calculate checksum and file size
 	checksum, fileSize, file := CalculateCRC32(filePath)
 	defer file.(io.Closer).Close()
@@ -403,7 +409,7 @@ func sendFile(conn net.Conn, filePath string) error {
 		return err
 	}
 	if haveVersion {
-		remoteVer, verErr := sendAndReadResponse(conn, []byte(CM_GetVersion))
+		remoteVer, verErr := sendAndReadResponse(conn, []byte(CM_GetVersion+"\n"))
 		if verErr != nil {
 			logf("Could not query installed version (older bootloader?): %v -- skipping downgrade check", verErr)
 		} else if !confirmDowngradeIfNeeded(localVersion, remoteVer) {
@@ -417,11 +423,11 @@ func sendFile(conn net.Conn, filePath string) error {
 		authMsg = fmt.Sprintf("%s %d", base, localVersion)
 	}
 
-	nonceResp, err := sendAndReadResponse(conn, []byte(CM_AuthChallenge))
+	nonceResp, err := sendAndReadResponse(conn, []byte(CM_AuthChallenge+"\n"))
 	if err != nil {
 		return fmt.Errorf("auth challenge failed: %v", err)
 	}
-	hmacHex, err := computeAuthHMAC(nonceResp, authMsg)
+	hmacHex, err := computeAuthHMAC(deviceKey, nonceResp, authMsg)
 	if err != nil {
 		return err
 	}
@@ -431,10 +437,13 @@ func sendFile(conn net.Conn, filePath string) error {
 	if haveVersion {
 		flashCmd = fmt.Sprintf("%s %s %d", base, hmacHex, localVersion)
 	}
-	if err := sendAndWaitOK(conn, []byte(flashCmd)); err != nil {
+	if err := sendAndWaitOK(conn, []byte(flashCmd+"\n")); err != nil {
 		return fmt.Errorf("failed to send FLASH: %v", err)
 	}
-	//
+	// Raw binary chunks below -- do NOT append "\n" framing to these, only
+	// to the text commands above; the device switches to FLASH_RECEIVE
+	// state after the "OK" ack and treats every subsequent byte as image
+	// data, not text to scan for a newline.
 	buf := make([]byte, Buf_b)
 	for {
 		n, readErr := file.Read(buf)
@@ -454,6 +463,42 @@ func sendFile(conn net.Conn, filePath string) error {
 	return nil
 }
 
+// readWithIdleGap accumulates reads from conn until it goes quiet for
+// idleGap, instead of trusting a single Read() to return a complete reply.
+// Mirrors the CDC-side fix in SendCommandReadResponse: a short TCP write on
+// the device side can still reach the caller split across more than one
+// Read() (Go's net.Conn makes no promise that one Write() on the far end
+// arrives as one Read() on this end), so treating the first Read() as "the
+// whole response" is not safe here either.
+func readWithIdleGap(conn net.Conn, overallTimeout time.Duration) ([]byte, error) {
+	const idleGap = 100 * time.Millisecond
+	buf := make([]byte, 256)
+	var accumulated []byte
+	deadline := time.Now().Add(overallTimeout)
+
+	for time.Now().Before(deadline) {
+		conn.SetReadDeadline(time.Now().Add(idleGap))
+		n, err := conn.Read(buf)
+		if n > 0 {
+			accumulated = append(accumulated, buf[:n]...)
+			continue
+		}
+		if err != nil {
+			if ne, ok := err.(net.Error); ok && ne.Timeout() {
+				if len(accumulated) > 0 {
+					return accumulated, nil
+				}
+				continue
+			}
+			return accumulated, err
+		}
+	}
+	if len(accumulated) == 0 {
+		return nil, fmt.Errorf("timeout waiting for response")
+	}
+	return accumulated, nil
+}
+
 // 通用函数：发送数据，等待 server 回复 "ok"
 func sendAndWaitOK(conn net.Conn, data []byte) error {
 	conn.SetWriteDeadline(time.Now().Add(Timeout))
@@ -464,14 +509,12 @@ func sendAndWaitOK(conn net.Conn, data []byte) error {
 
 	logf("Sent %d bytes", dataLen)
 
-	conn.SetReadDeadline(time.Now().Add(Timeout))
-	ack := make([]byte, 4)
-	n, err := conn.Read(ack)
+	resp, err := readWithIdleGap(conn, Timeout)
 	if err != nil {
 		return fmt.Errorf("read ack error: %v", err)
 	}
-	if string(ack[:n]) != Rsp_OK {
-		return fmt.Errorf("unexpected ack: %s", string(ack[:n]))
+	if strings.TrimSpace(string(resp)) != Rsp_OK {
+		return fmt.Errorf("unexpected ack: %s", string(resp))
 	}
 	return nil
 }
@@ -486,11 +529,9 @@ func sendAndReadResponse(conn net.Conn, data []byte) (string, error) {
 	}
 	logf("Sent %d bytes", len(data))
 
-	conn.SetReadDeadline(time.Now().Add(Timeout))
-	resp := make([]byte, 256)
-	n, err := conn.Read(resp)
+	resp, err := readWithIdleGap(conn, Timeout)
 	if err != nil {
 		return "", fmt.Errorf("read response error: %v", err)
 	}
-	return strings.TrimSpace(string(resp[:n])), nil
+	return strings.TrimSpace(string(resp)), nil
 }
