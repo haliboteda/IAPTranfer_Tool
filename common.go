@@ -26,13 +26,18 @@ const (
 	CM_AuthChallenge   = "authchallenge"                   // request a nonce before CM_Flash
 	CM_GetVersion      = "getversion"                      // ask device for its currently-installed firmware version
 	CM_GetUID          = "getuid"                          // ask device for its machine ID (STM32 UID hex), used to derive its device key
+	CM_GetPubKey       = "getpubkey"                       // ask device which firmware-signing public key it verifies against
 	Rsp_OK             = "OK"
 
-	PingTimeout     = 2 * time.Second  // Ping response timeout
-	FlashAckTimeout = 10 * time.Second // "flash" ack timeout -- erasing the app region can take longer than a simple ping
-	Timeout         = 5 * time.Second  // delay
-	MagicBaud       = 1200             // Baud rate to reset PLC
-	MaxRetries      = 3                // Maximum retry attempts for ping and port opening
+	// One command, one reply -- the same budget on both channels.
+	CommandTimeout = 2 * time.Second
+	// "flash" ack: erasing the app region takes longer than answering a command.
+	FlashAckTimeout = 10 * time.Second
+	// Broadcast discovery collects replies for the whole window, so this one is
+	// deliberately longer than CommandTimeout: it is not a per-reply deadline.
+	Timeout    = 5 * time.Second
+	MagicBaud  = 1200 // Baud rate to reset PLC
+	MaxRetries = 3    // Maximum retry attempts for ping and port opening
 )
 
 const configFile = "local_config.json"
@@ -224,6 +229,8 @@ func LoadConfig() {
 		MAC:               defaultMAC,
 		ServerPort:        defaultServerPort,
 		RebootWaitSeconds: defaultRebootWaitSeconds,
+		SigningKey:        "",
+		PasswordFile:      "",
 	}
 
 	jsonFile, err := os.ReadFile(GetLocalConfigPath())

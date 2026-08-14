@@ -9,5 +9,7 @@
   "appIP": "",
   "mac": "",
   "server_port": "56865",
-  "reboot_wait_seconds": 4
+  "reboot_wait_seconds": 4,
+  "signing_key": "E:\\WorkSpace\\Schaeffer-AG\\open_plc_cube_ide\\IAPServer\\keys\\fw_signing_key.TEST_ONLY.pem",
+  "password_file": "E:\\WorkSpace\\Schaeffer-AG\\open_plc_cube_ide\\IAPServer\\keys\\iap_fixed_password.txt"
 }

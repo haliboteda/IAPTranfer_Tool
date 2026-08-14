@@ -211,7 +211,9 @@ func selectDiscoveredBoard(boards []boardInfo, targetUID string) (boardInfo, boo
 }
 
 func udpPingAndGetStatus(ip string) (string, error) {
-	buffer, _, err := sendUDPWithResponseOnPort(ip, getPort(), CM_Ping, Timeout)
+	// CM_PullIP, not CM_Ping: "ping" answers with the identity string over UDP but
+	// with "OK" over CDC/TCP, and one command must not mean two things.
+	buffer, _, err := sendUDPWithResponseOnPort(ip, getPort(), CM_PullIP, CommandTimeout)
 	if err != nil {
 		return "", err
 	}
@@ -338,6 +340,14 @@ func getDirectedBroadcastAddrs() ([]string, error) {
 
 // TCP
 func RunEther_TCP(filePath, serverIP string, deviceKey []byte) {
+	auth, err := resolveImageAuth(filePath)
+	logf(err, "Failed to prepare signature for %s", filePath)
+
+	if !etherPreflight(serverIP, auth) {
+		logf("Downgrade declined by operator. Aborting.")
+		return
+	}
+
 	logf("Trying to connect to TCP server at %s...", serverIP)
 
 	conn, err := net.DialTimeout("tcp", serverIP+":"+getPort(), Timeout)
@@ -350,9 +360,53 @@ func RunEther_TCP(filePath, serverIP string, deviceKey []byte) {
 		logf(true, "Ping failed: %v", err)
 	}
 
-	if err := sendFile(conn, filePath, deviceKey); err != nil {
-		logf(err, "File send failed: %v", err)
+	if err := sendFile(conn, filePath, deviceKey, auth); err != nil {
+		logf(err, "File send failed")
 	}
+}
+
+// etherPreflight runs the checks that can pause for an operator answer, and
+// does so on a connection of its own. The board drops an idle session, so a
+// human must never be asked a question while the upload connection is open.
+// Returns false only when the operator declines a downgrade.
+func etherPreflight(serverIP string, auth imageAuth) bool {
+	remoteVer := etherQueryInstalledVersion(serverIP, auth)
+	if remoteVer == "" {
+		return true
+	}
+	return confirmDowngradeIfNeeded(auth.version, remoteVer)
+}
+
+// etherQueryInstalledVersion opens a short connection, confirms the board
+// verifies against this signing key, reads the installed version and closes.
+// Returns "" when there is no version to compare.
+func etherQueryInstalledVersion(serverIP string, auth imageAuth) string {
+	conn, err := net.DialTimeout("tcp", serverIP+":"+getPort(), Timeout)
+	if err != nil {
+		logf(true, "Failed to connect to server: %v", err)
+	}
+	defer conn.Close()
+
+	if err := ping(conn); err != nil {
+		logf(true, "Ping failed: %v", err)
+	}
+
+	if err := verifyKeyMatchesDevice(auth, func() (string, error) {
+		return sendAndReadResponse(conn, []byte(CM_GetPubKey+"\n"))
+	}); err != nil {
+		logf(true, "Signing key check failed: %v", err)
+	}
+
+	if !auth.haveVersion {
+		return ""
+	}
+
+	remoteVer, verErr := sendAndReadResponse(conn, []byte(CM_GetVersion+"\n"))
+	if verErr != nil {
+		logf("Could not query installed version (older bootloader?): %v -- skipping downgrade check", verErr)
+		return ""
+	}
+	return remoteVer
 }
 
 // getPort returns the configured server port (shared by the TCP flash
@@ -393,29 +447,15 @@ func ping(conn net.Conn) error {
 }
 
 // 文件发送函数（按 buffer 分块发送，每块等 ok）
-func sendFile(conn net.Conn, filePath string, deviceKey []byte) error {
+// sendFile carries no interactive step: everything that could wait on an
+// operator already happened in etherPreflight, on a connection since closed.
+func sendFile(conn net.Conn, filePath string, deviceKey []byte, auth imageAuth) error {
 	// Calculate checksum and file size
 	checksum, fileSize, file := CalculateCRC32(filePath)
 	defer file.(io.Closer).Close()
 	logf("CRC Checksum: %x", checksum)
 
-	sigHex, err := loadSignature(filePath)
-	if err != nil {
-		return err
-	}
-
-	localVersion, haveVersion, err := loadVersion(filePath)
-	if err != nil {
-		return err
-	}
-	if haveVersion {
-		remoteVer, verErr := sendAndReadResponse(conn, []byte(CM_GetVersion+"\n"))
-		if verErr != nil {
-			logf("Could not query installed version (older bootloader?): %v -- skipping downgrade check", verErr)
-		} else if !confirmDowngradeIfNeeded(localVersion, remoteVer) {
-			return fmt.Errorf("downgrade declined by operator")
-		}
-	}
+	sigHex, localVersion, haveVersion := auth.sigHex, auth.version, auth.haveVersion
 
 	base := fmt.Sprintf("%s %d %x %s", CM_Flash, fileSize, checksum, sigHex)
 	authMsg := base

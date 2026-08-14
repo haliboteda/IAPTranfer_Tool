@@ -4,10 +4,8 @@
 // libraries/OpenPLC_IAP/src/iap_keyderive.c -- all three copies must compute
 // the same key from the same inputs).
 //
-// The current scheme is intentionally isolated here: DeriveDeviceKey is the
-// only place the fixed-password+machine-ID construction is expressed, so
-// swapping it for a provisioned per-device secret later touches this file
-// only, not any caller.
+// The scheme is isolated here: DeriveDeviceKey is the only place the
+// fixed-password+machine-ID construction is expressed.
 package iapcrypto
 
 import (
@@ -15,21 +13,23 @@ import (
 	"crypto/sha256"
 )
 
-// FixedPassword is the shared master password mixed with each device's
-// machine ID (its STM32 96-bit UID) to derive that device's own key.
-//
-// *** PLACEHOLDER TEST-ONLY VALUE, defined in fixed_password_generated.go ***
-// Single source of truth is open_plc_cube_ide/IAPServer/iap_fixed_password.txt
-// -- edit that file and run generate_fixed_password.sh/.ps1 there to
-// regenerate this copy together with both C copies. Replace with a
-// provisioned secret before production use; see IAPServer/keys/README.md.
+// fixedPassword is the shared master password mixed with each device's
+// machine ID to derive that device's own key. The C side compiles it in from
+// keys/iap_fixed_password.txt; this side loads the same file at run time, so
+// rotating the password needs no rebuild of this tool.
+var fixedPassword []byte
+
+// SetFixedPassword installs the password read from keys/iap_fixed_password.txt.
+func SetFixedPassword(pw []byte) {
+	fixedPassword = append([]byte(nil), pw...)
+}
 
 // DeriveDeviceKey returns this machine's 32-byte device key:
-// HMAC-SHA256(FixedPassword, machineID). machineID is the raw (non-hex)
+// HMAC-SHA256(fixedPassword, machineID). machineID is the raw (non-hex)
 // STM32 UID bytes, as decoded from the hex string reported by "getuid" /
 // the UDP discovery reply.
 func DeriveDeviceKey(machineID []byte) []byte {
-	return HMACSHA256([]byte(FixedPassword), machineID)
+	return HMACSHA256(fixedPassword, machineID)
 }
 
 // HMACSHA256 is the single HMAC primitive used both to derive a device key
