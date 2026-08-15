@@ -25,12 +25,17 @@ type boardInfo struct {
 
 const bootloaderDiscoveryRetries = 3
 
+// The device replies to a given source at most once per DISCOVERY_MIN_REPLY_INTERVAL_MS
+// (2s, see IAPServer/udp_server.c). Retrying sooner than that would be answered
+// with the same silence, so the wait has to clear that window to be worth anything.
+const identifyRetryDelay = 2500 * time.Millisecond
+
 func RunEtherUpgrade(filePath, ip string) {
 	logf("[PATH] start ether upgrade flow, target=%s", ip)
 
-	resp, err := udpPingAndGetStatus(ip)
+	resp, err := udpIdentifyWithRetry(ip)
 	if err != nil {
-		logf(true, "No response from %s, exiting.", ip)
+		logf(true, "No response from %s after %d attempts, exiting.", ip, bootloaderDiscoveryRetries)
 		return
 	}
 
@@ -208,6 +213,28 @@ func selectDiscoveredBoard(boards []boardInfo, targetUID string) (boardInfo, boo
 		}
 	}
 	return boardInfo{}, false
+}
+
+// udpIdentifyWithRetry asks a known address who it is, retrying like the
+// broadcast discovery already does. A single lost datagram must not end the
+// upgrade: UDP has no delivery guarantee, and the operator only ever sees
+// "no response", which reads as a dead board rather than a dropped packet.
+func udpIdentifyWithRetry(ip string) (string, error) {
+	var lastErr error
+
+	for attempt := 1; attempt <= bootloaderDiscoveryRetries; attempt++ {
+		resp, err := udpPingAndGetStatus(ip)
+		if err == nil {
+			return resp, nil
+		}
+		lastErr = err
+		if attempt < bootloaderDiscoveryRetries {
+			logf("Identify attempt %d/%d on %s got no usable reply (%v), retrying in %.1fs...",
+				attempt, bootloaderDiscoveryRetries, ip, err, identifyRetryDelay.Seconds())
+			time.Sleep(identifyRetryDelay)
+		}
+	}
+	return "", lastErr
 }
 
 func udpPingAndGetStatus(ip string) (string, error) {

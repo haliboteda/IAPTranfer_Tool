@@ -139,6 +139,7 @@ func main() {
 			logf(true, usageText)
 		}
 		loadFixedPassword()
+		defer AcquireUploadLock()()
 		RunCDC(args[2], args[1])
 
 	case ModeEther:
@@ -146,6 +147,7 @@ func main() {
 			logf(true, usageText)
 		}
 		loadFixedPassword()
+		defer AcquireUploadLock()()
 		RunEtherUpgrade(args[1], args[2])
 
 	default:
