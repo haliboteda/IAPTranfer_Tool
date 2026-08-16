@@ -3,3 +3,5 @@ Output/
 .vscode/
 cmd/
 *.exe
+# Machine-local test paths; machine.example.ps1 is the committed template.
+TestTool/config/machine.ps1

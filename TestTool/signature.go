@@ -27,10 +27,16 @@ const (
 )
 
 func init() {
-	// Leaves the board with an image its stored metadata does not describe, so
-	// it refuses to boot until a real image is flashed again.
+	// Not destructive since SDRAM staging landed: the image is verified in the
+	// staging buffer and the application region is only erased once it passes,
+	// so a refused upload leaves the running application intact. Verified on
+	// hardware 2026-08-17 -- S1 refused the image, and the board booted its
+	// existing application after a reset.
+	//
+	// Before staging this case did leave the board unable to boot, which is why
+	// it used to be flagged destructive and sorted last by "all".
 	register(testCase{id: "S1", title: "an image with an invalid signature is rejected",
-		destructive: true, run: runS1})
+		destructive: false, run: runS1})
 }
 
 var blockCommentRe = regexp.MustCompile(`(?s)/\*.*?\*/`)
@@ -215,8 +221,8 @@ func mentionsVerdict(s string) bool {
 func judgeVerdict(verdict string) result {
 	switch {
 	case strings.Contains(verdict, "Signature Failed"), strings.Contains(verdict, "No Signature"):
-		return pass("board refused the image: %q. It will now stay in the bootloader until a "+
-			"correctly signed image is flashed -- run IAPTool to restore it", verdict)
+		return pass("board refused the image: %q. The application region was never touched, "+
+			"so the previously-installed application still boots -- reset to confirm (case G1)", verdict)
 	case strings.Contains(verdict, "Checksum Failed"):
 		return fail("board reported a checksum failure (%q), so the signature check never ran -- "+
 			"the CRC this tool computed does not match what the board computed", verdict)
