@@ -40,8 +40,24 @@ if (-not $SkipBuild) {
 
 if (Test-Path $BIN) {
     $len = (Get-Item $BIN).Length
-    # 128K is the bootloader's whole sector; the linker script caps FLASH there.
-    Write-Host ("bin = {0:N0} B of 131,072  ({1:P1} used, {2:N0} B free)" -f $len, ($len / 131072), (131072 - $len))
+
+    # The sector is 128K, but the linker only gets 120K: the last 8K is the
+    # owner record area (requirement C10). Reporting against 131,072 would
+    # overstate the headroom by a whole 8K and hide the point at which the
+    # build starts failing -- read the cap out of the linker script instead of
+    # repeating it here, so the two cannot disagree.
+    $limit = 122880
+    $ld = Join-Path $BOOT_REPO "STM32H743IIKX_FLASH.ld"
+    if (Test-Path $ld) {
+        $m = [regex]::Match((Get-Content $ld -Raw), 'FLASH\s*\(rx\)\s*:\s*ORIGIN\s*=\s*\S+?,\s*LENGTH\s*=\s*(\d+)K')
+        if ($m.Success) { $limit = [int]$m.Groups[1].Value * 1024 }
+    }
+    Write-Host ("bin = {0:N0} B of {1:N0} usable ({2:P1} used, {3:N0} B free)" -f `
+        $len, $limit, ($len / $limit), ($limit - $len))
+    Write-Host ("      sector is 131,072 B; the top {0:N0} B are reserved for the owner record area" -f (131072 - $limit))
+    if ($len -gt $limit) {
+        Fail "the image no longer fits below the reserved area"
+    }
 }
 
 # ---------------------------------------------------------- target present
