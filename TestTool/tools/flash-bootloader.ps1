@@ -32,10 +32,31 @@ if (-not $SkipBuild) {
         -application org.eclipse.cdt.managedbuilder.core.headlessbuild `
         -data $WORKSPACE -build "open_plc_cube_ide/Debug" 2>&1
     $out | Select-String -Pattern "Build Finished|error:|Error " | ForEach-Object { Write-Host $_ }
-    if (($out -join "`n") -match "Build Finished\. (\d+) errors" -and $Matches[1] -ne "0") {
+    $joined = ($out -join "`n")
+
+    if ($joined -match "Build Finished\. (\d+) errors" -and $Matches[1] -ne "0") {
         Fail "build reported errors - stopping"; exit 1
     }
+
+    # A compile error stops make before it ever prints "Build Finished", so the
+    # check above sees nothing wrong and the OLD .elf gets flashed -- testing
+    # stale firmware while believing it is the new one. Catch make's own failure
+    # and the compiler's error lines directly.
+    if ($joined -match "(?m)^make:.*Error \d+" -or $joined -match "(?m):\d+:\d+: error:") {
+        Fail "the build failed - NOT flashing (the .elf on disk is from an earlier build)"
+        ($out | Select-String -Pattern "error:|Error \d+" | Select-Object -First 10) |
+            ForEach-Object { Write-Host "    $_" }
+        exit 1
+    }
+
     if (-not (Test-Path $ELF)) { Fail "no .elf produced - stopping"; exit 1 }
+
+    # Even with a clean build, refuse an .elf that predates this run: it would
+    # mean make decided there was nothing to do while the sources say otherwise.
+    $age = (Get-Date) - (Get-Item $ELF).LastWriteTime
+    if ($age.TotalMinutes -gt 5) {
+        Warn ("the .elf is {0:N0} min old - make thought nothing needed rebuilding" -f $age.TotalMinutes)
+    }
 }
 
 if (Test-Path $BIN) {

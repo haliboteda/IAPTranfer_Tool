@@ -50,6 +50,9 @@ const usageText = `Usage:
   IAPTool ether  <file.bin> <ip>         [--key=<key.pem>] [--version=N]
   IAPTool sign   <file.bin> [<key.pem>]  [--key=<key.pem>] [--version=N] [--out=<prefix>]
   IAPTool genkey [<name>]    writes <name>.pem, prints keys/fw_pubkey.inc on stdout
+  IAPTool signraw <hex> [<key.pem>]  raw r||s signature over SHA-256 of those
+                   bytes, hex on stdout. For the bootloader's owner-record
+                   chain (setowner), not for firmware images.
   IAPTool genpw              prints a fresh keys/iap_fixed_password.txt on stdout
   IAPTool version <x.y.z> [--out=<file>]  encodes a dotted version as the uint32 the
                    device compares, one byte per field. Prints it, or writes it to
@@ -128,6 +131,24 @@ func main() {
 		} else {
 			fmt.Println(encoded)
 		}
+
+	case "signraw":
+		// signraw <hex> [<key.pem>] -- raw r||s signature over SHA-256(hex).
+		// For the bootloader's owner-record chain, where the thing being
+		// signed is a record prefix rather than a firmware image.
+		if len(args) < 2 {
+			logf(true, usageText)
+		}
+		keyPath := findSigningKey()
+		if len(args) >= 3 {
+			keyPath = args[2]
+		}
+		if keyPath == "" {
+			logf(true, "No signing key found. Pass one as an argument or as --key=<key.pem>")
+		}
+		sig, err := signRawHex(args[1], keyPath)
+		logf(err, "Failed to sign")
+		fmt.Println(sig)
 
 	case "genpw":
 		content, err := generatePasswordFile()

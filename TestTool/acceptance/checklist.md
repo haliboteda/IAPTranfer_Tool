@@ -19,13 +19,18 @@
 | # | 做什么 | 判据 | 命令 |
 |---|---|---|---|
 | A1 | 主机侧 Go 测试 | 全过 | 在 `IAPTranfer_Tool/` 下 `go test ./TestTool/...` |
-| A2 | 主机侧 C 测试 | 全过 | `host/bootloader_unit/build.ps1` —— ⚠️ **需要主机 gcc/clang，这台机器上没有**，2026-08-17 未能执行 |
+| A2 | 主机侧 C 测试 | 全过 | `host/bootloader_unit/build.ps1` —— 编译器路径填 `config/machine.ps1` 的 `$HOST_CC` |
 | A3 | 整模块静态检查 | 无输出 | `go vet ./...` |
-| A4 | bootloader 构建 | **0 errors 0 warnings**，且 `.bin` ≤ 131,072 B | `tools/flash-bootloader.ps1`（构建阶段会打占用率） |
+| A4 | bootloader 构建 | **0 errors 0 warnings**，且 `.bin` ≤ **122,880 B** | `tools/flash-bootloader.ps1`（构建阶段会打占用率） |
 | A5 | 烧写 + 启动日志 | 见 [T0](#t0--启动门禁) | `tools/flash-bootloader.ps1` |
-| A6 | 设备行为用例 | 全过 | `TestTool all --ip=<板子IP>` |
+| A6 | 设备行为用例 | 全过 | `TestTool all --ip=<板子IP> --bin=<app.bin> --password-file=<...>` |
+| A7 | 变体断言 + 公开根指纹 | 全过 | 都在 `tools/selfcheck.ps1` 里（A13 / A14） |
 
-⚠️ A4 那个尺寸不是形式检查：bootloader 只有一个 128K 扇区，**超了链接器会报 `region FLASH overflowed`**，而 owner 记录区将来还要从同一个扇区尾部划走一块。
+**A1–A3、A7 一条命令跑完：`tools/selfcheck.ps1`。**
+
+⚠️ **A4 的上限是 122,880 不是 131,072。** 扇区确实是 128K，但**尾部 8K 已经划给 owner 记录区**（需求 C10，2026-08-18），链接脚本只把 120K 给链接器。按 131,072 判会多算 8K 余量，并且掩盖真正开始失败的那个点。超了链接器会报 `region FLASH overflowed`。
+
+⚠️ **A6 里 `all` 不含要人动手的用例**（AU1、OW1、OW3），它们会被点名跳过而不是静默略过。要跑得单独按 id 跑，见 [../TEST-CASES.md](../TEST-CASES.md)。
 
 ---
 

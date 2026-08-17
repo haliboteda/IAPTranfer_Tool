@@ -67,6 +67,10 @@ Step "A9" "Arduino core: live matches the git repo" {
     & "$PSScriptRoot\check-core-sync.ps1" 2>&1
 }
 
+Step "A14" "the published-root warning still recognises the published root" {
+    & "$PSScriptRoot\check-public-root.ps1" 2>&1
+}
+
 if (-not $Quick) {
     # $HOST_CC from config wins; otherwise fall back to whatever "gcc" resolves
     # to on PATH, so a machine with neither still reports SKIP by name.

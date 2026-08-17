@@ -30,9 +30,12 @@
 
 param(
     [uint32]$Generation = 1,
+    [string]$Key,          # 128 hex chars; default is a recognisable pattern
     [switch]$Cleared,
     [switch]$Corrupt,
     [switch]$Restore,
+    [uint32]$AlsoUnsigned = 0,   # add a second, unsigned record at this generation
+    [switch]$AlsoCleared,        # make that second record a factory reset
     [int]$Seconds = 10
 )
 
@@ -69,21 +72,63 @@ if ($Restore) {
     $flags = if ($Cleared) { 1 } else { 0 }
     [BitConverter]::GetBytes([uint32]$flags).CopyTo($rec, 8)
 
-    # root_pubkey: all zero in a cleared record, otherwise a recognisable
-    # pattern. It is not a real key -- nothing verifies it at this stage, and
-    # a record that carried a real one would be no more convincing.
+    # root_pubkey: all zero in a cleared record. Otherwise a real key when one
+    # is given -- needed to set up a board for the setowner cases, where the
+    # next record has to be signed by whoever this record names -- and a
+    # recognisable pattern when it is not, for the cases where the key's value
+    # never matters.
     if (-not $Cleared) {
-        for ($i = 12; $i -lt 76; $i++) { $rec[$i] = 0xAA }
+        if ($Key) {
+            if ($Key.Length -ne 128) { Fail "-Key needs 128 hex chars, got $($Key.Length)"; exit 2 }
+            for ($i = 0; $i -lt 64; $i++) {
+                $rec[12 + $i] = [Convert]::ToByte($Key.Substring($i * 2, 2), 16)
+            }
+            Write-Host ("  root_pubkey: {0}..." -f $Key.Substring(0, 32))
+        } else {
+            for ($i = 12; $i -lt 76; $i++) { $rec[$i] = 0xAA }
+        }
     }
     # prev_sig and reserved stay zero.
 
     Write-Host ("  type 'O', slots 5, format_ver {0}, generation {1}, flags {2}" -f $ver, $Generation, $flags)
 
     # 0xFF for the gap, so the unused part of the area still reads as erased.
-    $out = New-Object byte[] ($OWNER_OFFSET + $RECORD_SIZE)
+    $total = $RECORD_SIZE
+    if ($AlsoUnsigned -gt 0) { $total = $RECORD_SIZE * 2 }
+
+    $out = New-Object byte[] ($OWNER_OFFSET + $total)
     for ($i = 0; $i -lt $out.Length; $i++) { $out[$i] = 0xFF }
     $image.CopyTo($out, 0)
     $rec.CopyTo($out, $OWNER_OFFSET)
+
+    if ($AlsoUnsigned -gt 0) {
+        # A second record with a HIGHER generation and no signature.
+        #
+        # Without -AlsoCleared this is what an attacker able to append would
+        # write to take a claimed board over, and the bootloader must reject it:
+        # authority comes from the chain, not from being the highest generation
+        # present.
+        #
+        # With -AlsoCleared it is a factory reset, which is legitimately
+        # unsigned -- gated by a physical action instead. Same shape, opposite
+        # verdict, which is exactly why both are worth having.
+        $att = New-Object byte[] $RECORD_SIZE
+        $att[0] = 0x4F
+        $att[1] = 5
+        [BitConverter]::GetBytes([uint16]1).CopyTo($att, 2)
+        [BitConverter]::GetBytes([uint32]$AlsoUnsigned).CopyTo($att, 4)
+        if ($AlsoCleared) {
+            [BitConverter]::GetBytes([uint32]1).CopyTo($att, 8)   # flags bit0
+            # root_pubkey stays zero in a cleared record.
+            Write-Host ("  plus a CLEARED record at generation {0} (should apply)" -f $AlsoUnsigned)
+        } else {
+            [BitConverter]::GetBytes([uint32]0).CopyTo($att, 8)
+            for ($i = 12; $i -lt 76; $i++) { $att[$i] = 0xBB }   # the attacker's "key"
+            Write-Host ("  plus an UNSIGNED record at generation {0} (should be rejected)" -f $AlsoUnsigned)
+        }
+        # prev_sig stays all zero in both cases.
+        $att.CopyTo($out, $OWNER_OFFSET + $RECORD_SIZE)
+    }
 }
 
 $tmp = Join-Path ([System.IO.Path]::GetTempPath()) "bootloader_with_owner.bin"
@@ -100,8 +145,12 @@ $buf = Read-LogPorts $open $Seconds
 $all = ($buf.Values -join "`n")
 
 Section "boot log"
-($all -split "`r?`n" | Where-Object { $_ -match "Owner slot|Bootloader state|APP Mod|UPLOAD Mod|NOT in effect|Reset cause" }) |
-    ForEach-Object { Write-Host "    | $_" }
+# "PUBLISHED root" belongs in this list: it is the line that says whether the
+# board is still trusting a key everybody has, which is the whole subject here.
+# Leaving it out once made a correct result look like a missing warning.
+($all -split "`r?`n" | Where-Object {
+    $_ -match "Owner slot|Bootloader state|APP Mod|UPLOAD Mod|NOT in effect|Reset cause|PUBLISHED|Claim it"
+}) | ForEach-Object { Write-Host "    | $_" }
 
 Section "result"
 if ($all -notmatch "Owner slot:") {

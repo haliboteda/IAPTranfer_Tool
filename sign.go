@@ -101,6 +101,37 @@ func signImage(image []byte, key *ecdsa.PrivateKey) (hash [32]byte, sig []byte, 
 	return hash, sig, nil
 }
 
+// signRawHex signs an arbitrary blob given as hex, returning the raw 64-byte
+// r||s signature over SHA-256 of those bytes, hex-encoded.
+//
+// Used for the owner-record prefix in the bootloader's ownership chain, where
+// what gets signed is 76 bytes of record rather than a firmware image. Kept
+// here beside signImage so both go through the same key loading and the same
+// r||s encoding -- a second implementation of that encoding is exactly the kind
+// of thing cases X1/X2 exist to catch, and not having one is better.
+func signRawHex(dataHex, keyPath string) (string, error) {
+	data, err := hex.DecodeString(strings.TrimSpace(dataHex))
+	if err != nil {
+		return "", fmt.Errorf("data is not hex: %w", err)
+	}
+	if len(data) == 0 {
+		return "", fmt.Errorf("nothing to sign")
+	}
+	key, err := loadSigningKey(keyPath)
+	if err != nil {
+		return "", err
+	}
+	hash := sha256.Sum256(data)
+	r, s, err := ecdsa.Sign(rand.Reader, key, hash[:])
+	if err != nil {
+		return "", fmt.Errorf("failed to sign: %w", err)
+	}
+	sig := make([]byte, sigLen)
+	r.FillBytes(sig[:sigLen/2])
+	s.FillBytes(sig[sigLen/2:])
+	return hex.EncodeToString(sig), nil
+}
+
 // signBinFile writes the sibling .sha256, .size and .sig files next to the
 // image (plus .version when one is given), the same set that
 // an earlier "IAPTool sign" run produces.

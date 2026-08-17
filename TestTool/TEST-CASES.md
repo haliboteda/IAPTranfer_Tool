@@ -139,6 +139,35 @@ N5 的第二半判据同样重要：**上限要是限速器，不能是保险丝
 
 ⚠️ **S2 上传前必须先 `getpubkey` 确认板子信的不是这把临时密钥。** 密钥是每次现生成的，撞上是不可能事件 —— 这道闸防的是将来有人把它改成固定密钥文件：那样用例不会报错，它会**真的把 `--bin` 指的东西刷进板子**。
 
+### 所有权（`tools/run-takeown.ps1`，需求 C10）
+
+| ID | 验证什么 | 前置条件 | 判据 |
+|---|---|---|---|
+| **OW1** | 认领把板子绑到一把新密钥上 | 板子停在 bootloader，**且这次启动按住过 BOOT0** | `takeown` 回 `OK`；`getpubkey` 返回新密钥；复位后仍然认得，公开根告警消失 |
+| **OW1-neg** | BOOT0 没按时认领被拒 | 停在 bootloader，**没按 BOOT0**（用 `enter-bootloader.ps1` 进） | 回 `Refused`，`getpubkey` **一字节不变** |
+
+| **OW2** | 换 owner：现任签名才算数 | 板子已被一把**你持有私钥**的密钥认领 | 正确签名 → `OK` 且 generation +1；坏签名 → `Refused` 且什么都没变 |
+| **OW2-attack** | 无签名的高 generation 记录**夺不走**板子 | 同上 | 扫描器看得见那条记录，但 `getpubkey` 仍返回原主人 |
+| **OW3** | 恢复出厂，然后能重新认领 | 板子已被认领，**有人在板子旁** | 按住 BOOT0 十秒 → `FACTORY RESET DONE` → 回落内置根、公开根告警回来 → 再 `takeown` 能成功 |
+
+⚠️ **OW3 的判据必须包含"能重新认领"。** 只验"回落内置根"是不够的：链规则曾经会拒绝 cleared 之后的新认领记录，那样恢复出厂等于**把板子永久钉死在公开根上**，比不做恢复出厂更糟。
+
+```powershell
+.\tools\run-takeown.ps1 -ExpectRefused          # 认领负向，不需要人
+.\tools\run-takeown.ps1                         # 认领正向，需要有人按住 BOOT0
+.\tools\run-setowner.ps1 -CurrentKey a.pem      # 换 owner，不需要人
+.\tools\run-setowner.ps1 -CurrentKey a.pem -BadSignature
+.\tools\inject-owner-record.ps1 -Key <hex> -AlsoUnsigned 9   # 夺取攻击
+```
+
+⚠️ **换 owner 不需要 BOOT0**，这是设计不是疏漏：现任签名本身就是授权，远程交接要支持。物理门只管**没有签名可验**的操作（首次认领、恢复出厂）。
+
+⚠️ **OW2-attack 是这一组真正的判据。** 只验"正确签名能换、坏签名不能换"是不够的 —— 真正的洞是"按 generation 最大的赢"：那样任何能追加记录的人写一条更高 generation 的**无签名**记录就能夺走一块已认领的板子。判据必须是**板子仍然认原主人**。
+
+⚠️ **认领是刻意做成不好撤销的。** 第 6 步的恢复出厂还没实现，现在唯一的退路是 **ST-Link 重烧 bootloader** —— owner 记录和 bootloader 同扇区，擦掉重写就一起没了（`.\tools\flash-bootloader.ps1`）。
+
+⚠️ **判据必须包含"旧密钥签的固件被拒"。** 2026-08-18 首次跑就抓到：认领改了 `getpubkey` 的回答和告警文字，却没改实际验签用的密钥（`fw_verify_signature()` 写死了 `fw_public_key`）——**板子一边说"只认新主人"，一边照跑任何人签的固件**。只看日志的判据会给出干净的通过。
+
 ### 认证与重放（`nonce_replay.go`）
 
 | ID | 验证什么 | 前置条件 | 判据 |
@@ -212,7 +241,17 @@ T1–T4 和 S1 都要求设备处于 bootloader 且以太网已起。三种办�
 
 每个目录有自己那份说明（`HOST-C-TESTS.md` / `KEY-MATCH-AND-DOWNGRADE.md` / `CROSS-CHECK.md`），写清"为什么这条不能在板子上测"。**文件名要说出内容 —— 不要再叫 `README.md`。**
 
-`tools/` 下还有三个纯静态检查，不碰任何代码执行：`check-version-sync.ps1`（版本号三处一致）、`check-mirror-sync.ps1`（跨仓镜像 8 个锚点 + RTC 备份寄存器占用）、`check-core-sync.ps1`（core live 与 git 仓库）。它们对应发版检查单的 B1 / B2 / B3，以前是人工核对。
+`tools/` 下还有四个纯静态检查，不碰任何代码执行：`check-version-sync.ps1`（版本号三处一致）、`check-mirror-sync.ps1`（跨仓镜像 9 个锚点 + RTC 备份寄存器占用）、`check-core-sync.ps1`（core live 与 git 仓库）、`check-public-root.ps1`（**P6**）。前三个对应发版检查单的 B1 / B2 / B3，以前是人工核对。
+
+### P6 · "信任公开根"的告警不能失灵
+
+bootloader 每次启动会在**当前生效的根就是随项目发布的那把公开根**时告警。它靠编进 `IAPServer/owner_slot.c` 的一个 SHA-256 指纹常量认出那把密钥。
+
+**指纹是常量不是构建时算的** —— 算的话比较永远成立，客户用自己密钥编的板子也会被告警，而**一个所有人都学会忽略的告警等于没有告警**。代价是项目自己轮换默认密钥时必须同步更新它，否则出厂板静默地不再告警。P6 就是比对这两者。
+
+⚠️ P6 还会检查 **`Debug/*.bin` 里到底有没有 `fw_pubkey.inc` 那把密钥**。因为换密钥有个静默陷阱：**普通复制/还原会保留源文件时间戳**，还原回来的 `.inc` 比 `.o` 旧，make 判定不用重编，于是**固件构建正常、启动正常、却带着旧的信任根**。2026-08-18 当场踩到过。
+
+⚠️ **在客户的 fork 里这两者本来就该不一样** —— 那正是"有自己的根"的含义。这条检查属于本仓库，这里的默认密钥按定义就是公开的那把。
 
 > **`host/iapcrypto/` 之前是独立 Go module，待在 `Hardware/TestCase/` 下，靠 `replace IAPTool => ../../../IAPTranfer_Tool` 相对路径挂过来。**
 > 结果是 `go test ./...` 永远扫不到它 —— 2026-08-16 并入本 module 时才发现它**早就编译不过**（`iapcrypto.FixedPassword` 在密码改成运行时加载后就没了）。
