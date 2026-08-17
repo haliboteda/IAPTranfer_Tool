@@ -37,6 +37,14 @@ func init() {
 	// it used to be flagged destructive and sorted last by "all".
 	register(testCase{id: "S1", title: "an image with an invalid signature is rejected",
 		destructive: false, run: runS1})
+
+	// S2 is kept apart from S1 on purpose. Both end in "the board refuses to
+	// run it", but they are different failures: S1 is a signature no key could
+	// have produced, S2 is a perfectly well-formed signature from the wrong
+	// key. Testing them together once led to a key rotation being diagnosed as
+	// a bug in the verification code.
+	register(testCase{id: "S2", title: "an image signed by a key the board does not trust is rejected",
+		destructive: false, run: runS2})
 }
 
 var blockCommentRe = regexp.MustCompile(`(?s)/\*.*?\*/`)
@@ -90,23 +98,32 @@ func ask(conn net.Conn, cmd string, timeout time.Duration) (string, error) {
 	return strings.TrimSpace(string(buf[:n])), nil
 }
 
-func runS1(cfg config) result {
+// loadImage does the argument checking and password loading both signature
+// cases need, and returns the image bytes.
+func loadImage(cfg config) ([]byte, result) {
 	if cfg.binPath == "" {
-		return fail("needs --bin=<file.bin>")
+		return nil, fail("needs --bin=<file.bin>")
 	}
 	if cfg.passwordFile == "" {
-		return fail("needs --password-file=<iap_fixed_password.txt> (same password the board was built with)")
+		return nil, fail("needs --password-file=<iap_fixed_password.txt> (same password the board was built with)")
 	}
 	if err := loadFixedPassword(cfg.passwordFile); err != nil {
-		return fail("could not load the password file: %v", err)
+		return nil, fail("could not load the password file: %v", err)
 	}
-
 	image, err := os.ReadFile(cfg.binPath)
 	if err != nil {
-		return fail("could not read %s: %v", cfg.binPath, err)
+		return nil, fail("could not read %s: %v", cfg.binPath, err)
 	}
 	if len(image) < chunkSize {
-		return fail("image is only %d bytes, too small to be a real app", len(image))
+		return nil, fail("image is only %d bytes, too small to be a real app", len(image))
+	}
+	return image, result{pass: true}
+}
+
+func runS1(cfg config) result {
+	image, r := loadImage(cfg)
+	if !r.pass {
+		return r
 	}
 
 	// Change the image so it also stops matching the metadata already stored on
@@ -114,6 +131,14 @@ func runS1(cfg config) result {
 	// path: the upload-time check now, and the boot-time check on the next reset.
 	image[len(image)/2] ^= 0xFF
 
+	// 64 zero bytes: not a signature any key could ever produce.
+	return uploadWithSignature(cfg, image, strings.Repeat("00", 64))
+}
+
+// uploadWithSignature runs a complete, correctly authenticated upload whose
+// only defect is the signature it carries, and reports what the board said.
+// Everything except sigHex is exactly what IAPTool would send.
+func uploadWithSignature(cfg config, image []byte, sigHex string) result {
 	conn, err := dial(cfg)
 	if err != nil {
 		return fail("could not connect: %v", err)
@@ -135,8 +160,6 @@ func runS1(cfg config) result {
 	deviceKey := iapcrypto.DeriveDeviceKey(uid)
 	fmt.Printf("    target UID=%s\n", uidHex)
 
-	// 64 zero bytes: not a signature any key could ever produce.
-	sigHex := strings.Repeat("00", 64)
 	checksum := crc32.ChecksumIEEE(image)
 	base := fmt.Sprintf("flash %d %x %s", len(image), checksum, sigHex)
 
@@ -227,7 +250,7 @@ func judgeVerdict(verdict string) result {
 		return fail("board reported a checksum failure (%q), so the signature check never ran -- "+
 			"the CRC this tool computed does not match what the board computed", verdict)
 	default:
-		return fail("board accepted an image signed with 64 zero bytes (replied %q). "+
+		return fail("board accepted an image it should have refused (replied %q). "+
 			"Signature verification is not gating the update", verdict)
 	}
 }

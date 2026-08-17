@@ -23,8 +23,11 @@ function Step {
 
     Section "$Id  $Name"
 
-    if ($Needs -and -not (Get-Command $Needs -ErrorAction SilentlyContinue)) {
-        Warn "SKIP - $Needs is not on PATH"
+    # $Needs is a command name or an absolute path: a tool installed for one
+    # check only (see $HOST_CC) has no business being on PATH.
+    if ($Needs -and -not (Get-Command $Needs -ErrorAction SilentlyContinue) -and
+                    -not (Test-Path $Needs -ErrorAction SilentlyContinue)) {
+        Warn "SKIP - $Needs not found"
         [void]$results.Add([pscustomobject]@{ Id = $Id; Name = $Name; State = "SKIP"; Note = "$Needs missing" })
         return
     }
@@ -65,9 +68,14 @@ Step "A9" "Arduino core: live matches the git repo" {
 }
 
 if (-not $Quick) {
+    # $HOST_CC from config wins; otherwise fall back to whatever "gcc" resolves
+    # to on PATH, so a machine with neither still reports SKIP by name.
+    $ccNeed = "gcc"
+    if ($HOST_CC) { $ccNeed = $HOST_CC }
+
     Step "A2" "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)" {
         & "$PSScriptRoot\..\host\bootloader_unit\build.ps1" 2>&1
-    } "gcc"
+    } $ccNeed
 
     Step "A10" "IAPTool key-match logic against a stand-in board" {
         & "$PSScriptRoot\..\host\fakeboard\run-cases.ps1" 2>&1
@@ -76,6 +84,14 @@ if (-not $Quick) {
     Step "A11" "crypto cross-check against independent implementations" {
         & "$PSScriptRoot\..\host\crypto_ref\run-checks.ps1" -Rounds 8 2>&1
     } "python"
+
+    Step "A12" "downgrade guard (DG1): older image refused, and not uploaded" {
+        & "$PSScriptRoot\..\host\fakeboard\run-downgrade.ps1" 2>&1
+    } "python"
+
+    Step "A13" "Arduino variant assertions (E6: the FMC reserved-pin table)" {
+        & "$PSScriptRoot\..\host\variant_check\build.ps1" 2>&1
+    } $ARDUINO_CLI
 }
 
 Pop-Location

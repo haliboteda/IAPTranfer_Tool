@@ -20,7 +20,11 @@ type testCase struct {
 	// destructive cases leave the board somewhere other than where they found
 	// it, so "all" runs them last -- otherwise they fail every case after them.
 	destructive bool
-	run         func(cfg config) result
+	// manual cases need a person at the board (pulling power, moving a jumper),
+	// so "all" cannot run them unattended. It names them instead of dropping
+	// them quietly: a skipped case that is never mentioned reads as a pass.
+	manual bool
+	run    func(cfg config) result
 }
 
 type config struct {
@@ -31,6 +35,9 @@ type config struct {
 	passwordFile string
 	soak         time.Duration
 	interval     time.Duration
+	stateFile    string
+	phase        int
+	count        int
 }
 
 type result struct {
@@ -52,7 +59,8 @@ func register(c testCase) { cases[c.id] = c }
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage:\n  TestTool <case-id|all> --ip=<addr> [--port=56865] [--bin=<file.bin>]\n"+
-		"      [--iaptool=<path>] [--password-file=<iap_fixed_password.txt>] [--minutes=N]\n\nCases:\n")
+		"      [--iaptool=<path>] [--password-file=<iap_fixed_password.txt>] [--minutes=N]\n"+
+		"      [--state=<file> --phase=1|2 --count=N]   (AU1)\n\nCases:\n")
 	ids := make([]string, 0, len(cases))
 	for id := range cases {
 		ids = append(ids, id)
@@ -61,7 +69,7 @@ func usage() {
 	for _, id := range ids {
 		fmt.Fprintf(os.Stderr, "  %-5s %s\n", id, cases[id].title)
 	}
-	fmt.Fprintf(os.Stderr, "\nSee README.md for what each case proves and what it needs.\n")
+	fmt.Fprintf(os.Stderr, "\nSee TEST-CASES.md for what each case proves and what it needs.\n")
 }
 
 func main() {
@@ -99,6 +107,22 @@ func main() {
 				os.Exit(2)
 			}
 			cfg.interval = time.Duration(ms) * time.Millisecond
+		case hasPrefix(arg, "--state="):
+			cfg.stateFile = arg[len("--state="):]
+		case hasPrefix(arg, "--phase="):
+			phase, convErr := strconv.Atoi(arg[len("--phase="):])
+			if convErr != nil || (phase != 1 && phase != 2) {
+				fmt.Fprintf(os.Stderr, "--phase needs 1 or 2\n")
+				os.Exit(2)
+			}
+			cfg.phase = phase
+		case hasPrefix(arg, "--count="):
+			n, convErr := strconv.Atoi(arg[len("--count="):])
+			if convErr != nil || n < 2 {
+				fmt.Fprintf(os.Stderr, "--count needs at least 2\n")
+				os.Exit(2)
+			}
+			cfg.count = n
 		default:
 			fmt.Fprintf(os.Stderr, "unknown option %q\n", arg)
 			os.Exit(2)
@@ -111,6 +135,7 @@ func main() {
 	}
 
 	var toRun []testCase
+	var skipped []testCase
 	if target == "all" {
 		ids := make([]string, 0, len(cases))
 		for id := range cases {
@@ -124,6 +149,10 @@ func main() {
 			return ids[i] < ids[j]
 		})
 		for _, id := range ids {
+			if cases[id].manual {
+				skipped = append(skipped, cases[id])
+				continue
+			}
 			toRun = append(toRun, cases[id])
 		}
 	} else {
@@ -148,11 +177,21 @@ func main() {
 		}
 	}
 
+	// Named, never silent: "all passed" has to mean something, and it cannot if
+	// whole cases vanished from the run without being mentioned.
+	for _, c := range skipped {
+		fmt.Printf("SKIPPED %s (%s) -- needs somebody at the board; run it by id\n", c.id, c.title)
+	}
+
 	if failed > 0 {
 		fmt.Printf("%d of %d case(s) FAILED\n", failed, len(toRun))
 		os.Exit(1)
 	}
-	fmt.Printf("all %d case(s) passed\n", len(toRun))
+	fmt.Printf("all %d case(s) passed", len(toRun))
+	if len(skipped) > 0 {
+		fmt.Printf(", %d skipped as manual", len(skipped))
+	}
+	fmt.Println()
 }
 
 func hasPrefix(s, p string) bool { return len(s) >= len(p) && s[:len(p)] == p }

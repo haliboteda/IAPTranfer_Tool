@@ -50,10 +50,31 @@ function Compare-Anchor {
     }
 
     Fail ("DIFF  {0}" -f $Name)
+
+    # Anchors built from many ";"-joined parts (the FMC pin map is 39 of them)
+    # are longer than any sensible line, and truncating them printed two
+    # identical-looking lines that differed somewhere past the cut. Report the
+    # parts that actually differ instead.
+    $parts = @($Sides.Keys | ForEach-Object { ,@($Sides[$_] -split ';') })
+    $isMultiPart = ($parts | Where-Object { $_.Count -gt 1 }).Count -eq $Sides.Count
+    $common = $null
+    if ($isMultiPart) {
+        $common = $parts[0]
+        foreach ($p in $parts) { $common = @($common | Where-Object { $p -contains $_ }) }
+    }
+
     foreach ($k in $Sides.Keys) {
         $v = $Sides[$k]
-        if ($v.Length -gt 120) { $v = $v.Substring(0, 117) + "..." }
-        Fail ("        {0,-46} {1}" -f $k, $v)
+        if ($isMultiPart) {
+            $only = @(($v -split ';') | Where-Object { $common -notcontains $_ })
+            Fail ("        {0,-46} only here: {1}" -f $k, ($only -join " "))
+        } else {
+            if ($v.Length -gt 120) { $v = $v.Substring(0, 117) + "..." }
+            Fail ("        {0,-46} {1}" -f $k, $v)
+        }
+    }
+    if ($isMultiPart) {
+        Write-Host ("        ({0} part(s) agree and are not shown)" -f @($common).Count)
     }
     $script:failed++
 }
@@ -67,6 +88,8 @@ $bootHand   = Join-Path $BOOT_REPO "IAPServer\IAP_boot_handoff.h"
 $coreHand   = Join-Path $CORE_LIVE "cores\arduino\stm32\IAP_boot_handoff.h"
 $toolLock   = Join-Path $TOOL_REPO "uploadlock.go"
 $coreDisc   = Join-Path $CORE_LIVE "tools\discovery\network_discovery.go"
+$bootFmc    = Join-Path $BOOT_REPO "Core\Src\fmc.c"
+$coreVariant = Join-Path $CORE_LIVE "variants\STM32H7xx\H743\variant_PLC_H743.h"
 $bootPwd    = Join-Path $BOOT_REPO "IAPServer\keys\iap_fixed_password.txt"
 $corePwd    = Join-Path $CORE_LIVE "libraries\OpenPLC_IAP\src\keys\iap_fixed_password.txt"
 $shipPwd    = Join-Path $CORE_LIVE "..\..\..\tools\STM32Tools\0.1.2\win\keys\iap_fixed_password.txt"
@@ -151,6 +174,37 @@ function Get-HandoffLayout([string]$Path) {
 Compare-Anchor "SRAM4 boot_handoff_t layout" @{
     "bootloader IAPServer/IAP_boot_handoff.h"  = Get-HandoffLayout $bootHand
     "core cores/arduino/stm32/IAP_boot_handoff.h" = Get-HandoffLayout $coreHand
+}
+
+# --- FMC pin map ------------------------------------------------------------
+# The variant header names the 39 SDRAM pins (FMC_RESERVED_*) so a user can see
+# what not to drive; fmc.c is where they are actually configured. That makes the
+# header a second copy, and a one-sided change makes it lie -- it would still
+# claim PE7 is a data line after PE7 stopped being one, which is worse than not
+# listing the pins at all, because E6's whole value is that the list is true.
+#
+# The variant's own FMC_RESERVED_PIN_COUNT assertion cannot catch this: it only
+# proves the header is self-consistent, and it stays self-consistent while fmc.c
+# moves underneath it.
+#
+# Normalised to a sorted set of FUNC=PIN on both sides:
+#   fmc.c    "  PE7   ------> FMC_D4"        -> D4=PE7
+#   variant  "#define FMC_RESERVED_D4  PE7"  -> D4=PE7
+function Get-FmcPinMap([string]$Path, [string]$Pattern, [int]$PinGroup, [int]$FuncGroup) {
+    if (-not (Test-Path $Path)) { return $null }
+    $pairs = @()
+    foreach ($m in [regex]::Matches((Get-Content $Path -Raw), $Pattern)) {
+        $pairs += ("{0}={1}" -f $m.Groups[$FuncGroup].Value, $m.Groups[$PinGroup].Value)
+    }
+    if ($pairs.Count -eq 0) { return $null }
+    # fmc.c carries the same block twice (MspInit and MspDeInit); dedupe rather
+    # than compare a doubled list against a single one.
+    return (($pairs | Sort-Object -Unique) -join ";")
+}
+
+Compare-Anchor "FMC pin map (39 SDRAM pins)" @{
+    "bootloader Core/Src/fmc.c"                = Get-FmcPinMap $bootFmc '(P[A-I]\d+)\s*-+>\s*FMC_(\w+)' 1 2
+    "core variants/.../variant_PLC_H743.h"     = Get-FmcPinMap $coreVariant '#define\s+FMC_RESERVED_(\w+)\s+(P[A-I]\d+)' 2 1
 }
 
 # --- upload lock ------------------------------------------------------------

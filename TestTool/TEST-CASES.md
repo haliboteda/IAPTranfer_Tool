@@ -31,7 +31,7 @@ TestTool/
     └── checklist.md      ← 出厂 / 量产验收单
 ```
 
-> **需求清单和完整的覆盖矩阵在 `open_plc_cube_ide/docs/ai/`** —— [REQUIREMENTS.md](../../open_plc_cube_ide/docs/ai/REQUIREMENTS.md) 说要做到什么，[TEST-PLAN.md](../../open_plc_cube_ide/docs/ai/TEST-PLAN.md) 说每条用例覆盖哪条需求、最近一次跑出什么结果、还欠哪些用例。
+> **需求清单和完整的覆盖矩阵在 `open_plc_cube_ide/docs/handover/`** —— [REQUIREMENTS.md](../../open_plc_cube_ide/docs/handover/REQUIREMENTS.md) 说要做到什么，[TEST-PLAN.md](../../open_plc_cube_ide/docs/handover/TEST-PLAN.md) 说每条用例覆盖哪条需求、最近一次跑出什么结果、还欠哪些用例。
 > **本文件只管判据和运行方法**（贴着代码走，跨仓不搬）。
 
 ⚠️ **机器相关的路径只允许出现在 `config/machine.ps1`。** 脚本里写死绝对路径、或用 `..\..\..\` 数上去，换台电脑或挪个目录就废 —— 这两种都犯过。
@@ -119,7 +119,44 @@ N5 的第二半判据同样重要：**上限要是限速器，不能是保险丝
 | ID | 验证什么 | 前置条件 | 判据 |
 |---|---|---|---|
 | **S1** | 签名无效的镜像被拒绝 | 设备停在 bootloader，需 `--bin` 和 `--password-file` | 传完后设备回 `Signature Failed`（或 `No Signature`） |
+| **S2** | 被**别的密钥**签过的镜像被拒绝 | 同 S1，另需 `--iaptool`（用它生成临时密钥并签名） | 同上。**外加**上传前 `getpubkey` 必须和临时密钥不同 |
+| **S3** | **已装好的** app 被改坏 → 启动期拒绝 | 板上有能启动的 app、ST-Link、**一个已签名的恢复镜像** | `metadata present` + `App signature invalid or absent`，且**没有** `** APP Mod` |
 | **G1** | 被拒绝的上传**不破坏已装好的 app** | 紧接 S1 之后复位 | 下次启动出现 `** APP Mod ...`，**不是** `no valid application`。用 `tools/run-case.ps1 -Case S1 -ThenReset` 跑 |
+
+```powershell
+.\tools\run-s3.ps1 -Bin <app.bin>       # 破坏 + 判定 + 自动恢复
+```
+
+**S3 是破坏性的，但自带恢复，而且恢复路径先证明后破坏** —— 脚本第 1/4 步先烧一次恢复镜像并看着板子起来，不通就拒绝往下走。
+
+⚠️ **S1 已经不能代替 S3。** SDRAM staging 之后，失败的上传根本不碰 app 区（那正是 G1），所以 S1 证明不了"已装好的 app 每次启动都被重新校验"。
+
+⚠️ **改一个字节要先擦扇区再写回完整镜像，不能直接改那个字节。** STM32H7 的 flash 每 256 位带 ECC，同一个字编程两次会让 ECC 变成两次的按位与，读出来是不可纠正错误并把 CPU 打进 fault —— bootloader 会在算哈希时崩掉，而不是干净地报签名不过。
+
+⚠️ **`App signature invalid or absent` 和 `no valid application` 出自同一个分支**（`IAPServer/IAP_server.c:482-494`），必然同时出现。区分"app 坏了"和"metadata 也没了"的是 `Bootloader state:` 那行的 `metadata present` / `absent`。
+
+**S1 和 S2 共用同一条上传路径**（`uploadWithSignature`）：认证 HMAC、CRC、分块 framing 全部是 IAPTool 会发的东西，**唯一不同的是那 64 字节签名**。S1 用 64 个零字节（没有任何密钥能产生），S2 用 `IAPTool sign` 拿一把临时密钥真实签出来的东西（格式完全合法，只是签方不对）。
+
+⚠️ **S2 上传前必须先 `getpubkey` 确认板子信的不是这把临时密钥。** 密钥是每次现生成的，撞上是不可能事件 —— 这道闸防的是将来有人把它改成固定密钥文件：那样用例不会报错，它会**真的把 `--bin` 指的东西刷进板子**。
+
+### 认证与重放（`nonce_replay.go`）
+
+| ID | 验证什么 | 前置条件 | 判据 |
+|---|---|---|---|
+| **AU1** | nonce 不重复，且**掉电后不从头开始** | 设备停在 bootloader；**要人工断电一次**；VBAT 电池在位 | 两阶段所有 nonce 互不相同；阶段内计数器恰好 +1；断电后的第一个计数器**严格大于**断电前最后一个 |
+
+板子没有硬件随机数，nonce 是 `计数器(4B) ‖ UID字0(4B) ‖ tick(4B) ‖ 0(4B)`（`IAPServer/iap_auth.c`）。**撑住重放保护的是唯一性，不是不可预测性** —— 攻击者真正需要的是 HMAC 密钥，那个从观察 nonce 得不到。唯一性完全依赖那个计数器活在 VBAT 供电的 RTC 备份寄存器里。
+
+```powershell
+.\tools\run-au1.ps1                 # 编排两个阶段，中间提示你拔电
+.\tools\run-au1.ps1 -Resume         # 阶段 1 已经跑过了，直接等断电
+```
+
+⚠️ **必须真断电，不能按复位。** 复位根本不碰备份域，所以只做复位的话，**一块 VBAT 已经没电的板子照样能通过** —— 而那正是这个用例要抓的板子。脚本靠板子自己的 UDP 发现应答判断断电是否真的发生（连续三次无应答才算），不靠人按回车。
+
+⚠️ **`nonce counter = N` 那行只在 bootloader 停下来时才打。** 板上有有效 app 的话，上电那次直接交权给 app，走不到那句 —— 它会出现在随后 `enter-bootloader` 的日志里。交叉核对要两份日志一起翻。
+
+⚠️ **`enter-bootloader.ps1` 的输出用 `6>&1` 抓，不是 `2>&1`。** 它全部走 `Write-Host`，那是信息流不是成功流；用 `2>&1` 抓到的是空字符串，而文字照样出现在控制台上。
 
 **IAPTool 按设计做不出这个用例** —— 它的 `getpubkey` 预检会在传输前就拦掉板子不会接受的镜像。所以 S1 直接驱动协议，但**加密部分 import 出货代码里的 `IAPTool/iapcrypto`**，不是另写一份：只有*签名*是故意错的（64 个零字节），认证 HMAC、CRC、分块framing 全部和 IAPTool 发的一模一样。
 
@@ -152,10 +189,28 @@ T1–T4 和 S1 都要求设备处于 bootloader 且以太网已起。三种办�
 |---|---|---|
 | `host/iapcrypto/` | 在 `IAPTranfer_Tool/` 下 `go test ./TestTool/...` | HMAC 原语对 RFC 4231 向量；派生公式 `HMAC-SHA256(password, machineID)`；同 UID 稳定、异 UID 必不同；一次完整挑战应答双方独立算出同一个 HMAC |
 | `host/bootloader_unit/` | `.\build.ps1` 或 `./build.sh`，需要 gcc/clang | 用 stub 在主机上编译**真实的** `sha256.c` / `iap_keyderive.c` / `iap_auth.c` 并跑断言 |
-| `host/fakeboard/` | `.\run-cases.ps1`，需要 python | IAPTool 在传输开始前的密钥匹配决策，六种情况。**每种在真板子上都要换一把 bootloader 密钥才能构造** |
+| `host/fakeboard/` | `.\run-cases.ps1`，需要 python | **K1–K6** IAPTool 在传输开始前的密钥匹配决策，六种情况。**每种在真板子上都要换一把 bootloader 密钥才能构造** |
+| `host/fakeboard/` | `.\run-downgrade.ps1`，需要 python | **DG1** 降级拦截，五种情况。每条都额外断言**板子有没有真的收到 `flash` 命令** —— 只看工具打了什么，挡不住"打印了拒绝然后照样上传" |
 | `host/crypto_ref/` | `.\run-checks.ps1`，需要 python | SHA-256 构造对 hashlib（309 向量）；IAPTool 真实签名交给一份独立的纯算术 P-256 验证器 |
+| `host/variant_check/` | `.\build.ps1`，需要 arduino-cli | **P4** Arduino 变体头的编译期断言。目前一个：FMC 保留脚表（39 个）自洽。**编不过就是变体头坏了，不是 sketch 坏了** |
+| `host/examples_build/` | `.\build.ps1`，需要 arduino-cli | **P5** 编译 core 自有库的**每一个 example**。⚠️ **约十分钟，故意不进 selfcheck** —— 见下 |
 
-每个目录有自己的 README，写清"为什么这条不能在板子上测"。
+### P5 · example 不能腐烂
+
+**什么时候跑**：改了 `open_plc_arduino` 的任何库之后，以及发版前。**不在 `selfcheck` 里** —— selfcheck 是"改完代码就跑"的东西，往里加十分钟只会让人不跑它。
+
+```powershell
+.\host\examples_build\build.ps1              # 全部
+.\host\examples_build\build.ps1 -Only SDRAM  # 只挑一个库
+```
+
+**为什么值得有**：example 是新用户编译的第一个东西，也是最后一个有人回头看的东西。API 改了名，example 还引用旧名，**除非有人正好去打开它，否则永远没人知道** —— 别的检查一条都盖不到，因为 example 不属于任何应用的构建。
+
+它上线第一次跑就抓到了一个真问题：`OpenPLC_KNX` 的 `getGroupObject()` 守卫漏了 `MASK_VERSION == 0x5780`，**而那是默认的 knxrole**。后果是默认配置下用不了 group object（KNX 应用编程的核心），且库自带的两个 example 用默认 FQBN 编不过。已修。
+
+⚠️ **只编译本项目自己的库**（`OpenPLC_*`）。上游 STM32duino 的库带着几百个给别的板子写的 example，编它们只会报出一堆没人打算修的失败。
+
+每个目录有自己那份说明（`HOST-C-TESTS.md` / `KEY-MATCH-AND-DOWNGRADE.md` / `CROSS-CHECK.md`），写清"为什么这条不能在板子上测"。**文件名要说出内容 —— 不要再叫 `README.md`。**
 
 `tools/` 下还有三个纯静态检查，不碰任何代码执行：`check-version-sync.ps1`（版本号三处一致）、`check-mirror-sync.ps1`（跨仓镜像 8 个锚点 + RTC 备份寄存器占用）、`check-core-sync.ps1`（core live 与 git 仓库）。它们对应发版检查单的 B1 / B2 / B3，以前是人工核对。
 
@@ -168,23 +223,59 @@ T1–T4 和 S1 都要求设备处于 bootloader 且以太网已起。三种办�
 | 目录 | 是什么 | 怎么用 |
 |---|---|---|
 | `rs232/SerialPort/` | UART + USB-CDC 回显 sketch | 用 Arduino IDE/CLI 编译上传，往端子 C05/C06 发字符看回显 |
+| `rs232/M5_SerialConflict/` | **M5**：`Serial4.begin()` 之后 `Serial_Test` 还能不能收 | `tools\run-m5.ps1`（自己编译、烧写、发字节、验回显） |
+| `sdram/SDRAM_Acceptance/` | **SD1**：`OpenPLC_SDRAM` 封装的 19 条断言 + 清零速率测量 | `tools\run-sdram.ps1` |
+
+### SD1 · SDRAM 封装（需求 E5）
+
+sketch 打 `RESULT <名字> PASS|FAIL` 和 `MEASURE <名字> <数>`，脚本按行判。**任何 FAIL、缺 `DONE`（说明跑一半挂了）、或一条 RESULT 都没有，都算失败。**
+
+最关键的一条是 **`alloc_is_zeroed`** —— 封装存在的全部理由就是把"用户自己 memset"这个义务收进库里。另外 `alloc_before_begin_returns_null` 是"四个链接脚本坑不存在了"的直接证据：**拿不到地址就碰不到没初始化的 SDRAM。**
+
+2026-08-17 实测：`begin()` 1.4 ms，清零 **91 MB/s**（清满 64MB ≈ 701 ms），`allocUninitialized()` 0 µs。
+
+### M5 · 诊断串口不被用户 sketch 掐掉（需求 E7）
+
+| 判据 | 前置条件 |
+|---|---|
+| sketch 调过 `Serial4.begin()` 之后，往端子发 5 个字节，`Serial_Test` **全部回显** | 板子在线、COM5 接在端子上、`$ARDUINO_CLI` 已配 |
+
+⚠️ **判据是"能收"不是"能打印"。** 修之前的故障模式恰恰是输出先看着正常。
+
+⚠️ **必须用 `Serial4`，不能用 `Serial`。** 当前 FQBN 是 `usb=CDCgen`，`Serial` 是 USB CDC，**碰不到 UART4** —— 拿 `Serial` 写的用例在**坏 core 上也会通过**。这个坑 2026-08-17 踩过：第一版用例在未修的 core 上跑出了干净的通过。
+
+⚠️ **在未修的 core 上触发这个缺陷会让板子失联**（app 挂死、UDP 不应答、IAP 够不着）。恢复：
+
+```powershell
+STM32_Programmer_CLI -c port=SWD mode=UR -e 1   # 擦掉 app 扇区，bootloader 会停下并起以太网
+```
+
+然后正常 IAP 烧一次。**没有 ST-Link 的时候不要去复现它。**
 
 ⚠️ 端子 C05/C06 是**真 RS-232 电平（±12V）**，接 TTL 适配器可能烧掉适配器。
 
-以后的 `rs485/` `can/` `knx/` 按同样方式各自一个目录，每个目录一份 README 写清"验证什么 / 前置条件 / 判据"。
+以后的 `rs485/` `can/` `knx/` 按同样方式各自一个目录，每个目录一份说明文件写清"验证什么 / 前置条件 / 判据"，名字取成 `RS485-ECHO.md` 这种能看出内容的。
 
 ## 未覆盖
 
-**完整的覆盖矩阵和每条待补用例的设计骨架在 [docs/ai/TEST-PLAN.md](../../open_plc_cube_ide/docs/ai/TEST-PLAN.md)**，这里只留摘要：
+**完整的覆盖矩阵和每条待补用例的设计骨架在 [docs/handover/TEST-PLAN.md](../../open_plc_cube_ide/docs/handover/TEST-PLAN.md)**，这里只留摘要：
 
 | ID | 内容 | 为什么还没做 |
 |---|---|---|
 | M3 | 两块板子的 MAC 不同 | ⛔ 手上只有一块板。**唯一的硬阻塞** |
-| S2 | 密钥不匹配（和 S1 分开） | 待做，成本低 |
-| S3 | 故意损坏已烧录的 app → 纯启动期签名失败 | 待做，需 ST-Link |
-| S4a/S4b | 掉电中断，拆成传输中 / 擦写中两半 | 要人工断电；S4b 窗口只剩几秒 |
-| AU1 | 板上 nonce 跨掉电不重复 | 待做。**C5 目前完全没有覆盖** |
-| DG1 | 降级被拦下 | 待做。**不需要板子**，fakeboard 加两个用例即可 |
+| S4a/S4b | 掉电中断，拆成传输中 / 擦写中两半 | 要人工断电 |
+
+**2026-08-17 已补上：** ~~S2~~（密钥不匹配）、~~S3~~（启动期签名失败）、~~AU1~~（nonce 跨掉电）、~~DG1~~（降级拦截，不需要板子）。
+
+### ⚠️ `IAPTool` 退出 ≠ 升级完成
+
+**写任何驱动烧写的自动化之前先读这条。** IAPTool 送完最后一个字节就打 `File transfer complete.` 并退出 —— 板子**此时才开始**校验、擦除 app 区、从 SDRAM 往 flash 写，要好几秒。那几秒里复位或断电会毁掉 app。
+
+判断升级真的完成，**要等板子自己说** `Checksum and signature OK. Rebooting...`。
+
+2026-08-17 就是这么踩到的：`run-s3.ps1` 在 IAPTool 退出后立刻 ST-Link 复位，正好落在擦写中间，把 app 毁了，然后报"恢复镜像起不来" —— 排查方向差点跑偏到固件上。
+
+**顺带**：这也说明 **S4b 的窗口比想象中好命中**，等 IAPTool 一退出就动手即可，不用掐秒表。
 
 ~~G1 上传失败后旧 app 仍可启动~~ —— **2026-08-17 已实测通过**，见下。
 

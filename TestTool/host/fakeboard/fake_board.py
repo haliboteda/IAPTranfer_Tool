@@ -10,13 +10,16 @@ This is NOT a bootloader model. It answers commands with fixed strings and does
 no verification whatsoever -- what is under test is IAPTool's behaviour, not the
 device's. Device behaviour is covered by the T/N/S cases against real hardware.
 
-Usage:  fake_board.py <pubkey-hex | "unknown"> [seconds] [--port N]
+Usage:  fake_board.py <pubkey-hex | "unknown"> [seconds] [--port N] [--fwver N]
 
   pubkey-hex   64-byte P-256 public key as 128 hex chars, returned by getpubkey
   "unknown"    answer getpubkey with "Unknown command", i.e. an old bootloader
   seconds      how long to stay up (default 25)
   --port       port to serve, default 56865 -- must match "server_port" in the
                local_config.json IAPTool reads, or the tool dials nothing
+  --fwver      encoded version to answer getversion with, default 3. The
+               downgrade cases (DG1) set this so the image being flashed can be
+               placed below, at, or above what the "device" already runs.
 """
 import socket
 import sys
@@ -27,11 +30,20 @@ UID = "003300343132511039333639"
 NONCE = "00112233445566778899aabbccddeeff"
 
 _argv = sys.argv[1:]
-PORT = 56865
-if "--port" in _argv:
-    i = _argv.index("--port")
-    PORT = int(_argv[i + 1])
-    del _argv[i:i + 2]
+
+
+def _take_opt(name, default):
+    global _argv
+    if name in _argv:
+        i = _argv.index(name)
+        value = _argv[i + 1]
+        del _argv[i:i + 2]
+        return value
+    return default
+
+
+PORT = int(_take_opt("--port", 56865))
+FWVER = str(_take_opt("--fwver", 3))
 
 PUBKEY = _argv[0] if len(_argv) > 0 else "unknown"
 LIFETIME = float(_argv[1]) if len(_argv) > 1 else 25.0
@@ -100,7 +112,7 @@ def handle_tcp(conn):
                 else:
                     conn.sendall(PUBKEY.encode())
             elif cmd == "getversion":
-                conn.sendall(b"3")
+                conn.sendall(FWVER.encode())
             elif cmd == "authchallenge":
                 conn.sendall(NONCE.encode())
             elif cmd.startswith("flash"):
@@ -137,7 +149,7 @@ def main():
         t.start()
 
     shown = PUBKEY[:16] + "..." if PUBKEY != "unknown" else "unknown"
-    log("ready on %d, pubkey=%s" % (PORT, shown))
+    log("ready on %d, pubkey=%s, getversion=%s" % (PORT, shown, FWVER))
     try:
         time.sleep(LIFETIME)
     except KeyboardInterrupt:
