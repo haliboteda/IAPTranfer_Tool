@@ -1,0 +1,28 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(git status *)",
+      "Bash(git log *)",
+      "Bash(git diff *)",
+      "Bash(git show *)",
+      "Bash(git remote -v)",
+      "Bash(git ls-files *)",
+      "Bash(git branch --list *)",
+      "Bash(go vet *)",
+      "Bash(go version *)",
+      "Bash(gofmt -l *)",
+      "Bash(command -v *)",
+      "Bash(arm-none-eabi-size *)",
+      "Bash(arm-none-eabi-gcc --version)",
+      "Bash(gcc --version)",
+      "Bash(arduino-cli version *)",
+      "Bash(python --version)",
+      "Bash(python3 --version)",
+      "PowerShell(git status *)",
+      "PowerShell(git log *)",
+      "PowerShell(git diff *)",
+      "PowerShell(git show *)",
+      "PowerShell(git remote -v)"
+    ]
+  }
+}

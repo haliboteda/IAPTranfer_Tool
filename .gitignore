@@ -10,3 +10,8 @@ TestTool/config/machine.ps1
 TestTool/config/machine.py
 __pycache__/
 *.pyc
+
+# .claude/settings.json IS committed -- it is the shared, machine-independent
+# permission allowlist. Only the local override is private. Listing it here
+# rather than relying on a global gitignore, which a new machine will not have.
+.claude/settings.local.json
