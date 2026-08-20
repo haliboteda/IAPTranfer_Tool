@@ -1,0 +1,22 @@
+# Python dependencies for TestTool.
+#
+# Only one entry, and that is deliberate: everything else the test scripts need
+# is in the standard library. Sockets, hashing, subprocesses and path handling
+# all have stdlib answers, so the rewrite tracked in
+# open_plc_cube_ide/docs/handover/Todo/M7-python-scripts.md adds no dependency
+# beyond this one.
+#
+#     pip install -r requirements.txt
+#
+# On Debian the distribution package works just as well and needs no venv:
+#
+#     apt install python3-serial
+#
+# Serial access on Linux additionally requires the user to be in the dialout
+# group. Without it every port open fails with a permission error, which reads
+# like a missing adapter rather than a missing group membership.
+#
+# Nothing imports pyserial until M7 step 5 puts the board-side scripts on it.
+# Until then the host-side checks run on a bare Python 3, and a missing pyserial
+# is reported by name as a SKIP rather than crashing.
+pyserial>=3.5
