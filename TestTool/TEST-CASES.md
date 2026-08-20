@@ -11,13 +11,21 @@ TestTool/
 ├── *.go                  ← 设备行为用例（T/S/N 系列），package main
 ├── config/
 │   ├── machine.ps1       ← 本机路径。换电脑只改这一个文件（gitignore）
-│   └── machine.example.ps1
+│   ├── machine.example.ps1
+│   ├── machine.py        ← 同上，Python 侧（gitignore）。M7 期间两份并存
+│   └── machine.example.py
+├── requirements.txt      ← 唯一的 pip 依赖：pyserial
 ├── tools/                ← 自动化工具，本身不是测试
 │   ├── _common.ps1       ← 共用：读 config、找工具链、开串口、判目标电压
+│   ├── common.py         ← 同上，Python 侧。`python tools/common.py --probe` = A0
 │   ├── selfcheck.ps1     ← ★ 所有不需要板子的检查，一条命令
 │   ├── check-version-sync.ps1  ← P1  版本号三处一致
 │   ├── check-mirror-sync.ps1   ← P2  跨仓镜像 8 锚点 + 备份寄存器占用
 │   ├── check-core-sync.ps1     ← P3  core live vs git 仓库
+│   ├── check-public-root.ps1   ← P6  公开根指纹没漂移
+│   ├── check_*.py              ← 上面四个的 Python 版（M7 第 2 步）
+│   ├── m7-compare.ps1          ← ★ 两版输出逐字节比对
+│   ├── m7-compare-faults.ps1   ← ★ 注入故障后再比一次
 │   ├── flash-bootloader.ps1
 │   └── serial-watch.ps1
 ├── host/                 ← 不需要板子，纯主机跑
@@ -252,6 +260,26 @@ bootloader 每次启动会在**当前生效的根就是随项目发布的那把�
 ⚠️ P6 还会检查 **`Debug/*.bin` 里到底有没有 `fw_pubkey.inc` 那把密钥**。因为换密钥有个静默陷阱：**普通复制/还原会保留源文件时间戳**，还原回来的 `.inc` 比 `.o` 旧，make 判定不用重编，于是**固件构建正常、启动正常、却带着旧的信任根**。2026-08-18 当场踩到过。
 
 ⚠️ **在客户的 fork 里这两者本来就该不一样** —— 那正是"有自己的根"的含义。这条检查属于本仓库，这里的默认密钥按定义就是公开的那把。
+
+### M7 · PowerShell 版和 Python 版必须给出同一个结论
+
+**只在 M7 改写期间存在**（见 `open_plc_cube_ide/docs/handover/Todo/M7-python-scripts.md`）。两个脚本，都不碰板子，随时可跑：
+
+```powershell
+.\tools\m7-compare.ps1            # 两版都当子进程跑，输出逐字节比对
+.\tools\m7-compare-faults.ps1     # 逐个注入故障，每次再比一遍
+```
+
+| | 判据 |
+|---|---|
+| `m7-compare.ps1` | 每一对的 **stdout 完全相同**，退出码相同。目前 4 对：version / mirror / core / public-root |
+| `m7-compare-faults.ps1` | 7 个故障用例，每个都要两版**同样红**；跑完 `$BOOT_REPO` 和 `$CORE_REPO` 的 `git status` 必须干净 |
+
+⚠️ **`m7-compare.ps1` 单独跑不算验收。** 一个什么都不检查、只打印同样文字的 Python 脚本能轻松通过它 —— 这就是 M5 那次"用例在未修的代码上跑出干净通过"的同一个形态。**故障注入那份才是判据**，它逼出的是 DIFF（单值和多段两种格式）、SKIP、ONLY-LIVE、ONLY-REPO 这些只有真在读文件才会走到的分支。
+
+⚠️ `m7-compare-faults.ps1` **会临时改 `$BOOT_REPO` 里的真实文件**（`RELEASE-NOTES.md`、`owner_slot.c`、`udp_server.c`、`fmc.c`），在 `finally` 里还原，最后自检两个仓库是否干净。**跑之前先把手头改动提交或 stash** —— 否则最后那一步分不清脏的是你的改动还是没还原干净。中途被打断时，`git -C $BOOT_REPO status` 就是恢复的起点。
+
+⚠️ `Known` 列表里的每一条"允许不同"都必须写清理由，且命中时会打印出来。**不要用放宽比对来消差异** —— 现在只有一条：`-Print` / `--print`，因为两边开关名字确实不同。
 
 > **`host/iapcrypto/` 之前是独立 Go module，待在 `Hardware/TestCase/` 下，靠 `replace IAPTool => ../../../IAPTranfer_Tool` 相对路径挂过来。**
 > 结果是 `go test ./...` 永远扫不到它 —— 2026-08-16 并入本 module 时才发现它**早就编译不过**（`iapcrypto.FixedPassword` 在密码改成运行时加载后就没了）。

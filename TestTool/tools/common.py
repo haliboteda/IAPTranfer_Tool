@@ -92,6 +92,21 @@ def Warn(t):    print(_paint(t, "33"))
 def Fail(t):    print(_paint(t, "31"))
 
 
+# ---------------------------------------------------------------- files
+def read_text(path):
+    """The equivalent of PowerShell's `Get-Content -Raw`.
+
+    Two details matter for M7's output comparison. newline="" keeps CRLF intact,
+    because Get-Content -Raw does and a regex capturing to end-of-line would
+    otherwise pick up a trailing \\r on one side only. And a UTF-8 BOM is
+    stripped, because PowerShell consumes it rather than handing it to the
+    caller -- left in, it would break a pattern anchored at the first character.
+    """
+    with open(str(path), "r", encoding="utf-8", errors="replace", newline="") as fh:
+        text = fh.read()
+    return text[1:] if text.startswith("﻿") else text
+
+
 # ---------------------------------------------------------------- paths
 def get_scratch_dir():
     """Scratch files (redirected stdout, oversized test images, phase-1 state).
@@ -269,7 +284,9 @@ def assert_target_reachable(cli):
     m = re.search(r"Voltage\s*:\s*(.+)$", probe, re.M)
     volt = m.group(1).strip() if m else "unknown"
     print("target voltage: %s" % volt)
-    if "No STM32 target found" in probe:
+    # PowerShell's -match is case-insensitive; matching case-sensitively here
+    # would let a differently-cased message through as "target reachable".
+    if re.search("No STM32 target found", probe, re.I):
         Fail("SWD cannot reach the MCU.")
         if volt.startswith("0.00"):
             Warn("  0.00V -> board unpowered, or ST-Link VTREF/VDD not wired.")
