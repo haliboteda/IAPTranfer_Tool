@@ -25,15 +25,18 @@ git clone git@github.com:haliboteda/open_plc_cube_ide.git
 | `TestTool/host/` | 不需要板子的检查：假板子、加密交叉验证、主机侧编译真实 bootloader C 源码 |
 | `TestTool/onboard/` | 跑在板子上的验证 sketch |
 | `TestTool/acceptance/checklist.md` | 出厂与发版验收单 |
-| `TestTool/config/machine.ps1` | **本机路径的唯一出处**，gitignored。模板是 `machine.example.ps1` |
+| `TestTool/config/machine.{ps1,py}` | **本机路径的唯一出处**，gitignored，且**两份都是生成的** |
+| `TestTool/tools/init_machine.py` | 生成上面那两份。**"这台机器有什么"的唯一记录是它里面的 `SETTINGS` 表**，没有模板可抄 |
 
 ## 开工前
 
 ```powershell
 cd TestTool
-Copy-Item config/machine.example.ps1 config/machine.ps1   # 然后编辑
+python tools/init_machine.py      # Linux 上是 python3。探测本机路径，写出两份配置
 pwsh ./tools/selfcheck.ps1        # Windows 上也可以 .\tools\selfcheck.ps1
 ```
+
+`init_machine.py` **不问问题**：探测得到的直接写，探测不到的点名说缺哪个、该怎么给（`--set NAME=VALUE`）。已有且仍然成立的值会保留，所以手工改过的地方重跑不会被冲掉；想让它重新找某一项用 `--redetect NAME`，只看不写用 `--check`。
 
 `selfcheck.ps1` 是**所有不需要板子的检查**，改完代码就该跑一遍 —— 上板调试一轮的成本高一个数量级。它的 **A0** 会打出这台机器上每一项工具解析成什么，**缺什么点名说缺什么**。
 
@@ -51,7 +54,7 @@ pwsh ./tools/selfcheck.ps1        # Windows 上也可以 .\tools\selfcheck.ps1
 | 板卡包平台目录 | `$A15_DIR`（`win`/`linux`/`macosx`） | 硬写 `win` |
 | CubeIDE 插件后缀 | `$CUBE_PLUG`（`win32`/`linux64`/`macos64`） | 硬写 `win32` |
 
-**遇到一个新的、只有本机知道的路径** —— 加进 `config/machine.example.ps1` 并告诉用户，不要硬编码，也不要猜。
+**遇到一个新的、只有本机知道的路径** —— 加进 `tools/init_machine.py` 的 `SETTINGS` 表（连同探测方式和一段说明），不要硬编码，也不要猜。加进去它就会在每台机器上被自动找出来，而不是变成又一条要人工填的说明。
 
 > ⚠️ 2026-08-19 的双平台改造**只在 Windows 上验证过**（selfcheck 12/12）。Linux 侧是逐条消除平台依赖做的，**没有真机验证**。
 

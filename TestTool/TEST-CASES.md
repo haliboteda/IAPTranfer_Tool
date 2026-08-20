@@ -10,12 +10,11 @@
 TestTool/
 ├── *.go                  ← 设备行为用例（T/S/N 系列），package main
 ├── config/
-│   ├── machine.ps1       ← 本机路径。换电脑只改这一个文件（gitignore）
-│   ├── machine.example.ps1
-│   ├── machine.py        ← 同上，Python 侧（gitignore）。M7 期间两份并存
-│   └── machine.example.py
+│   ├── machine.ps1       ← 本机路径（gitignore）。**生成的，不要手抄**
+│   └── machine.py        ← 同上，Python 侧。M7 期间两份并存，同一处生成
 ├── requirements.txt      ← 唯一的 pip 依赖：pyserial
 ├── tools/                ← 自动化工具，本身不是测试
+│   ├── init_machine.py   ← ★ 换电脑第一条命令。探测本机路径，写出上面两份
 │   ├── _common.ps1       ← 共用：读 config、找工具链、开串口、判目标电压
 │   ├── common.py         ← 同上，Python 侧。`python tools/common.py --probe` = A0
 │   ├── selfcheck.ps1     ← ★ 所有不需要板子的检查，一条命令
@@ -42,13 +41,15 @@ TestTool/
 > **需求清单和完整的覆盖矩阵在 `open_plc_cube_ide/docs/handover/`** —— [REQUIREMENTS.md](../../open_plc_cube_ide/docs/handover/REQUIREMENTS.md) 说要做到什么，[TEST-PLAN.md](../../open_plc_cube_ide/docs/handover/TEST-PLAN.md) 说每条用例覆盖哪条需求、最近一次跑出什么结果、还欠哪些用例。
 > **本文件只管判据和运行方法**（贴着代码走，跨仓不搬）。
 
-⚠️ **机器相关的路径只允许出现在 `config/machine.ps1`。** 脚本里写死绝对路径、或用 `..\..\..\` 数上去，换台电脑或挪个目录就废 —— 这两种都犯过。
+⚠️ **机器相关的路径只允许出现在 `config/machine.{ps1,py}`。** 脚本里写死绝对路径、或用 `..\..\..\` 数上去，换台电脑或挪个目录就废 —— 这两种都犯过。
+
+⚠️ **那两个文件是 `tools/init_machine.py` 生成的，不要手写、也没有模板可抄。** 需要一个新的本机路径时，把它连同探测方式加进那个脚本的 `SETTINGS` 表 —— 那里是"这台机器有什么"的唯一记录。以前的 `machine.example.*` 已删除：它和 `SETTINGS` 是同一份清单的两个出处，留着必然漂移。
 
 ## 快速开始
 
 ```powershell
-# 一次性：填本机路径
-Copy-Item config\machine.example.ps1 config\machine.ps1   # 然后编辑
+# 一次性：探测本机路径，生成 config/machine.ps1 和 machine.py
+python tools\init_machine.py      # Linux 上是 python3
 
 # 所有不需要板子的检查。改完代码先跑这个，全绿了再考虑上板
 .\tools\selfcheck.ps1

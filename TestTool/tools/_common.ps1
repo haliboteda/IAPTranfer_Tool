@@ -25,7 +25,8 @@ $CUBE_PLUG = @{ windows = "win32";   linux = "linux64"; macos = "macos64" }[$PLA
 $cfg = Join-Path $PSScriptRoot (Join-Path ".." (Join-Path "config" "machine.ps1"))
 if (-not (Test-Path $cfg)) {
     Write-Host "config/machine.ps1 is missing." -ForegroundColor Red
-    Write-Host "Copy config/machine.example.ps1 to config/machine.ps1 and fill in this machine's paths." -ForegroundColor Yellow
+    Write-Host "Generate it -- this machine's paths are detected, not typed:" -ForegroundColor Yellow
+    Write-Host "    python3 tools/init_machine.py        (python on Windows)" -ForegroundColor Yellow
     exit 1
 }
 . $cfg

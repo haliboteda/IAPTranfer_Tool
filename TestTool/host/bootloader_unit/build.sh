@@ -13,10 +13,16 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 # rather than being duplicated into a .sh twin that would drift.
 CFG="$HERE/../../config/machine.ps1"
 if [ ! -f "$CFG" ]; then
-	echo "error: config/machine.ps1 is missing - copy config/machine.example.ps1 and fill it in." >&2
+	echo "error: config/machine.ps1 is missing. Generate it -- this machine's" >&2
+	echo "       paths are detected, not typed:  python3 tools/init_machine.py" >&2
 	exit 1
 fi
-BOOT_REPO="$(sed -n 's/^\$BOOT_REPO[[:space:]]*=[[:space:]]*"\(.*\)".*/\1/p' "$CFG" | head -1)"
+# Both quote styles: hand-written configs used double quotes, and the generated
+# one uses single quotes so that a $ or a backtick in a path cannot be
+# interpolated by PowerShell. Reading only one style would leave this failing
+# with an empty BOOT_REPO and no clue why.
+BOOT_REPO="$(sed -n -e "s/^\\\$BOOT_REPO[[:space:]]*=[[:space:]]*'\\(.*\\)'.*/\\1/p" \
+                    -e 's/^\$BOOT_REPO[[:space:]]*=[[:space:]]*"\(.*\)".*/\1/p' "$CFG" | head -1)"
 if [ -z "$BOOT_REPO" ]; then
 	echo "error: \$BOOT_REPO not found in $CFG" >&2
 	exit 1

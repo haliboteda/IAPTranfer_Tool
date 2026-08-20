@@ -13,7 +13,7 @@ $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 # it was wrong on any machine with a different layout anyway.
 $cfg = Join-Path $Here "..\..\config\machine.ps1"
 if (-not (Test-Path $cfg)) {
-    Write-Error "config/machine.ps1 is missing - copy config/machine.example.ps1 and fill it in."
+    Write-Error "config/machine.ps1 is missing. Generate it -- this machine's paths are detected, not typed:  python tools/init_machine.py"
     exit 1
 }
 . $cfg

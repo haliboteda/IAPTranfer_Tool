@@ -47,8 +47,10 @@ def _load_machine():
     path = Path(__file__).resolve().parent.parent / "config" / "machine.py"
     if not path.exists():
         print("config/machine.py is missing.", file=sys.stderr)
-        print("Copy config/machine.example.py to config/machine.py and fill in "
-              "this machine's paths.", file=sys.stderr)
+        print("Generate it -- this machine's paths are detected, not typed:",
+              file=sys.stderr)
+        print("    python3 tools/init_machine.py        (python on Windows)",
+              file=sys.stderr)
         sys.exit(1)
     import importlib.util
     spec = importlib.util.spec_from_file_location("machine", path)
