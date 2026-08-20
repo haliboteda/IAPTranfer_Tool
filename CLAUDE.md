@@ -36,7 +36,11 @@ python tools/init_machine.py      # Linux 上是 python3。探测本机路径，
 pwsh ./tools/selfcheck.ps1        # Windows 上也可以 .\tools\selfcheck.ps1
 ```
 
-`init_machine.py` **不问问题**：探测得到的直接写，探测不到的点名说缺哪个、该怎么给（`--set NAME=VALUE`）。已有且仍然成立的值会保留，所以手工改过的地方重跑不会被冲掉；想让它重新找某一项用 `--redetect NAME`，只看不写用 `--check`。
+`init_machine.py` **先搜，搜不到才问**，提问时会说这东西是什么、已经找过哪些地方、正确答案长什么样。已有且仍然成立的值会保留，所以手工改过的地方重跑不会被冲掉；`--redetect NAME` 重新找某一项，`--check` 只看不写，`--set NAME=VALUE` 直接给答案。
+
+⚠️ **在脚本或 AI 会话里调用它时，提问会自动关掉**（靠 `CLAUDECODE` / `AI_AGENT` / `CI` / `GIT_TERMINAL_PROMPT=0` 这些标记判断，因为**这些环境里 `isatty()` 也返回 True**，光看它会挂住）。需要的话用 `--no-input` 明确关闭，`--ask` 强制打开。
+
+`tools/test_init_machine.py` 测的就是提问那段逻辑 —— 它按定义没法在自动化里跑到，所以引号剥离、`~` 展开、安装根目录校验这些最容易写错的地方靠它兜。
 
 `selfcheck.ps1` 是**所有不需要板子的检查**，改完代码就该跑一遍 —— 上板调试一轮的成本高一个数量级。它的 **A0** 会打出这台机器上每一项工具解析成什么，**缺什么点名说缺什么**。
 

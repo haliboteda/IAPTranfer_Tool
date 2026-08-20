@@ -14,7 +14,8 @@ TestTool/
 │   └── machine.py        ← 同上，Python 侧。M7 期间两份并存，同一处生成
 ├── requirements.txt      ← 唯一的 pip 依赖：pyserial
 ├── tools/                ← 自动化工具，本身不是测试
-│   ├── init_machine.py   ← ★ 换电脑第一条命令。探测本机路径，写出上面两份
+│   ├── init_machine.py   ← ★ 换电脑第一条命令。先探测，搜不到才问你
+│   ├── test_init_machine.py ← init_machine 提问逻辑的单元测试
 │   ├── _common.ps1       ← 共用：读 config、找工具链、开串口、判目标电压
 │   ├── common.py         ← 同上，Python 侧。`python tools/common.py --probe` = A0
 │   ├── selfcheck.ps1     ← ★ 所有不需要板子的检查，一条命令
@@ -42,6 +43,8 @@ TestTool/
 > **本文件只管判据和运行方法**（贴着代码走，跨仓不搬）。
 
 ⚠️ **机器相关的路径只允许出现在 `config/machine.{ps1,py}`。** 脚本里写死绝对路径、或用 `..\..\..\` 数上去，换台电脑或挪个目录就废 —— 这两种都犯过。
+
+⚠️ **`init_machine.py` 的提问逻辑有单元测试**：`python tools/test_init_machine.py`（8 个用例）。它按定义在自动化里跑不到 —— 提问只在"stdin 是终端且环境无自动化标记"时才发生 —— 所以引号剥离、`~` 展开、安装根目录校验这些只能靠替换 `input()` 来测。**在这台机器上没有真 CubeIDE / Arduino IDE 时它报 SKIP 并说明原因**，不假装通过。
 
 ⚠️ **那两个文件是 `tools/init_machine.py` 生成的，不要手写、也没有模板可抄。** 需要一个新的本机路径时，把它连同探测方式加进那个脚本的 `SETTINGS` 表 —— 那里是"这台机器有什么"的唯一记录。以前的 `machine.example.*` 已删除：它和 `SETTINGS` 是同一份清单的两个出处，留着必然漂移。
 

@@ -1,12 +1,24 @@
 """Work out what this machine has, and write config/machine.py and machine.ps1.
 
-    python3 tools/init_machine.py --check            look, change nothing
-    python3 tools/init_machine.py                    detect and write
+    python3 tools/init_machine.py                    detect, ask for the rest, write
+    python3 tools/init_machine.py --check            look, change nothing, ask nothing
+    python3 tools/init_machine.py --no-input         detect only; report what is missing
     python3 tools/init_machine.py --set CUBEIDE=/opt/st/stm32cubeide_1.10.0
     python3 tools/init_machine.py --redetect CUBEIDE forget a kept value and look again
 
-This is the first thing to run on a new machine, before selfcheck. It replaces
-editing a template by hand, which had three failure modes worth naming:
+This is the first thing to run on a new machine, before selfcheck. It searches
+first and only asks about what it could not find, showing what the thing is,
+where it already looked, and what a right answer looks like on this platform.
+
+It asks ONLY when stdin is a terminal AND the environment does not look
+automated (CLAUDECODE, AI_AGENT, CI, GITHUB_ACTIONS, INIT_MACHINE_NO_INPUT,
+GIT_TERMINAL_PROMPT=0). Both tests are needed: an agent or a CI job can hold a
+real console, so isatty() alone returns True there, and a prompt nobody is
+watching hangs rather than failing. --ask overrides; --no-input forces off.
+Whenever it does not ask, it says which of those reasons applied.
+
+It replaces editing a template by hand, which had three failure modes worth
+naming:
 
   - The template carries a Windows and a Linux value for every path and asks
     you to delete one. Forgetting is the common case, and it surfaces later as
@@ -20,8 +32,6 @@ editing a template by hand, which had three failure modes worth naming:
 Values already in config/machine.py are KEPT when they still make sense on this
 platform and still exist on disk, so a deliberate choice survives a re-run. Use
 --redetect to drop one, or --set to overwrite it.
-
-Nothing here is interactive: it prints what it could not find and what to pass.
 """
 
 import argparse
@@ -134,18 +144,23 @@ def detect_core_live():
     return newest(Path(a15) / "packages" / "OpenPLC_Alpha" / "hardware" / "stm32" / "*")
 
 
-def detect_cubeide():
+def cubeide_roots():
+    """Kept out of the detector so the prompt can show where it looked. A person
+    being asked to paste a path deserves to know which places were already
+    tried."""
     if IS_WIN:
-        roots = [r"C:\ST\STM32CubeIDE*", r"D:\ST\STM32CubeIDE*", r"E:\ST\STM32CubeIDE*",
-                 r"C:\Program Files\STMicroelectronics\STM32CubeIDE*",
-                 r"C:\Program Files (x86)\STMicroelectronics\STM32CubeIDE*",
-                 str(Path(os.environ.get("LOCALAPPDATA", "x")) / "Programs" / "STM32CubeIDE*")]
-    elif PLATFORM == "macos":
-        roots = ["/Applications/STM32CubeIDE*", str(HOME / "Applications" / "STM32CubeIDE*")]
-    else:
-        roots = ["/opt/st/stm32cubeide*", "/opt/stm32cubeide*", "/usr/local/stm32cubeide*",
-                 str(HOME / "st" / "stm32cubeide*"), str(HOME / "stm32cubeide*")]
-    for r in roots:
+        return [r"C:\ST\STM32CubeIDE*", r"D:\ST\STM32CubeIDE*", r"E:\ST\STM32CubeIDE*",
+                r"C:\Program Files\STMicroelectronics\STM32CubeIDE*",
+                r"C:\Program Files (x86)\STMicroelectronics\STM32CubeIDE*",
+                str(Path(os.environ.get("LOCALAPPDATA", "x")) / "Programs" / "STM32CubeIDE*")]
+    if PLATFORM == "macos":
+        return ["/Applications/STM32CubeIDE*", str(HOME / "Applications" / "STM32CubeIDE*")]
+    return ["/opt/st/stm32cubeide*", "/opt/stm32cubeide*", "/usr/local/stm32cubeide*",
+            str(HOME / "st" / "stm32cubeide*"), str(HOME / "stm32cubeide*")]
+
+
+def detect_cubeide():
+    for r in cubeide_roots():
         for hit in sorted(glob.glob(r)):
             # The install root is the directory holding STM32CubeIDE/plugins.
             # Matching on the name alone picks up shortcuts and unpacked
@@ -155,20 +170,22 @@ def detect_cubeide():
     return None
 
 
+def ide_roots():
+    if IS_WIN:
+        return [str(Path(os.environ.get("LOCALAPPDATA", "x")) / "Programs" / "Arduino IDE"),
+                r"C:\Program Files\Arduino IDE", r"D:\Soft\arduino*", r"C:\arduino*",
+                r"D:\arduino*", r"C:\Program Files (x86)\Arduino IDE"]
+    if PLATFORM == "macos":
+        return ["/Applications/Arduino IDE.app/Contents"]
+    return ["/opt/arduino-ide", "/usr/share/arduino-ide", "/usr/local/arduino-ide",
+            str(HOME / ".local" / "share" / "arduino-ide"),
+            str(HOME / "arduino-ide*"), "/opt/arduino*"]
+
+
 def detect_ide():
     """Arduino IDE 2.x, identified by the arduino-cli it ships -- that binary is
     the only part of it any script here uses."""
-    if IS_WIN:
-        roots = [str(Path(os.environ.get("LOCALAPPDATA", "x")) / "Programs" / "Arduino IDE"),
-                 r"C:\Program Files\Arduino IDE", r"D:\Soft\arduino*", r"C:\arduino*",
-                 r"D:\arduino*", r"C:\Program Files (x86)\Arduino IDE"]
-    elif PLATFORM == "macos":
-        roots = ["/Applications/Arduino IDE.app/Contents"]
-    else:
-        roots = ["/opt/arduino-ide", "/usr/share/arduino-ide", "/usr/local/arduino-ide",
-                 str(HOME / ".local" / "share" / "arduino-ide"),
-                 str(HOME / "arduino-ide*"), "/opt/arduino*"]
-    for r in roots:
+    for r in ide_roots():
         for hit in sorted(glob.glob(r)):
             if (Path(hit) / "resources/app/lib/backend/resources" / ("arduino-cli" + EXE)).exists():
                 return hit
@@ -367,6 +384,157 @@ RESOLVED = {}
 SOURCE = {}
 NOTES = []
 
+# ---------------------------------------------------------------- asking
+# What to tell someone who has to paste a path: what the thing is, where this
+# script already looked, and what a right answer looks like here. Without the
+# second line the reply to "not found" is reasonably "but it IS installed".
+EXAMPLES = {
+    "windows": {
+        "BOOT_REPO": r"E:\WorkSpace\Schaeffer-AG\open_plc_cube_ide",
+        "CORE_REPO": r"E:\WorkSpace\Schaeffer-AG\open_plc_arduino",
+        "TOOL_REPO": r"E:\WorkSpace\Schaeffer-AG\IAPTranfer_Tool",
+        "A15": r"C:\Users\you\AppData\Local\Arduino15",
+        "CORE_LIVE": r"C:\Users\you\AppData\Local\Arduino15\packages\OpenPLC_Alpha\hardware\stm32\0.1.3-pre",
+        "CUBEIDE": r"D:\ST\STM32CubeIDE_1.10.0",
+        "IDE": r"D:\Soft\arduino-2",
+        "ARDUINO_CLI": r"D:\Soft\arduino-2\resources\app\lib\backend\resources\arduino-cli.exe",
+        "ARDUINO_CLI_CONFIG": r"C:\Users\you\.arduinoIDE\arduino-cli.yaml",
+        "HOST_CC": r"D:\Soft\mingw64\bin\gcc.exe",
+        "WORKSPACE": r"E:\WorkSpace\Schaeffer-AG",
+        "LOG_PORTS": "COM5,COM4",
+        "CDC_PORT": "COM6",
+    },
+    "posix": {
+        "BOOT_REPO": "/home/you/Documents/WorkSpace/open_plc_cube_ide",
+        "CORE_REPO": "/home/you/Documents/WorkSpace/open_plc_arduino",
+        "TOOL_REPO": "/home/you/Documents/WorkSpace/IAPTranfer_Tool",
+        "A15": "/home/you/.arduino15",
+        "CORE_LIVE": "/home/you/.arduino15/packages/OpenPLC_Alpha/hardware/stm32/0.1.3-pre",
+        "CUBEIDE": "/opt/st/stm32cubeide_1.10.0",
+        "IDE": "/opt/arduino-ide",
+        "ARDUINO_CLI": "/opt/arduino-ide/resources/app/lib/backend/resources/arduino-cli",
+        "ARDUINO_CLI_CONFIG": "/home/you/.arduinoIDE/arduino-cli.yaml",
+        "HOST_CC": "/usr/bin/gcc",
+        "WORKSPACE": "/home/you/Documents/WorkSpace",
+        "LOG_PORTS": "/dev/ttyUSB0,/dev/ttyACM0",
+        "CDC_PORT": "/dev/ttyACM1",
+    },
+}
+
+WHAT_IT_IS = {
+    "BOOT_REPO": "the open_plc_cube_ide clone -- bootloader plus the shared docs",
+    "CORE_REPO": "the open_plc_arduino clone -- the board package under git",
+    "TOOL_REPO": "this repo, IAPTranfer_Tool",
+    "A15": "Arduino's data directory, the one holding packages/",
+    "CORE_LIVE": "the installed OpenPLC_Alpha board package the IDE compiles against",
+    "CUBEIDE": "the STM32CubeIDE install ROOT -- the directory that contains STM32CubeIDE/plugins",
+    "WORKSPACE": "the Eclipse workspace holding the bootloader project",
+    "IDE": "the Arduino IDE 2.x install ROOT -- the directory containing resources/app",
+    "ARDUINO_CLI": "the arduino-cli that ships inside the IDE (not a standalone release)",
+    "ARDUINO_CLI_CONFIG": "arduino-cli.yaml, which points the CLI at Arduino15 and user libraries",
+    "HOST_CC": "a modern gcc or clang for the host-side C tests (GCC 5 or newer)",
+    "LOG_PORTS": "serial port(s) carrying the bootloader/app printf, most likely first",
+    "CDC_PORT": "the board's USB CDC port, when it is enumerated",
+    "BOARD_IP": "the board's IP address",
+    "IAPTOOL": "a specific IAPTool build; normally left empty so it is found by wildcard",
+}
+
+
+def searched_in(key):
+    if key == "CUBEIDE":
+        return cubeide_roots()
+    if key == "IDE":
+        return ide_roots()
+    if key == "CORE_LIVE":
+        a15 = RESOLVED.get("A15") or "<A15>"
+        return [str(Path(a15) / "packages/OpenPLC_Alpha/hardware/stm32/*")]
+    if key in ("BOOT_REPO", "CORE_REPO", "TOOL_REPO"):
+        return ["next to %s, and one level further out" % TOOL_REPO_GUESS.parent]
+    if key == "HOST_CC":
+        return ["gcc or clang on PATH"] + (
+            [r"C:\mingw64\bin", r"C:\msys64\mingw64\bin", r"D:\Soft\mingw64\bin"] if IS_WIN else [])
+    if key == "LOG_PORTS":
+        return [r"HKLM\HARDWARE\DEVICEMAP\SERIALCOMM"] if IS_WIN else \
+               ["/dev/ttyUSB*", "/dev/ttyACM*"]
+    return []
+
+
+def validate(key, value):
+    """Catch the paste that is one directory off, which is the likely mistake
+    for the two settings whose right answer is an install root."""
+    p = Path(value)
+    if key == "CUBEIDE":
+        if not (p / "STM32CubeIDE" / "plugins").is_dir():
+            return False, "no STM32CubeIDE/plugins under it -- this is probably one level too high or too low"
+    if key == "IDE":
+        if not (p / "resources/app/lib/backend/resources" / ("arduino-cli" + EXE)).exists():
+            return False, "no bundled arduino-cli under it -- expected resources/app/lib/backend/resources/"
+    if key == "A15":
+        if not (p / "packages").is_dir():
+            return False, "no packages/ under it -- that directory is what makes this Arduino's data dir"
+    return True, ""
+
+
+def ask_for(key, kind, required):
+    """Ask a human. Returns a value, or None if they chose to skip.
+
+    Never called unless stdin is a terminal: prompting a pipe would hang a
+    script that was meant to be automated, and this one is run from automation
+    at least as often as by hand.
+    """
+    ex = EXAMPLES["windows" if IS_WIN else "posix"].get(key)
+    print()
+    Warn("  %s was not found." % key)
+    if key in WHAT_IT_IS:
+        print("    what it is : %s" % WHAT_IT_IS[key])
+    where = searched_in(key)
+    if where:
+        print("    looked in  : %s" % where[0])
+        for w in where[1:]:
+            print("                 %s" % w)
+    if ex:
+        print("    example    : %s" % ex)
+    if kind == "ports":
+        print("    format     : comma-separated, most likely first")
+
+    hint = "path" if kind != "ports" else "port(s)"
+    for _ in range(5):
+        try:
+            raw = input("    paste the %s (Enter to skip): " % hint).strip()
+        except (EOFError, KeyboardInterrupt):
+            print()
+            return None
+        if not raw:
+            if required:
+                Warn("    nothing works without %s. Enter again to give up." % key)
+                try:
+                    if not input("    paste the %s: " % hint).strip():
+                        return None
+                except (EOFError, KeyboardInterrupt):
+                    return None
+                continue
+            return None
+
+        # Explorer and most file managers copy paths wrapped in quotes, and a
+        # tilde is not expanded by anything when it arrives as text.
+        raw = raw.strip().strip('"').strip("'")
+        raw = os.path.expanduser(os.path.expandvars(raw))
+
+        if kind == "ports":
+            return [p.strip() for p in raw.split(",") if p.strip()]
+        if kind == "plain":
+            return raw
+        if not Path(raw).exists():
+            Fail("    that path does not exist: %s" % raw)
+            continue
+        ok, why = validate(key, raw)
+        if not ok:
+            Fail("    %s" % why)
+            continue
+        return raw
+    Warn("    giving up on %s" % key)
+    return None
+
 
 # ---------------------------------------------------------------- existing
 def load_existing():
@@ -497,7 +665,34 @@ def main():
                     help="ignore the current value for NAME and detect it again")
     ap.add_argument("--no-powershell", action="store_true",
                     help="write only machine.py")
+    ap.add_argument("--no-input", action="store_true",
+                    help="never ask; just report what could not be found")
+    ap.add_argument("--ask", action="store_true",
+                    help="ask even when the environment looks automated")
     args = ap.parse_args()
+
+    # Asking is the default, but only when somebody is there to answer. A prompt
+    # written to a pipe raises EOFError and is handled; a prompt written to a
+    # console that nobody is watching just hangs, which is worse, and that is
+    # exactly the shape of an agent or CI job holding a real console. isatty()
+    # returns True in those, so it cannot be the only test.
+    markers = [v for v in ("CLAUDECODE", "AI_AGENT", "CI", "GITHUB_ACTIONS",
+                           "INIT_MACHINE_NO_INPUT") if os.environ.get(v)]
+    if os.environ.get("GIT_TERMINAL_PROMPT") == "0":
+        markers.append("GIT_TERMINAL_PROMPT=0")
+    automated = bool(markers) and not args.ask
+
+    interactive = sys.stdin.isatty() and not automated and not args.no_input and not args.check
+    why_not = None
+    if not interactive:
+        if args.check:
+            why_not = "--check never asks"
+        elif args.no_input:
+            why_not = "--no-input was passed"
+        elif automated:
+            why_not = "this looks automated (%s) -- pass --ask to override" % ", ".join(markers)
+        elif not sys.stdin.isatty():
+            why_not = "stdin is not a terminal"
 
     forced = {}
     for item in args.set:
@@ -522,44 +717,80 @@ def main():
     existing = load_existing()
     redetect = {r.upper() for r in args.redetect}
 
-    Section("settings")
-    missing_required, missing_optional = [], []
-    for entry in SETTINGS:
-        if entry[0] == "__section__":
-            continue
-        key, kind, detect, required, _ = entry
+    def is_empty(v):
+        return v is None or v == "" or v == []
 
+    entries = [e for e in SETTINGS if e[0] != "__section__"]
+
+    # Pass 1: forced value, or a previous value still worth keeping, or detection.
+    # In SETTINGS order, so a detector may use what an earlier one resolved --
+    # CORE_LIVE needs A15, ARDUINO_CLI needs IDE.
+    for key, kind, detect, required, _ in entries:
         if key in forced:
             value, source = forced[key], "given"
             if kind == "ports":
                 value = [p.strip() for p in value.split(",") if p.strip()]
             elif kind == "plain" and str(value).isdigit():
                 value = int(value)
+            # A --set value is taken as given -- the caller may be pointing at
+            # something not installed yet -- but a typo must not pass in
+            # silence. That is an hour of debugging the wrong thing.
+            elif kind == "path" and not Path(str(value)).exists():
+                NOTES.append("%s was given as %s, which does not exist" % (key, value))
         elif key not in redetect and keepable(key, kind, existing.get(key)):
             value, source = existing[key], "kept"
         else:
             value, source = detect(), "detected"
-            if value is None and key in existing and keepable(key, kind, existing.get(key)):
+            # Falling back to the previous value protects a hand-set path from a
+            # detector that regressed -- but NOT when --redetect asked for this
+            # one specifically. Restoring it there would ignore the request and
+            # report success for something that did not happen.
+            if (value is None and key not in redetect
+                    and key in existing and keepable(key, kind, existing.get(key))):
                 value, source = existing[key], "kept"
-
         RESOLVED[key] = value
         SOURCE[key] = source
 
-        if value is None or value == "" or value == []:
-            # IAPTOOL, CDC_PORT and friends are legitimately empty.
+    # Pass 2: ask for what is still missing. Detection runs once more first --
+    # an answer given a moment ago can be all a later detector was waiting for,
+    # so supplying A15 by hand should not also mean supplying CORE_LIVE.
+    if interactive:
+        pending = [(k, ki, d, r) for k, ki, d, r, _ in entries
+                   if is_empty(RESOLVED[k]) and k not in ("IAPTOOL", "CDC_PORT")]
+        if pending:
+            Section("not found automatically -- paste them in")
+            print("  Enter alone skips one. Skipping only limits what can run;")
+            print("  selfcheck names every check it had to skip and why.")
+        for key, kind, detect, required in pending:
+            again = detect()
+            if not is_empty(again):
+                RESOLVED[key] = again
+                SOURCE[key] = "detected"
+                Ok("  %-19s %-9s %s" % (key, "detected", again))
+                continue
+            answer = ask_for(key, kind, required)
+            if not is_empty(answer):
+                RESOLVED[key] = answer
+                SOURCE[key] = "pasted"
+
+    Section("settings")
+    missing_required, missing_optional = [], []
+    for key, kind, _detect, required, _ in entries:
+        value, source = RESOLVED[key], SOURCE[key]
+        if is_empty(value):
+            # IAPTOOL and CDC_PORT are meant to be empty; anything else that
+            # came up empty is a thing this machine does not have.
             if required:
                 Warn("  %-19s %-9s MISSING" % (key, ""))
                 missing_required.append(key)
             else:
                 print("  %-19s %-9s %s" % (key, "", "(empty)"))
-                # IAPTOOL and CDC_PORT are meant to be empty; anything else that
-                # came up empty is a thing this machine does not have.
                 if key not in ("IAPTOOL", "CDC_PORT"):
                     missing_optional.append(key)
             continue
         shown = ", ".join(str(v) for v in value) if isinstance(value, list) else str(value)
         line = "  %-19s %-9s %s" % (key, source, shown)
-        if source == "detected":
+        if source in ("detected", "pasted"):
             Ok(line)
         else:
             print(line)
@@ -575,9 +806,13 @@ def main():
         Fail("  these have no value and nothing works without them:")
         for k in missing_required:
             Fail("    %s" % k)
-        Warn("  pass them explicitly, for example:")
+        runner = "python" if IS_WIN else "python3"
+        if interactive:
+            Warn("  they were skipped at the prompt. Re-run and paste them, or:")
+        else:
+            Warn("  not asked for, because %s. Either fix that or pass them:" % why_not)
         Warn("    %s tools/init_machine.py --set %s=/path/to/it"
-             % ("python" if IS_WIN else "python3", missing_required[0]))
+             % (runner, missing_required[0]))
         return 1
 
     if missing_optional:
@@ -585,7 +820,11 @@ def main():
         for k in missing_optional:
             Warn("  %s" % k)
         Warn("  open_plc_cube_ide/CLAUDE.md says what each one is and where to get it.")
-        Warn("  Install it and re-run, or pass --set %s=..." % missing_optional[0])
+        if interactive:
+            Warn("  Install one and re-run, or pass --set %s=..." % missing_optional[0])
+        else:
+            Warn("  Not asked for, because %s." % why_not)
+            Warn("  Install it and re-run, or pass --set %s=..." % missing_optional[0])
 
     Section("files")
     targets = [("machine.py", render_python(RESOLVED))]
