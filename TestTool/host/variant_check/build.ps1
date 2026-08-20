@@ -9,7 +9,7 @@
 # Exit 0 = every sketch compiled, 1 = at least one did not, 2 = prerequisites
 # missing.
 
-. "$PSScriptRoot\..\..\tools\_common.ps1"
+. "$PSScriptRoot/..\..\tools\_common.ps1"
 
 if (-not $ARDUINO_CLI -or -not (Test-Path $ARDUINO_CLI)) {
     Fail "arduino-cli not found. Set `$ARDUINO_CLI in config/machine.ps1"

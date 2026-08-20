@@ -13,7 +13,7 @@
 # Anchors that are NOT checked here are listed at the bottom of the output, so
 # "all green" never reads as "everything is covered".
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 $script:failed  = 0
 $script:skipped = 0
@@ -79,20 +79,23 @@ function Compare-Anchor {
     $script:failed++
 }
 
-$bootUdp    = Join-Path $BOOT_REPO "IAPServer\udp_server.c"
-$coreUdp    = Join-Path $CORE_LIVE "libraries\OpenPLC_IAP\src\udp_server.c"
-$bootEth    = Join-Path $BOOT_REPO "LWIP\Target\ethernetif.c"
-$coreEth    = Join-Path $CORE_LIVE "libraries\OpenPLC_Net\src\ethernetif.c"
-$bootSrv    = Join-Path $BOOT_REPO "IAPServer\IAP_server.c"
-$bootHand   = Join-Path $BOOT_REPO "IAPServer\IAP_boot_handoff.h"
-$coreHand   = Join-Path $CORE_LIVE "cores\arduino\stm32\IAP_boot_handoff.h"
+$bootUdp    = Join-Path $BOOT_REPO "IAPServer/udp_server.c"
+$coreUdp    = Join-Path $CORE_LIVE "libraries/OpenPLC_IAP/src/udp_server.c"
+$bootEth    = Join-Path $BOOT_REPO "LWIP/Target/ethernetif.c"
+$coreEth    = Join-Path $CORE_LIVE "libraries/OpenPLC_Net/src/ethernetif.c"
+$bootSrv    = Join-Path $BOOT_REPO "IAPServer/IAP_server.c"
+$bootHand   = Join-Path $BOOT_REPO "IAPServer/IAP_boot_handoff.h"
+$coreHand   = Join-Path $CORE_LIVE "cores/arduino/stm32/IAP_boot_handoff.h"
 $toolLock   = Join-Path $TOOL_REPO "uploadlock.go"
-$coreDisc   = Join-Path $CORE_LIVE "tools\discovery\network_discovery.go"
-$bootFmc    = Join-Path $BOOT_REPO "Core\Src\fmc.c"
-$coreVariant = Join-Path $CORE_LIVE "variants\STM32H7xx\H743\variant_PLC_H743.h"
-$bootPwd    = Join-Path $BOOT_REPO "IAPServer\keys\iap_fixed_password.txt"
-$corePwd    = Join-Path $CORE_LIVE "libraries\OpenPLC_IAP\src\keys\iap_fixed_password.txt"
-$shipPwd    = Join-Path $CORE_LIVE "..\..\..\tools\STM32Tools\0.1.2\win\keys\iap_fixed_password.txt"
+$coreDisc   = Join-Path $CORE_LIVE "tools/discovery/network_discovery.go"
+$bootFmc    = Join-Path $BOOT_REPO "Core/Src/fmc.c"
+$coreVariant = Join-Path $CORE_LIVE "variants/STM32H7xx/H743/variant_PLC_H743.h"
+$bootPwd    = Join-Path $BOOT_REPO "IAPServer/keys/iap_fixed_password.txt"
+$corePwd    = Join-Path $CORE_LIVE "libraries/OpenPLC_IAP/src/keys/iap_fixed_password.txt"
+# Next to the shipped IAPTool, whose package version and platform directory both
+# move independently of the core -- so take the directory the tool was found in
+# rather than spelling either of them out.
+$shipPwd    = Join-Path (Split-Path -Parent (Get-IapTool)) "keys/iap_fixed_password.txt"
 
 Section "cross-repo mirrors"
 

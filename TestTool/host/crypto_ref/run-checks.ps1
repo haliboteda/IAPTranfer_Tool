@@ -18,14 +18,14 @@
 
 param([int]$Rounds = 12)
 
-. "$PSScriptRoot\..\..\tools\_common.ps1"
+. "$PSScriptRoot/..\..\tools\_common.ps1"
 
 if (-not (Get-Command python -ErrorAction SilentlyContinue)) { Fail "python is not on PATH"; exit 2 }
 
 $bad = 0
 
 Section "1. SHA-256 / HMAC-SHA-256 construction"
-python "$PSScriptRoot\sha256_ref.py"
+python "$PSScriptRoot/sha256_ref.py"
 if ($LASTEXITCODE -ne 0) { Fail "SHA-256 reference check failed"; $bad++ } else { Ok "PASS" }
 
 Section "2. ECDSA P-256 signatures from IAPTool"
@@ -33,12 +33,12 @@ Section "2. ECDSA P-256 signatures from IAPTool"
 if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
     Warn "SKIP - go is not on PATH, cannot produce signatures"
 } else {
-    $iapTool = Join-Path $TOOL_REPO "Output\windows\IAPTool.exe"
+    $iapTool = Get-GoBin "IAPTool"
     if (-not (Test-Path $iapTool)) {
-        Push-Location $TOOL_REPO; go build -o "Output/windows/IAPTool.exe" .; Pop-Location
+        Push-Location $TOOL_REPO; go build -o "Output/$GOOS_DIR/IAPTool$EXE" .; Pop-Location
     }
-    $key = Join-Path $BOOT_REPO "IAPServer\keys\fw_signing_key.TEST_ONLY.pem"
-    $inc = Join-Path $BOOT_REPO "IAPServer\keys\fw_pubkey.inc"
+    $key = Join-Path $BOOT_REPO "IAPServer/keys/fw_signing_key.TEST_ONLY.pem"
+    $inc = Join-Path $BOOT_REPO "IAPServer/keys/fw_pubkey.inc"
     foreach ($p in @($iapTool, $key, $inc)) {
         if (-not (Test-Path $p)) { Fail "not found: $p"; exit 2 }
     }
@@ -66,7 +66,7 @@ if (-not (Get-Command go -ErrorAction SilentlyContinue)) {
         if (-not (Test-Path $sig)) { Fail "round ${n}: IAPTool produced no .sig"; $bad++; continue }
 
         Write-Host "  round $n"
-        python "$PSScriptRoot\ecdsa_verify.py" $pubHex $msg $sig
+        python "$PSScriptRoot/ecdsa_verify.py" $pubHex $msg $sig
         if ($LASTEXITCODE -ne 0) { Fail "round ${n}: independent verification FAILED"; $bad++ }
         else { $verified++ }
     }

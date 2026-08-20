@@ -26,13 +26,13 @@ param(
     [switch]$BadSignature
 )
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 if (-not $Ip) { $Ip = $BOARD_IP }
 if (-not $Ip) { Fail "need -Ip (or set BOARD_IP in config/machine.ps1)"; exit 2 }
 if (-not (Test-Path $CurrentKey)) { Fail "no such key: $CurrentKey"; exit 2 }
 
-$iap = Join-Path $TOOL_REPO "Output\windows\IAPTool.exe"
+$iap = Get-GoBin "IAPTool"
 if (-not (Test-Path $iap)) { Fail "IAPTool not built"; exit 2 }
 
 function Send-Command([string]$cmd, [int]$timeoutMs = 8000) {

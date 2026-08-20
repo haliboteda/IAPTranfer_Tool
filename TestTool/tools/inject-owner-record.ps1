@@ -39,7 +39,7 @@ param(
     [int]$Seconds = 10
 )
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 $BIN = Join-Path $BOOT_REPO "Debug\open_plc_cube_ide.bin"
 if (-not (Test-Path $BIN)) { Fail "no bootloader .bin at $BIN - build it first"; exit 2 }

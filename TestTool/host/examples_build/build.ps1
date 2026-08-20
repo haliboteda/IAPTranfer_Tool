@@ -21,7 +21,7 @@ param(
     [switch]$KeepBuildDirs
 )
 
-. "$PSScriptRoot\..\..\tools\_common.ps1"
+. "$PSScriptRoot/..\..\tools\_common.ps1"
 
 if (-not $ARDUINO_CLI -or -not (Test-Path $ARDUINO_CLI)) {
     Fail "arduino-cli not found. Set `$ARDUINO_CLI in config/machine.ps1"
@@ -40,7 +40,7 @@ $fqbn = "OpenPLC_Alpha:stm32:OPEN-PLC:pnum=PLC_H743,usb=CDCgen,xusb=FS,upload_me
 $sketches = @()
 foreach ($lib in $ownLibraries) {
     if ($Only -and $lib -notlike "*$Only*") { continue }
-    $dir = Join-Path $CORE_LIVE "libraries\$lib\examples"
+    $dir = Join-Path $CORE_LIVE "libraries/$lib/examples"
     if (-not (Test-Path $dir)) { continue }
     # An Arduino example is a directory holding a .ino of the same name.
     foreach ($d in (Get-ChildItem $dir -Directory -Recurse)) {

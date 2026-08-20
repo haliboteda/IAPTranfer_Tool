@@ -17,7 +17,7 @@
 
 param([switch]$Keep)
 
-. "$PSScriptRoot\..\..\tools\_common.ps1"
+. "$PSScriptRoot/..\..\tools\_common.ps1"
 
 foreach ($need in @("python", "go")) {
     if (-not (Get-Command $need -ErrorAction SilentlyContinue)) {
@@ -25,11 +25,11 @@ foreach ($need in @("python", "go")) {
     }
 }
 
-$iapTool = Join-Path $TOOL_REPO "Output\windows\IAPTool.exe"
+$iapTool = Get-GoBin "IAPTool"
 if (-not (Test-Path $iapTool)) {
-    Warn "IAPTool.exe not built, building it now"
+    Warn "IAPTool not built, building it now"
     Push-Location $TOOL_REPO
-    go build -o "Output/windows/IAPTool.exe" .
+    go build -o "Output/$GOOS_DIR/IAPTool$EXE" .
     $rc = $LASTEXITCODE
     Pop-Location
     if ($rc -ne 0 -or -not (Test-Path $iapTool)) { Fail "cannot build IAPTool"; exit 2 }

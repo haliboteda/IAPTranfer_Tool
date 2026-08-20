@@ -16,7 +16,7 @@ param(
     [string[]]$Ports
 )
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 if ($ResetOnly) { $SkipBuild = $true }
 if (-not $Ports) { $Ports = $LOG_PORTS }

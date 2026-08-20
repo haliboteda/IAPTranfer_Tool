@@ -16,7 +16,7 @@ param(
     [int]$CollectSeconds = 25
 )
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 if (-not $Ip)   { $Ip = $BOARD_IP }
 if (-not $Port) { $Port = $LOG_PORTS[0] }
@@ -52,16 +52,16 @@ if (-not $SkipFlash) {
     Write-Host ("  image size: {0} bytes" -f (Get-Item $bin).Length)
 
     Section "flashing"
-    $iap = Join-Path $TOOL_REPO "Output\windows\IAPTool.exe"
-    if (-not (Test-Path $iap)) { $iap = $IAPTOOL }
+    $iap = Get-GoBin "IAPTool"
+    if (-not (Test-Path $iap)) { $iap = Get-IapTool }
 
     # Hold the port open across the whole flash: IAPTool exits before the board
     # has finished writing, and the sketch's output starts right after the
     # board reboots itself.
     $open = Open-LogPorts @($Port)
     $p = Start-Process -FilePath $iap -ArgumentList @("ether", $bin, $Ip, "--downgrade=allow") `
-        -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\sdram_flash.out" `
-        -RedirectStandardError "$env:TEMP\sdram_flash.err"
+        -NoNewWindow -PassThru -RedirectStandardOutput (Get-ScratchFile "sdram_flash.out") `
+        -RedirectStandardError (Get-ScratchFile "sdram_flash.err")
     $log = ""
     while (-not $p.HasExited) {
         try { if ($open[$Port].BytesToRead -gt 0) { $log += $open[$Port].ReadExisting() } } catch {}

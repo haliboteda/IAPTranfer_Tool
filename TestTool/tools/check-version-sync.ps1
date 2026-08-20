@@ -7,7 +7,7 @@
 #
 # Exit 0 = all agree, 1 = drift, 2 = a file is missing.
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 function Get-One {
     param([string]$Path, [string]$Pattern, [string]$What)

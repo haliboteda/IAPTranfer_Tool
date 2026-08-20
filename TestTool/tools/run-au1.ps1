@@ -28,23 +28,23 @@ param(
     [string[]]$Ports
 )
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 if (-not $Ports) { $Ports = $LOG_PORTS }
 if (-not $Ip)    { $Ip = $BOARD_IP }
 if (-not $Ip)    { Fail "need -Ip (or set BOARD_IP in config/machine.ps1)"; exit 2 }
 
-$testTool = Join-Path $TOOL_REPO "Output\windows\TestTool.exe"
+$testTool = Get-GoBin "TestTool"
 if (-not (Test-Path $testTool)) {
-    Warn "TestTool.exe not built, building it now"
+    Warn "TestTool not built, building it now"
     Push-Location $TOOL_REPO
-    go build -o "Output/windows/TestTool.exe" ./TestTool
+    go build -o "Output/$GOOS_DIR/TestTool$EXE" ./TestTool
     $rc = $LASTEXITCODE
     Pop-Location
     if ($rc -ne 0 -or -not (Test-Path $testTool)) { Fail "cannot build TestTool"; exit 2 }
 }
 
-$stateFile = Join-Path $env:TEMP "au1_phase1.json"
+$stateFile = Get-ScratchFile "au1_phase1.json"
 if (-not $Resume -and (Test-Path $stateFile)) { Remove-Item $stateFile -Force }
 
 # One UDP discovery query. Returns the identity string, or $null when the board
@@ -107,7 +107,7 @@ if ($Resume -and (Test-Path $stateFile)) {
 } else {
     if ($Resume) { Warn "-Resume given but $stateFile does not exist; collecting phase 1 now" }
 
-    & "$PSScriptRoot\enter-bootloader.ps1" -Ip $Ip -Ports $Ports
+    & "$PSScriptRoot/enter-bootloader.ps1" -Ip $Ip -Ports $Ports
     if ($LASTEXITCODE -ne 0) { Fail "could not park the board in the bootloader"; exit 2 }
 
     & $testTool AU1 --ip=$Ip --port=$Port --state=$stateFile --phase=1 --count=$Count
@@ -164,7 +164,7 @@ Section "AU1 phase 2 -- collecting nonces after the power cut"
 # stream. Capturing with 2>&1 yields an empty string while the text still
 # appears on the console -- so the cross-check silently had nothing to search
 # and said so, which reads like the board never printed the line.
-$ebOut = (& "$PSScriptRoot\enter-bootloader.ps1" -Ip $Ip -Ports $Ports 6>&1 2>&1 | Out-String -Width 4096)
+$ebOut = (& "$PSScriptRoot/enter-bootloader.ps1" -Ip $Ip -Ports $Ports 6>&1 2>&1 | Out-String -Width 4096)
 $ebCode = $LASTEXITCODE
 Write-Host $ebOut
 if ($ebCode -ne 0) { Fail "board came back but could not be parked in the bootloader"; exit 2 }

@@ -3,5 +3,10 @@ Output/
 .vscode/
 cmd/
 *.exe
-# Machine-local test paths; machine.example.ps1 is the committed template.
+# Machine-local test paths; the machine.example.* files are the committed
+# templates. Both languages are listed while M7 (the PowerShell -> Python
+# rewrite) is in progress.
 TestTool/config/machine.ps1
+TestTool/config/machine.py
+__pycache__/
+*.pyc

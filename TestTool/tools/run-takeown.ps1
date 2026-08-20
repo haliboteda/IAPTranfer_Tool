@@ -28,7 +28,7 @@ param(
     [switch]$ExpectRefused
 )
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 if (-not $Ip) { $Ip = $BOARD_IP }
 if (-not $Ip) { Fail "need -Ip (or set BOARD_IP in config/machine.ps1)"; exit 2 }
@@ -65,7 +65,7 @@ if ($was -notmatch '^[0-9a-fA-F]{128}$') {
 
 if (-not $Key) {
     Section "generating a key to claim with"
-    $iap = Join-Path $TOOL_REPO "Output\windows\IAPTool.exe"
+    $iap = Get-GoBin "IAPTool"
     if (-not (Test-Path $iap)) { Fail "IAPTool not built"; exit 2 }
     $scratch = Join-Path ([System.IO.Path]::GetTempPath()) ("takeown-" + [guid]::NewGuid().ToString("N").Substring(0,8))
     New-Item -ItemType Directory -Path $scratch | Out-Null

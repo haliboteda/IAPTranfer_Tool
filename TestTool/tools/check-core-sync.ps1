@@ -10,24 +10,32 @@
 #
 # Exit 0 = identical, 1 = differences, 2 = a repo path is wrong.
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 foreach ($p in @($CORE_LIVE, $CORE_REPO)) {
     if (-not (Test-Path $p)) { Fail "not a directory: $p"; exit 2 }
 }
 
-# Three deliberate exclusions:
+# Five deliberate exclusions:
 #   installed.json          the IDE's own install metadata, not source
 #   tools/discovery/bin/    Go build output; the sources next to it are enough
 #   *~                      editor backups
-$skip = '^(installed\.json|tools\\discovery\\bin\\)|~$'
+#   .claude/                agent-local permissions, gitignored in $CORE_REPO --
+#                           so it can never be "verified in live but uncommitted",
+#                           yet it drifts on every session and reported DIFF
+#   .gitignore              exists only on the repo side, by definition
+#   CLAUDE.md               repo-side entry doc; must not ship inside the board
+#                           package the IDE installs
+#
+# A check that is red every single run is one nobody reads.
+$skip = '^(installed\.json|\.gitignore$|CLAUDE\.md$|\.claude[\\/]|tools[\\/]discovery[\\/]bin[\\/])|~$'
 
 $onlyLive = @()
 $diff     = @()
 $onlyRepo = @()
 
-$liveRoot = (Resolve-Path $CORE_LIVE).Path.TrimEnd('\')
-$repoRoot = (Resolve-Path $CORE_REPO).Path.TrimEnd('\')
+$liveRoot = (Resolve-Path $CORE_LIVE).Path.TrimEnd('\', '/')
+$repoRoot = (Resolve-Path $CORE_REPO).Path.TrimEnd('\', '/')
 
 Section "core: live vs repo"
 Write-Host "  live  $liveRoot"
@@ -48,7 +56,7 @@ Get-ChildItem $liveRoot -Recurse -File | ForEach-Object {
 Get-ChildItem $repoRoot -Recurse -File | ForEach-Object {
     $rel = $_.FullName.Substring($repoRoot.Length + 1)
     if ($rel -match $skip) { return }
-    if ($rel -match '^\.git\\') { return }
+    if ($rel -match '^\.git[\\/]') { return }
     if (-not $liveRel.ContainsKey($rel)) { $onlyRepo += $rel }
 }
 

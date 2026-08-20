@@ -11,7 +11,7 @@ param(
     [string[]]$Ports
 )
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 if (-not $Ports) { $Ports = $LOG_PORTS }
 

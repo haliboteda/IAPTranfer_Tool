@@ -23,7 +23,7 @@ param(
     [int]$Bytes = 5
 )
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 if (-not $Ip)   { $Ip = $BOARD_IP }
 if (-not $Port) { $Port = $LOG_PORTS[0] }
@@ -51,16 +51,16 @@ if (-not $SkipFlash) {
     if (-not (Test-Path $bin)) { Fail "no .bin at $bin"; exit 2 }
 
     Section "flashing"
-    $iap = Join-Path $TOOL_REPO "Output\windows\IAPTool.exe"
-    if (-not (Test-Path $iap)) { $iap = $IAPTOOL }
+    $iap = Get-GoBin "IAPTool"
+    if (-not (Test-Path $iap)) { $iap = Get-IapTool }
 
     # ⚠️ IAPTool exits when the last byte is sent; the board is only then
     # verifying, erasing and writing from SDRAM. Resetting or testing here lands
     # mid-write and destroys the application. Wait for the board to say so.
     $open = Open-LogPorts @($Port)
     $p = Start-Process -FilePath $iap -ArgumentList @("ether", $bin, $Ip, "--downgrade=allow") `
-        -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\m5_flash.out" `
-        -RedirectStandardError "$env:TEMP\m5_flash.err"
+        -NoNewWindow -PassThru -RedirectStandardOutput (Get-ScratchFile "m5_flash.out") `
+        -RedirectStandardError (Get-ScratchFile "m5_flash.err")
     $log = ""
     while (-not $p.HasExited) {
         try { if ($open[$Port].BytesToRead -gt 0) { $log += $open[$Port].ReadExisting() } } catch {}

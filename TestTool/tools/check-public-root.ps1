@@ -30,7 +30,7 @@
 
 param([switch]$Print)
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 $inc = Join-Path $BOOT_REPO "IAPServer\keys\fw_pubkey.inc"
 $src = Join-Path $BOOT_REPO "IAPServer\owner_slot.c"

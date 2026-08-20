@@ -22,14 +22,14 @@ param(
     [string[]]$Ports
 )
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 if (-not $Ports) { $Ports = $LOG_PORTS }
 if (-not $Ip)    { $Ip = $BOARD_IP }
 if (-not $Ip)    { Fail "need -Ip (or set BOARD_IP in config)"; exit 1 }
 
 # Anything over IAP_APP_MAX_SIZE (1,835,008) does; the content is never read.
-$big = Join-Path $env:TEMP "testtool_oversize.bin"
+$big = Get-ScratchFile "testtool_oversize.bin"
 if (-not (Test-Path $big) -or (Get-Item $big).Length -lt 2000000) {
     $fs = [System.IO.File]::Create($big); $fs.SetLength(2000000); $fs.Close()
 }
@@ -37,8 +37,10 @@ if (-not (Test-Path $big) -or (Get-Item $big).Length -lt 2000000) {
 Section "Requesting bootloader"
 $open = Open-LogPorts $Ports
 
-$proc = Start-Process -FilePath $IAPTOOL -ArgumentList @("ether", $big, $Ip, "--downgrade=allow") `
-    -NoNewWindow -PassThru -RedirectStandardOutput "$env:TEMP\eb.out" -RedirectStandardError "$env:TEMP\eb.err"
+$ebOutFile = Get-ScratchFile "eb.out"
+$ebErrFile = Get-ScratchFile "eb.err"
+$proc = Start-Process -FilePath (Get-IapTool) -ArgumentList @("ether", $big, $Ip, "--downgrade=allow") `
+    -NoNewWindow -PassThru -RedirectStandardOutput $ebOutFile -RedirectStandardError $ebErrFile
 
 $buf = @{}; foreach ($k in $open.Keys) { $buf[$k] = "" }
 while (-not $proc.HasExited) {
@@ -65,6 +67,6 @@ if ($all -match "Invalid flash size") {
     exit 0
 } else {
     Fail "board does not appear to be in the bootloader"
-    Get-Content "$env:TEMP\eb.err" -ErrorAction SilentlyContinue | Select-Object -Last 5 | ForEach-Object { Write-Host $_ }
+    Get-Content $ebErrFile -ErrorAction SilentlyContinue | Select-Object -Last 5 | ForEach-Object { Write-Host $_ }
     exit 1
 }

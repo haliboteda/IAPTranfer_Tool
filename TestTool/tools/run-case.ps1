@@ -20,16 +20,16 @@ param(
     [string[]]$Ports
 )
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 if (-not $Ports) { $Ports = $LOG_PORTS }
 if (-not $Ip)    { $Ip = $BOARD_IP }
 if (-not $Ip)    { Fail "need -Ip (or set BOARD_IP in config)"; exit 1 }
-if (-not $IapTool)      { $IapTool = $IAPTOOL }
-if (-not $PasswordFile) { $PasswordFile = Join-Path (Split-Path -Parent $IapTool) "keys\iap_fixed_password.txt" }
+if (-not $IapTool)      { $IapTool = Get-IapTool }
+if (-not $PasswordFile) { $PasswordFile = Join-Path (Split-Path -Parent $IapTool) "keys/iap_fixed_password.txt" }
 
-$TT = Join-Path $TOOL_REPO "Output\windows\TestTool.exe"
-if (-not (Test-Path $TT)) { Fail "TestTool.exe not built - run: go build -o Output/windows/TestTool.exe ./TestTool"; exit 1 }
+$TT = Get-GoBin "TestTool"
+if (-not (Test-Path $TT)) { Fail "TestTool not built - run: go build -o Output/$GOOS_DIR/TestTool$EXE ./TestTool"; exit 1 }
 
 $argv = @($Case, "--ip=$Ip", "--iaptool=$IapTool")
 if ($Bin) { $argv += "--bin=$Bin" }
@@ -39,8 +39,10 @@ Section "Case $Case"
 $open = Open-LogPorts $Ports
 Write-Host "TestTool $($argv -join ' ')"
 
+$ttOut = Get-ScratchFile "tt.out"
+$ttErr = Get-ScratchFile "tt.err"
 $proc = Start-Process -FilePath $TT -ArgumentList $argv -NoNewWindow -PassThru `
-    -RedirectStandardOutput "$env:TEMP\tt.out" -RedirectStandardError "$env:TEMP\tt.err"
+    -RedirectStandardOutput $ttOut -RedirectStandardError $ttErr
 
 $buf = @{}; foreach ($k in $open.Keys) { $buf[$k] = "" }
 while (-not $proc.HasExited) {
@@ -57,8 +59,8 @@ foreach ($k in @($open.Keys)) {
 $proc.WaitForExit()
 
 Section "TestTool output (exit $($proc.ExitCode))"
-Get-Content "$env:TEMP\tt.out" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
-Get-Content "$env:TEMP\tt.err" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+Get-Content $ttOut -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+Get-Content $ttErr -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
 
 foreach ($k in $buf.Keys) {
     if ($buf[$k].Length -gt 0) { Section "serial $k"; Write-Host $buf[$k] }

@@ -18,13 +18,13 @@ param(
     [string[]]$Ports
 )
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 if (-not $Ports) { $Ports = $LOG_PORTS }
 if (-not $Ip -and -not $Cdc) { $Ip = $BOARD_IP }
 if (-not $Ip -and -not $Cdc) { Fail "need -Ip or -Cdc (or set BOARD_IP / CDC_PORT in config)"; exit 1 }
 if (-not (Test-Path $Bin)) { Fail "no such image: $Bin"; exit 1 }
-if (-not (Test-Path $IAPTOOL)) { Fail "IAPTool not found at $IAPTOOL"; exit 1 }
+$iapTool = Get-IapTool
 
 # The CDC port is the board talking to us; it cannot also be a passive log port.
 if ($Cdc) { $Ports = $Ports | Where-Object { $_ -ne $Cdc } }
@@ -41,8 +41,10 @@ Write-Host "IAPTool $($argv -join ' ')"
 
 # Drain the serial port while IAPTool runs. Without this the driver's buffer
 # overruns on a long upload and the interesting lines are the ones lost.
-$proc = Start-Process -FilePath $IAPTOOL -ArgumentList $argv -NoNewWindow -PassThru `
-    -RedirectStandardOutput "$env:TEMP\iaptool.out" -RedirectStandardError "$env:TEMP\iaptool.err"
+$iapOut = Get-ScratchFile "iaptool.out"
+$iapErr = Get-ScratchFile "iaptool.err"
+$proc = Start-Process -FilePath $iapTool -ArgumentList $argv -NoNewWindow -PassThru `
+    -RedirectStandardOutput $iapOut -RedirectStandardError $iapErr
 
 $buf = @{}; foreach ($k in $open.Keys) { $buf[$k] = "" }
 while (-not $proc.HasExited) {
@@ -66,8 +68,8 @@ foreach ($k in @($open.Keys)) { try { $open[$k].Close() } catch {} }
 $proc.WaitForExit()
 
 Section "IAPTool output (exit $($proc.ExitCode))"
-Get-Content "$env:TEMP\iaptool.out" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
-Get-Content "$env:TEMP\iaptool.err" -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+Get-Content $iapOut -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
+Get-Content $iapErr -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
 
 foreach ($k in $buf.Keys) {
     Section "$k  ($($buf[$k].Length) bytes)"

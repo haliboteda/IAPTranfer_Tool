@@ -42,7 +42,7 @@ param(
     [string[]]$Ports
 )
 
-. "$PSScriptRoot\_common.ps1"
+. "$PSScriptRoot/_common.ps1"
 
 if (-not $Ports) { $Ports = $LOG_PORTS }
 if (-not $Ip)    { $Ip = $BOARD_IP }
@@ -53,8 +53,8 @@ if (-not (Test-Path $Bin)) { Fail "no such image: $Bin"; exit 2 }
 $APP_ADDR = "0x08020000"
 
 $cli = Get-ProgrammerCli
-$iap = Join-Path $TOOL_REPO "Output\windows\IAPTool.exe"
-if (-not (Test-Path $iap)) { $iap = $IAPTOOL }
+$iap = Get-GoBin "IAPTool"
+if (-not (Test-Path $iap)) { $iap = Get-IapTool }
 if (-not (Test-Path $iap)) { Fail "no IAPTool to restore with"; exit 2 }
 
 $image = [System.IO.File]::ReadAllBytes((Resolve-Path $Bin))
@@ -76,7 +76,7 @@ Write-Host "restore image: $Bin ($($image.Length) bytes) -> $APP_ADDR"
 # account of its own sending, and says nothing about what the board decided.
 function Invoke-FlashAndBoot([string]$what) {
     Section $what
-    $out = "$env:TEMP\s3_flash.out"
+    $out = Get-ScratchFile "s3_flash.out"
     $open = Open-LogPorts $Ports
 
     $p = Start-Process -FilePath $iap -ArgumentList @("ether", (Resolve-Path $Bin).Path, $Ip, "--downgrade=allow") `
@@ -151,7 +151,7 @@ Section "2/4  corrupting one byte of the installed application"
 $offset = [int]($image.Length / 2)
 $corrupt = $image.Clone()
 $corrupt[$offset] = $corrupt[$offset] -bxor 0xFF
-$corruptPath = "$env:TEMP\s3_corrupt.bin"
+$corruptPath = Get-ScratchFile "s3_corrupt.bin"
 [System.IO.File]::WriteAllBytes($corruptPath, $corrupt)
 # Parenthesised: "..." -f a,b next to Write-Host would bind -f to
 # -ForegroundColor and print nothing useful.
