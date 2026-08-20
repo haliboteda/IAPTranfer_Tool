@@ -296,6 +296,37 @@ def assert_target_reachable(cli):
 
 
 # ---------------------------------------------------------------- probe
+def warn_config_platform():
+    """Say so when config/machine.py was filled in for the other platform.
+
+    The template ships with a Windows value and a commented-out Linux value for
+    every path, and asks you to delete the one you are not on. Copy it on Debian
+    without editing and every path stays a Windows path -- which shows up below
+    as eight unrelated MISSING lines and one actively wrong hint, telling you to
+    check a serial adapter when the real answer is that COM5 is not a device
+    name on this machine. First Debian run, 2026-08-20, hit exactly that.
+
+    Prints nothing when the config matches the platform, so a correct machine's
+    A0 is unchanged.
+    """
+    named = [(n, getattr(cfg, n, "")) for n in
+             ("BOOT_REPO", "CORE_REPO", "TOOL_REPO", "CORE_LIVE", "CUBEIDE", "IDE", "A15")]
+    if IS_WIN:
+        wrong = [n for n, v in named if isinstance(v, str) and v.startswith("/")]
+        other = "Linux"
+    else:
+        wrong = [n for n, v in named
+                 if isinstance(v, str) and (re.match(r'^[A-Za-z]:[\\/]', v) or "\\" in v)]
+        other = "Windows"
+    if not wrong:
+        return
+    Warn("  config/machine.py still holds %s paths, but this machine is %s."
+         % (other, PLATFORM))
+    Warn("    %s" % ", ".join(wrong))
+    Warn("    The template carries both; delete the block you are NOT on, or the")
+    Warn("    wrong assignment silently wins. Everything below is downstream of this.")
+
+
 def probe(verbose=True):
     """What this machine actually has. This is selfcheck's step A0.
 
@@ -309,6 +340,7 @@ def probe(verbose=True):
         print("  %-19s %s   (Python %d.%d.%d)" % (
             "platform", PLATFORM,
             sys.version_info[0], sys.version_info[1], sys.version_info[2]))
+        warn_config_platform()
 
     missing = []
 
@@ -376,7 +408,15 @@ def probe(verbose=True):
     if verbose:
         print("  %-19s %s" % ("log ports (config)", ", ".join(cfg.LOG_PORTS)))
         for p in cfg.LOG_PORTS:
-            if not IS_WIN and p and not Path(p).exists():
+            if IS_WIN or not p:
+                continue
+            # COMn is not a device name here. Saying "check the adapter and the
+            # dialout group" for one sends the reader after hardware when the
+            # config is what needs editing.
+            if re.match(r'^COM\d+$', p, re.I):
+                Warn("  %-19s %s is a Windows port name -- config/machine.py still has "
+                     "the Windows block" % ("", p))
+            elif not Path(p).exists():
                 Warn("  %-19s %s does not exist -- check the adapter and the dialout group" % ("", p))
 
     if verbose:

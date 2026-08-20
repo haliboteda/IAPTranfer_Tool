@@ -55,6 +55,7 @@ Section "A0  this machine"
 
 Write-Host ("  platform            {0}   (PowerShell {1}, {2})" -f `
     $PLATFORM, $PSVersionTable.PSVersion, $PSVersionTable.PSEdition)
+Write-ConfigPlatformWarning
 
 $missing = @()
 function Probe($label, $path, $why) {
@@ -94,7 +95,13 @@ else      { Warn ("  {0,-19} MISSING - no IAPTool for '{1}' under the board pack
 
 Write-Host ("  {0,-19} {1}" -f "log ports (config)", ($LOG_PORTS -join ", "))
 foreach ($p in $LOG_PORTS) {
-    if ($PLATFORM -ne "windows" -and $p -and -not (Test-Path $p)) {
+    if ($PLATFORM -eq "windows" -or -not $p) { continue }
+    # COMn is not a device name here. Saying "check the adapter and the dialout
+    # group" for one sends the reader after hardware when the config is what
+    # needs editing.
+    if ($p -match '^COM\d+$') {
+        Warn ("  {0,-19} {1} is a Windows port name -- config/machine.ps1 still has the Windows block" -f "", $p)
+    } elseif (-not (Test-Path $p)) {
         Warn ("  {0,-19} {1} does not exist -- check the adapter and the dialout group" -f "", $p)
     }
 }

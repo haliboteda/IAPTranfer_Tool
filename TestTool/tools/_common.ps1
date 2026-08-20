@@ -30,6 +30,39 @@ if (-not (Test-Path $cfg)) {
 }
 . $cfg
 
+# Says so when config/machine.ps1 was filled in for the other platform.
+#
+# The template ships with a Windows value and a commented-out Linux value for
+# every path, and asks you to delete the one you are not on. Copy it on Debian
+# without editing and every path stays a Windows path -- which shows up in A0 as
+# eight unrelated MISSING lines and one actively wrong hint, telling you to check
+# a serial adapter when the real answer is that COM5 is not a device name on this
+# machine. First Debian run, 2026-08-20, hit exactly that.
+#
+# Prints nothing when the config matches the platform, so a correct machine's A0
+# is unchanged. Kept in step with common.py's warn_config_platform().
+function Write-ConfigPlatformWarning {
+    $named = @("BOOT_REPO", "CORE_REPO", "TOOL_REPO", "CORE_LIVE", "CUBEIDE", "IDE", "A15")
+    $wrong = @()
+    foreach ($n in $named) {
+        # Get-Variable walks the scope chain, which is what reaches the values
+        # machine.ps1 dot-sourced into the calling script.
+        $v = (Get-Variable -Name $n -ErrorAction SilentlyContinue).Value
+        if ($v -isnot [string] -or -not $v) { continue }
+        if ($PLATFORM -eq "windows") {
+            if ($v.StartsWith("/")) { $wrong += $n }
+        } else {
+            if ($v -match '^[A-Za-z]:[\\/]' -or $v.Contains("\")) { $wrong += $n }
+        }
+    }
+    if ($wrong.Count -eq 0) { return }
+    $other = if ($PLATFORM -eq "windows") { "Linux" } else { "Windows" }
+    Warn ("  config/machine.ps1 still holds {0} paths, but this machine is {1}." -f $other, $PLATFORM)
+    Warn ("    {0}" -f ($wrong -join ", "))
+    Warn  "    The template carries both; delete the block you are NOT on, or the"
+    Warn  "    wrong assignment silently wins. Everything below is downstream of this."
+}
+
 function Section($t) { Write-Host ""; Write-Host "===== $t" -ForegroundColor Cyan }
 function Ok($t)      { Write-Host $t -ForegroundColor Green }
 function Warn($t)    { Write-Host $t -ForegroundColor Yellow }
