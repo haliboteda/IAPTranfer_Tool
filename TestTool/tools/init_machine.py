@@ -475,27 +475,38 @@ def validate(key, value):
     return True, ""
 
 
-def ask_for(key, kind, required):
-    """Ask a human. Returns a value, or None if they chose to skip.
+def describe(key, kind, indent="    "):
+    """Everything a person needs in order to supply this value.
 
-    Never called unless stdin is a terminal: prompting a pipe would hang a
-    script that was meant to be automated, and this one is run from automation
-    at least as often as by hand.
+    Used both by the prompt and by the report printed when this runs without a
+    terminal -- which is the normal case, because the usual caller is an agent
+    that will relay the question to the user and come back with --set. The two
+    must say the same thing, so they share this.
     """
-    ex = EXAMPLES["windows" if IS_WIN else "posix"].get(key)
-    print()
-    Warn("  %s was not found." % key)
     if key in WHAT_IT_IS:
-        print("    what it is : %s" % WHAT_IT_IS[key])
+        print("%swhat it is : %s" % (indent, WHAT_IT_IS[key]))
     where = searched_in(key)
     if where:
-        print("    looked in  : %s" % where[0])
+        print("%slooked in  : %s" % (indent, where[0]))
         for w in where[1:]:
-            print("                 %s" % w)
+            print("%s             %s" % (indent, w))
+    ex = EXAMPLES["windows" if IS_WIN else "posix"].get(key)
     if ex:
-        print("    example    : %s" % ex)
+        print("%sexample    : %s" % (indent, ex))
     if kind == "ports":
-        print("    format     : comma-separated, most likely first")
+        print("%sformat     : comma-separated, most likely first" % indent)
+
+
+def ask_for(key, kind, required):
+    """Ask a human directly. Returns a value, or None if they chose to skip.
+
+    Never called unless stdin is a terminal AND nothing suggests automation:
+    prompting a console nobody is watching hangs, and this script is run from
+    automation more often than by hand.
+    """
+    print()
+    Warn("  %s was not found." % key)
+    describe(key, kind)
 
     hint = "path" if kind != "ports" else "port(s)"
     for _ in range(5):
@@ -801,30 +812,50 @@ def main():
     if not IS_WIN:
         check_dialout()
 
+    kinds = {k: ki for k, ki, _d, _r, _c in entries}
+    runner = "python" if IS_WIN else "python3"
+
+    def report_missing(keys, title, why_it_matters):
+        """The whole point of the non-interactive path.
+
+        Its reader is usually an agent that will relay these questions to the
+        person at the keyboard and come back with --set, so a bare list of names
+        is not enough: it has to carry what each thing is, where the search
+        already went, and the exact command that records the answer.
+        """
+        Section(title)
+        print("  %s" % why_it_matters)
+        for k in keys:
+            print()
+            Warn("  %s" % k)
+            describe(k, kinds[k], indent="      ")
+            print("      record it  : %s tools/init_machine.py --set %s=<path>"
+                  % (runner, k))
+        print()
+        print("  Several at once:")
+        print("    %s tools/init_machine.py %s" % (
+            runner, " ".join("--set %s=<path>" % k for k in keys)))
+
     if missing_required:
-        Section("cannot write a usable config yet")
-        Fail("  these have no value and nothing works without them:")
-        for k in missing_required:
-            Fail("    %s" % k)
-        runner = "python" if IS_WIN else "python3"
+        report_missing(missing_required, "cannot write a usable config yet",
+                       "Nothing works without these.")
+        print()
         if interactive:
-            Warn("  they were skipped at the prompt. Re-run and paste them, or:")
+            Warn("  Skipped at the prompt. Re-run to be asked again.")
         else:
-            Warn("  not asked for, because %s. Either fix that or pass them:" % why_not)
-        Warn("    %s tools/init_machine.py --set %s=/path/to/it"
-             % (runner, missing_required[0]))
+            Warn("  Not asked for interactively, because %s." % why_not)
         return 1
 
     if missing_optional:
-        Section("not found -- these limit what can be run")
-        for k in missing_optional:
-            Warn("  %s" % k)
-        Warn("  open_plc_cube_ide/CLAUDE.md says what each one is and where to get it.")
+        report_missing(missing_optional, "not found -- these limit what can be run",
+                       "Everything else is written; these are the checks that will "
+                       "report SKIP until they are supplied.")
+        print()
         if interactive:
-            Warn("  Install one and re-run, or pass --set %s=..." % missing_optional[0])
+            Warn("  Skipped at the prompt. Install one and re-run, or --set it.")
         else:
-            Warn("  Not asked for, because %s." % why_not)
-            Warn("  Install it and re-run, or pass --set %s=..." % missing_optional[0])
+            Warn("  Not asked for interactively, because %s." % why_not)
+        Warn("  open_plc_cube_ide/CLAUDE.md says what each one is and where to get it.")
 
     Section("files")
     targets = [("machine.py", render_python(RESOLVED))]

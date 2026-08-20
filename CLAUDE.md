@@ -36,9 +36,19 @@ python tools/init_machine.py      # Linux 上是 python3。探测本机路径，
 pwsh ./tools/selfcheck.ps1        # Windows 上也可以 .\tools\selfcheck.ps1
 ```
 
-`init_machine.py` **先搜，搜不到才问**，提问时会说这东西是什么、已经找过哪些地方、正确答案长什么样。已有且仍然成立的值会保留，所以手工改过的地方重跑不会被冲掉；`--redetect NAME` 重新找某一项，`--check` 只看不写，`--set NAME=VALUE` 直接给答案。
+**AI 会话在新机器上的「初始化」循环**（完整版在 `open_plc_cube_ide/CLAUDE.md` 第五节）：
 
-⚠️ **在脚本或 AI 会话里调用它时，提问会自动关掉**（靠 `CLAUDECODE` / `AI_AGENT` / `CI` / `GIT_TERMINAL_PROMPT=0` 这些标记判断，因为**这些环境里 `isatty()` 也返回 True**，光看它会挂住）。需要的话用 `--no-input` 明确关闭，`--ask` 强制打开。
+1. 跑 `python3 tools/init_machine.py` —— **在 AI 会话里它不提问，只报告**。
+2. 读 `not found` 一节：每项都带"这是什么 / 已经找过哪些地方 / 例子 / 固化命令"。
+3. **把这些问用户**，连"已经找过哪些地方"一起给他。
+4. 用户发来路径 → `--set NAME=<path>` 固化（可一次多个）。
+5. 重复到只剩他也没装的东西，再 `python3 tools/common.py --probe` 确认。
+
+**不要让用户手工编辑 `config/machine.*`，也不要替他猜路径。**
+
+⚠️ 提问自动关掉靠的是 `CLAUDECODE` / `AI_AGENT` / `CI` / `GIT_TERMINAL_PROMPT=0` 这些标记 —— **这些环境里 `isatty()` 也返回 True**，光看它会挂住。`--no-input` 强制关，`--ask` 强制开。
+
+已有且仍然成立的值会保留，所以手工改过的地方重跑不会被冲掉。
 
 `tools/test_init_machine.py` 测的就是提问那段逻辑 —— 它按定义没法在自动化里跑到，所以引号剥离、`~` 展开、安装根目录校验这些最容易写错的地方靠它兜。
 
