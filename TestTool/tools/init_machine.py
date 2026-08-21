@@ -505,50 +505,88 @@ def check_pyserial():
 
 REQ_FILE = "%s/requirements.txt" % TESTTOOL_DIR.as_posix()
 
+
+def auto(cmd):
+    """An install this script may run for you."""
+    return {"cmd": cmd, "auto": True}
+
+
+def by_hand(cmd):
+    """An install a person has to do: more than one step, or it needs a login,
+    or the vendor ships no package. Saying so is the point -- a bootstrap that
+    silently skips one of these leaves you wondering why the build fails."""
+    return {"cmd": cmd, "auto": False}
+
+
 PREREQS = [
-    ("git", "everything: six repositories", check_git, True, {
-        "windows": "winget install --id Git.Git",
-        "linux": "sudo apt install git",
-        "macos": "xcode-select --install   (or: brew install git)",
+    ("git", "everything: seven repositories", check_git, True, {
+        "windows": auto("winget install --id Git.Git"),
+        "linux": auto("sudo apt-get install -y git"),
+        "macos": by_hand("xcode-select --install   (or: brew install git)"),
     }),
     ("Python 3", "IAPTool cross-checks, the fake board, and after M7 every test script",
      check_python, True, {
-         "windows": "winget install --id Python.Python.3.12",
-         "linux": "sudo apt install python3",
-         "macos": "brew install python@3.12",
+         "windows": auto("winget install --id Python.Python.3.12"),
+         "linux": auto("sudo apt-get install -y python3"),
+         "macos": auto("brew install python@3.12"),
      }),
     ("Go", "building IAPTool and TestTool", check_go, False, {
-        "windows": "winget install --id GoLang.Go",
-        "linux": "sudo apt install golang-go",
-        "macos": "brew install go",
+        "windows": auto("winget install --id GoLang.Go"),
+        "linux": auto("sudo apt-get install -y golang-go"),
+        "macos": auto("brew install go"),
     }),
     ("C compiler", "the host-side unit tests that compile the real bootloader sources",
      check_cc, False, {
-         "windows": "winget install --id MSYS2.MSYS2   then, in the MSYS2 shell:\n"
-                    "                   pacman -S mingw-w64-ucrt-x86_64-gcc\n"
-                    "                   and add C:\\msys64\\ucrt64\\bin to PATH\n"
-                    "                   already installed somewhere unusual? "
-                    "--set HOST_CC=<path to gcc>",
-         "linux": "sudo apt install build-essential",
-         "macos": "xcode-select --install",
+         # Two steps and a PATH edit, so not something to run behind your back.
+         "windows": by_hand("winget install --id MSYS2.MSYS2   then, in the MSYS2 shell:\n"
+                            "                   pacman -S mingw-w64-ucrt-x86_64-gcc\n"
+                            "                   and add C:\\msys64\\ucrt64\\bin to PATH\n"
+                            "                   already installed somewhere unusual? "
+                            "--set HOST_CC=<path to gcc>"),
+         "linux": auto("sudo apt-get install -y build-essential"),
+         "macos": by_hand("xcode-select --install"),
      }),
     ("PowerShell", "the test scripts, which are still PowerShell until M7 lands",
      check_powershell, False, {
-         "windows": "already there as powershell.exe; for 7.x: "
-                    "winget install --id Microsoft.PowerShell",
-         "linux": "sudo snap install powershell --classic\n"
-                  "                   (no snap? add Microsoft's apt repo first, then "
-                  "sudo apt install powershell)",
-         "macos": "brew install --cask powershell",
+         "windows": auto("winget install --id Microsoft.PowerShell"),
+         # snap is the only one-liner. Microsoft's apt repo needs a key and a
+         # source list, which is more than a bootstrap should do unasked.
+         "linux": auto("sudo snap install powershell --classic"),
+         "macos": auto("brew install --cask powershell"),
      }),
     ("pyserial", "every case that opens a serial port", check_pyserial, False, {
-        "windows": "python -m pip install -r %s" % REQ_FILE,
+        "windows": auto("\"%s\" -m pip install -r %s" % (sys.executable, REQ_FILE)),
         # Debian 12+ refuses a plain pip install into the system interpreter
         # (PEP 668), so the distro package is the path of least resistance.
-        "linux": "sudo apt install python3-serial\n"
-                 "                   (or, inside a venv: pip install -r %s)" % REQ_FILE,
-        "macos": "python3 -m pip install -r %s" % REQ_FILE,
+        "linux": auto("sudo apt-get install -y python3-serial"),
+        "macos": auto("\"%s\" -m pip install -r %s" % (sys.executable, REQ_FILE)),
     }),
+
+    # These two are install DIRECTORIES, not executables on PATH, so SETTINGS
+    # records where they are. They are listed here as well because "what must I
+    # install" is one question and deserves one answer.
+    ("Arduino IDE", "building the application; its bundled arduino-cli runs case A13",
+     lambda: (bool(detect_ide()), detect_ide() or "not found in the usual places"),
+     False, {
+         "windows": auto("winget install --id ArduinoSA.IDE.stable"),
+         "linux": by_hand("no distro package -- download the .zip or AppImage from "
+                          "https://www.arduino.cc/en/software"),
+         "macos": auto("brew install --cask arduino-ide"),
+     }),
+    ("STM32CubeIDE", "building the bootloader; STM32_Programmer_CLI flashes and reads back",
+     lambda: (bool(detect_cubeide()),
+              detect_cubeide() or "not found in the usual places"),
+     False, {
+         # No package manager anywhere carries it: the download is behind an ST
+         # account. This one cannot be automated on any platform, and pretending
+         # otherwise would just fail later and further away.
+         "windows": by_hand("download from https://www.st.com/en/development-tools/"
+                            "stm32cubeide.html  (needs a free ST account)"),
+         "linux": by_hand("download from https://www.st.com/en/development-tools/"
+                          "stm32cubeide.html  (needs a free ST account)"),
+         "macos": by_hand("download from https://www.st.com/en/development-tools/"
+                          "stm32cubeide.html  (needs a free ST account)"),
+     }),
 ]
 
 
@@ -591,7 +629,11 @@ def check_prereqs(brief=False):
             print()
             Warn("  %s" % name)
             print("      needed for : %s" % what_for)
-            print("      install    : %s" % install[PLATFORM])
+            entry = install[PLATFORM]
+            print("      install    : %s" % entry["cmd"])
+            if not entry["auto"]:
+                print("                   ^ by hand -- more than one step, or it "
+                      "needs a login, or there is no package")
 
     if not missing_required and not missing_optional:
         Ok("  everything this project needs on PATH is here")

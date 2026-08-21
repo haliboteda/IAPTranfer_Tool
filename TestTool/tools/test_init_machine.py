@@ -88,8 +88,15 @@ def test_tables():
     names = [p[0] for p in im.PREREQS]
     check("every prerequisite is named once", len(names), len(set(names)))
     missing = [(n, plat) for n, _w, _c, _r, inst in im.PREREQS
-               for plat in ("windows", "linux", "macos") if not inst.get(plat)]
+               for plat in ("windows", "linux", "macos")
+               if not (inst.get(plat) or {}).get("cmd")]
     check("every prerequisite installs on all three platforms", missing, [])
+    # bootstrap.py runs the auto ones unattended, so "is this safe to run" has
+    # to be stated for every entry rather than defaulted.
+    unstated = [(n, plat) for n, _w, _c, _r, inst in im.PREREQS
+                for plat in ("windows", "linux", "macos")
+                if not isinstance((inst.get(plat) or {}).get("auto"), bool)]
+    check("every install says whether a script may run it", unstated, [])
     for name, _what, checker, _req, _inst in im.PREREQS:
         ok, detail = checker()
         good = isinstance(ok, bool) and isinstance(detail, str) and detail != ""
