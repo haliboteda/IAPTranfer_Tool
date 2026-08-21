@@ -353,8 +353,25 @@ STM32_Programmer_CLI -c port=SWD mode=UR -e 1   # 擦掉 app 扇区，bootloader
 
 | ID | 内容 | 为什么还没做 |
 |---|---|---|
-| M3 | 两块板子的 MAC 不同 | ⛔ 手上只有一块板。**唯一的硬阻塞** |
-| S4a/S4b | 掉电中断，拆成传输中 / 擦写中两半 | 要人工断电 |
+| M3 | 两块板子的 MAC 不同 | ⛔ 手上只有一块板 |
+| S4a/S4b | 掉电中断，拆成传输中 / 擦写中两半 | 要人工断电。**脚本已就绪：`tools/run_s4.py`**。⛔ **2026-08-21 起被硬件阻塞** —— SDRAM 的 D1 线开路，任何上传都停在 checksum，见 `open_plc_cube_ide/docs/TODO.md` 的 B4 |
+
+### `tools/run_s4.py` —— S4a / S4b 怎么跑
+
+```bash
+python3 tools/run_s4.py --case a --bin <app.bin> --pad-to 1200000
+python3 tools/run_s4.py --case b --bin <app.bin> --retry 3
+```
+
+| | |
+|---|---|
+| **判据 S4a** | 传输窗口内断电 → 重新上电后**旧 app 照常启动**（日志出现 `APP Mod`，且**没有** `App signature invalid or absent`）|
+| **判据 S4b** | 擦写窗口内断电 → 上电报 `App signature invalid or absent`，**且重传一次能恢复** |
+| **窗口锚点** | `Staging in SDRAM` 之后 / `Erasing application region` 之前 = S4a；`Erasing application region` 之后 = S4b。字符串对齐 `open_plc_cube_ide/IAPServer/IAP_server.c` |
+| **不按回车** | 照 `run-au1.ps1` 的先例：脚本读板子自己的日志判断在哪个窗口，**用 ST-Link 实测目标电压证明电真的掉了** —— 串口静默和 UDP 不应答在"正忙着擦除"时也会发生，只有电压不会骗人 |
+| **⚠️ ST-Link 可能在供电** | STLINK-V3 能输出 3.3V。如果它在供电，拔板子的电等于没拔，两条用例都是空测。脚本发现电压没掉会**拒绝记成通过** |
+| **为什么要 `--pad-to`** | 真实 app 只有 83 KB，以太网传输不到一秒，S4a 的窗口手动追不上。补零到 ~1.2 MB 让窗口有几秒。尾部补零不影响启动（向量表和代码在头部），所以万一窗口没追上、镜像真被写进去，板子拿到的仍是能跑的 app |
+| **窗口没追上** | 脚本自己认得出（看到了本该在断电后才出现的下一条日志），报 `missed` 并可 `--retry`，**不会把落在别处的断电记成通过** |
 
 **2026-08-17 已补上：** ~~S2~~（密钥不匹配）、~~S3~~（启动期签名失败）、~~AU1~~（nonce 跨掉电）、~~DG1~~（降级拦截，不需要板子）。
 

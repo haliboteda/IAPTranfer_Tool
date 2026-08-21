@@ -27,13 +27,19 @@ for p in (cfg.CORE_LIVE, cfg.CORE_REPO):
         Fail("not a directory: %s" % p)
         sys.exit(2)
 
-# Five deliberate exclusions:
+# Six deliberate exclusions:
 #   installed.json          the IDE's own install metadata, not source
 #   tools/discovery/bin/    Go build output; the sources next to it are enough
 #   *~                      editor backups
 #   .claude/                agent-local permissions, gitignored in CORE_REPO --
 #                           so it can never be "verified in live but uncommitted",
 #                           yet it drifts on every session and reported DIFF
+#   .vscode/                same shape: an editor writes it into whichever folder
+#                           you open. 2026-08-21 the CMake extension put a
+#                           settings.json holding one absolute local path into
+#                           the live package, and A9 went red on it. It is
+#                           gitignored in CORE_REPO too, so it can never be
+#                           "verified in live but uncommitted" either
 #   .gitignore              exists only on the repo side, by definition
 #   CLAUDE.md               repo-side entry doc; must not ship inside the board
 #                           package the IDE installs
@@ -43,8 +49,12 @@ for p in (cfg.CORE_LIVE, cfg.CORE_REPO):
 # re.I because PowerShell's -match is case-insensitive; without it CLAUDE.md
 # would still be skipped but Claude.md would not, and the check would go red on
 # a rename nobody made.
+#
+# This pattern must stay identical to the one in check-core-sync.ps1: M7 step 2
+# holds the two versions to byte-identical output, so fixing one alone breaks
+# the comparison rather than the check.
 SKIP = re.compile(
-    r'^(installed\.json|\.gitignore$|CLAUDE\.md$|\.claude[\\/]|tools[\\/]discovery[\\/]bin[\\/])|~$',
+    r'^(installed\.json|\.gitignore$|CLAUDE\.md$|\.claude[\\/]|\.vscode[\\/]|tools[\\/]discovery[\\/]bin[\\/])|~$',
     re.I)
 
 

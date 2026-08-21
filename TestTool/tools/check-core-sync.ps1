@@ -16,19 +16,25 @@ foreach ($p in @($CORE_LIVE, $CORE_REPO)) {
     if (-not (Test-Path $p)) { Fail "not a directory: $p"; exit 2 }
 }
 
-# Five deliberate exclusions:
+# Six deliberate exclusions:
 #   installed.json          the IDE's own install metadata, not source
 #   tools/discovery/bin/    Go build output; the sources next to it are enough
 #   *~                      editor backups
 #   .claude/                agent-local permissions, gitignored in $CORE_REPO --
 #                           so it can never be "verified in live but uncommitted",
 #                           yet it drifts on every session and reported DIFF
+#   .vscode/                same shape: an editor writes it into whichever folder
+#                           you open. 2026-08-21 the CMake extension put a
+#                           settings.json holding one absolute local path into
+#                           the live package, and A9 went red on it. It is
+#                           gitignored in $CORE_REPO too, so it can never be
+#                           "verified in live but uncommitted" either
 #   .gitignore              exists only on the repo side, by definition
 #   CLAUDE.md               repo-side entry doc; must not ship inside the board
 #                           package the IDE installs
 #
 # A check that is red every single run is one nobody reads.
-$skip = '^(installed\.json|\.gitignore$|CLAUDE\.md$|\.claude[\\/]|tools[\\/]discovery[\\/]bin[\\/])|~$'
+$skip = '^(installed\.json|\.gitignore$|CLAUDE\.md$|\.claude[\\/]|\.vscode[\\/]|tools[\\/]discovery[\\/]bin[\\/])|~$'
 
 $onlyLive = @()
 $diff     = @()
