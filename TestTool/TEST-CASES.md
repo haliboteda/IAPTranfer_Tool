@@ -44,15 +44,35 @@ TestTool/
 
 ⚠️ **机器相关的路径只允许出现在 `config/machine.{ps1,py}`。** 脚本里写死绝对路径、或用 `..\..\..\` 数上去，换台电脑或挪个目录就废 —— 这两种都犯过。
 
-⚠️ **`init_machine.py` 的提问逻辑有单元测试**：`python tools/test_init_machine.py`（8 个用例）。它按定义在自动化里跑不到 —— 提问只在"stdin 是终端且环境无自动化标记"时才发生 —— 所以引号剥离、`~` 展开、安装根目录校验这些只能靠替换 `input()` 来测。**在这台机器上没有真 CubeIDE / Arduino IDE 时它报 SKIP 并说明原因**，不假装通过。
+⚠️ **`init_machine.py` 有单元测试**：`python tools/test_init_machine.py`（**32 个用例**，四组）。
+
+| 组 | 测什么 | 为什么只能这么测 |
+|---|---|---|
+| tables | `SETTINGS` / `PREREQS` / `EXAMPLES` 的列是否齐 | 三张手写表，最常见的编辑错误是加了一行漏一列；不测的话报错发生在你不在场的那台机器上 |
+| ports | `detect_log_ports()` 的 **macOS 分支** | 本项目没有 mac，所以文件系统是假的，只测排序与去重逻辑 |
+| claude dirs | `--write-claude-dirs` 的合并、`ignored_by_own_rules()` 的护栏 | 它改的那个文件装着几百条手工批准的权限规则，**"没弄丢东西"就是被测的性质** |
+| ask_for | 引号剥离、`~` 展开、安装根目录校验 | 提问按定义在自动化里跑不到（只在"stdin 是终端且环境无自动化标记"时发生），只能替换 `input()` |
+
+退出码：0 全过，1 有失败，2 全过但 ask_for 那组因这台机器没有真 CubeIDE / Arduino IDE 而跳过 —— **不假装通过**。
+
+⚠️ **`--prereqs` 和 A0 的分工**：`--prereqs` 看 PATH 上的运行时（git / Python / Go / cc / PowerShell / pyserial）在不在，`selfcheck.ps1` 的 A0 看本机路径解析成了什么。前者必须在 Python 里，因为 **A0 要 PowerShell 才跑得起来，而 pwsh 恰好是 Debian / macOS 上最可能缺的那一个**。
 
 ⚠️ **那两个文件是 `tools/init_machine.py` 生成的，不要手写、也没有模板可抄。** 需要一个新的本机路径时，把它连同探测方式加进那个脚本的 `SETTINGS` 表 —— 那里是"这台机器有什么"的唯一记录。以前的 `machine.example.*` 已删除：它和 `SETTINGS` 是同一份清单的两个出处，留着必然漂移。
 
 ## 快速开始
 
 ```powershell
+# 换台电脑时最省事的一条：/openplc:init（Claude Code skill，走完下面全部步骤）
+# 手工的话：
+
+# 缺哪些运行时，以及这台系统上怎么装
+python tools\init_machine.py --prereqs      # Linux 上是 python3
+
 # 一次性：探测本机路径，生成 config/machine.ps1 和 machine.py
 python tools\init_machine.py      # Linux 上是 python3
+
+# 让一个仓库里的 Claude 会话读得到兄弟仓库，不必一路批权限
+python tools\init_machine.py --write-claude-dirs
 
 # 所有不需要板子的检查。改完代码先跑这个，全绿了再考虑上板
 .\tools\selfcheck.ps1

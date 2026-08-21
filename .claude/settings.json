@@ -22,7 +22,29 @@
       "PowerShell(git log *)",
       "PowerShell(git diff *)",
       "PowerShell(git show *)",
-      "PowerShell(git remote -v)"
+      "PowerShell(git remote -v)",
+      "Bash(python tools/init_machine.py --check)",
+      "Bash(python3 tools/init_machine.py --check)",
+      "Bash(python tools/init_machine.py --prereqs)",
+      "Bash(python3 tools/init_machine.py --prereqs)",
+      "Bash(python tools/common.py --probe)",
+      "Bash(python3 tools/common.py --probe)",
+      "Bash(python tools/test_init_machine.py)",
+      "Bash(python3 tools/test_init_machine.py)",
+      "Bash(ssh -T git@github.com)",
+      "Bash(pwsh --version)",
+      "Bash(git check-ignore *)"
     ]
+  },
+  "extraKnownMarketplaces": {
+    "ai-skills": {
+      "source": {
+        "source": "github",
+        "repo": "haliboteda/AI-Skills"
+      }
+    }
+  },
+  "enabledPlugins": {
+    "openplc@ai-skills": true
   }
 }

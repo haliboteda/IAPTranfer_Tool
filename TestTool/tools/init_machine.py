@@ -5,6 +5,10 @@
     python3 tools/init_machine.py --no-input         detect only; report what is missing
     python3 tools/init_machine.py --set CUBEIDE=/opt/st/stm32cubeide_1.10.0
     python3 tools/init_machine.py --redetect CUBEIDE forget a kept value and look again
+    python3 tools/init_machine.py --prereqs          which runtimes are missing, and
+                                                     how to install them here
+    python3 tools/init_machine.py --write-claude-dirs let a Claude Code session in one
+                                                     repo read the sibling repos
 
 This is the first thing to run on a new machine, before selfcheck. It searches
 first and only asks about what it could not find, showing what the thing is,
@@ -36,6 +40,7 @@ platform and still exist on disk, so a deliberate choice survives a re-run. Use
 
 import argparse
 import glob
+import json
 import os
 import re
 import shutil
@@ -295,6 +300,27 @@ def detect_log_ports():
                          % ", ".join("%s=%s" % (d, p) for d, p in found))
         return [p for _, p in found]
 
+    # macOS names serial devices nothing like Linux does: neither /dev/ttyUSB*
+    # nor /dev/ttyACM* exists there, so the Linux globs find nothing and the
+    # report reads as "no adapter plugged in" on a machine where one is.
+    # Prefer /dev/cu.* over /dev/tty.*: opening a tty.* device blocks until DCD
+    # is asserted, which a three-wire RS232 adapter never does.
+    if PLATFORM == "macos":
+        hits = (sorted(glob.glob("/dev/cu.usbserial*")) +
+                sorted(glob.glob("/dev/cu.usbmodem*")) +
+                [p for p in sorted(glob.glob("/dev/cu.*"))
+                 if not re.search(r'Bluetooth|debug-console|wlan', p, re.I)])
+        seen, ordered = set(), []
+        for p in hits:
+            if p not in seen:
+                seen.add(p)
+                ordered.append(p)
+        if not ordered:
+            NOTES.append("no /dev/cu.usbserial* or /dev/cu.usbmodem* right now -- "
+                         "plug the RS232 adapter in and re-run, or "
+                         "--set LOG_PORTS=/dev/cu.usbserial-1410")
+        return ordered or None
+
     # /dev/ttyUSB* is FTDI and CH340; /dev/ttyACM* is CDC, including the ST-Link
     # VCP. Both are plausible for the RS232 log, so offer both, USB first.
     hits = sorted(glob.glob("/dev/ttyUSB*")) + sorted(glob.glob("/dev/ttyACM*"))
@@ -323,6 +349,12 @@ SETTINGS = [
      ["the Arduino board package, under version control"]),
     ("TOOL_REPO", "path", detect_repo("IAPTranfer_Tool"), True,
      ["this repo"]),
+    ("HW_REPO", "path", detect_repo("Hardware"), False,
+     ["schematics and production files. Optional -- but when a document and the",
+      "schematic disagree, the schematic wins, so pin work needs it present."]),
+    ("REF_REPO", "path", detect_repo("Hello_World_OpenPLC"), False,
+     ["CubeIDE reference project for the same board. Optional; read it before",
+      "inventing a new way to drive a peripheral."]),
 
     ("__section__", "Arduino",
      ["A15 is Arduino's data directory. CORE_LIVE is the board package the IDE",
@@ -384,6 +416,191 @@ RESOLVED = {}
 SOURCE = {}
 NOTES = []
 
+
+# ---------------------------------------------------------------- prerequisites
+# Runtimes, as opposed to the installs in SETTINGS. The difference that matters:
+# these are found on PATH or importable, so there is no path to write down --
+# either the machine has it or it does not.
+#
+# This check has to live in Python, not in selfcheck's A0, because A0 needs
+# PowerShell to run and PowerShell is the single most likely thing to be missing
+# on Debian or macOS. A prerequisite checker that cannot run on a machine
+# missing a prerequisite is not a checker.
+#
+# The install commands are HERE and only here. What each one costs you when it
+# is absent is a judgement, and that stays in open_plc_cube_ide/CLAUDE.md --
+# duplicating either half would give us two lists that drift.
+def _version_of(exe, args=("--version",)):
+    """First line of what the tool says about itself. Some print it on stderr."""
+    try:
+        r = subprocess.run([exe] + list(args), capture_output=True, text=True,
+                           timeout=20)
+    except Exception as e:
+        return "found at %s but would not run (%s)" % (exe, e)
+    out = (r.stdout or "").strip() or (r.stderr or "").strip()
+    return out.splitlines()[0] if out else "(no version printed)"
+
+
+def check_git():
+    exe = shutil.which("git")
+    if not exe:
+        return False, "not on PATH"
+    return True, _version_of(exe)
+
+
+def check_python():
+    return True, "Python %d.%d.%d at %s" % (sys.version_info[:3] + (sys.executable,))
+
+
+def check_go():
+    exe = shutil.which("go")
+    if not exe:
+        return False, "not on PATH"
+    return True, _version_of(exe, ("version",))
+
+
+def check_cc():
+    """The same search and the same bar as HOST_CC in SETTINGS.
+
+    Deliberately not a quick shutil.which(): on Windows the compiler is
+    routinely installed off PATH, and a shallower search here would let
+    --prereqs report "missing" while machine.py holds a working HOST_CC. Two
+    answers to one question is worse than no answer.
+    """
+    exe = detect_host_cc()
+    if not exe:
+        return False, "no modern gcc or clang on PATH or in the usual install roots"
+    _good, why = gcc_is_modern(exe)
+    return True, "%s -- %s" % (exe, why)
+
+
+def check_powershell():
+    """pwsh is PowerShell 7 and exists on all three platforms. Windows also
+    ships 5.1 as powershell.exe, and the scripts here run under either."""
+    ver = ("-NoProfile", "-Command", "$PSVersionTable.PSVersion.ToString()")
+    exe = shutil.which("pwsh")
+    if exe:
+        return True, "pwsh %s" % _version_of(exe, ver)
+    if IS_WIN:
+        exe = shutil.which("powershell")
+        if exe:
+            return True, "Windows PowerShell %s (5.1 is enough here)" % _version_of(exe, ver)
+    return False, "no pwsh on PATH"
+
+
+def check_pyserial():
+    """Checked against THIS interpreter, not any python on PATH: a pyserial
+    installed for a different Python is not installed as far as these scripts
+    are concerned."""
+    try:
+        r = subprocess.run([sys.executable, "-c",
+                            "import serial; print(serial.__version__)"],
+                           capture_output=True, text=True, timeout=30)
+    except Exception as e:
+        return False, "could not ask %s (%s)" % (sys.executable, e)
+    if r.returncode == 0:
+        return True, "pyserial %s for %s" % (r.stdout.strip(), sys.executable)
+    return False, "not importable from %s" % sys.executable
+
+
+REQ_FILE = "%s/requirements.txt" % TESTTOOL_DIR.as_posix()
+
+PREREQS = [
+    ("git", "everything: six repositories", check_git, True, {
+        "windows": "winget install --id Git.Git",
+        "linux": "sudo apt install git",
+        "macos": "xcode-select --install   (or: brew install git)",
+    }),
+    ("Python 3", "IAPTool cross-checks, the fake board, and after M7 every test script",
+     check_python, True, {
+         "windows": "winget install --id Python.Python.3.12",
+         "linux": "sudo apt install python3",
+         "macos": "brew install python@3.12",
+     }),
+    ("Go", "building IAPTool and TestTool", check_go, False, {
+        "windows": "winget install --id GoLang.Go",
+        "linux": "sudo apt install golang-go",
+        "macos": "brew install go",
+    }),
+    ("C compiler", "the host-side unit tests that compile the real bootloader sources",
+     check_cc, False, {
+         "windows": "winget install --id MSYS2.MSYS2   then, in the MSYS2 shell:\n"
+                    "                   pacman -S mingw-w64-ucrt-x86_64-gcc\n"
+                    "                   and add C:\\msys64\\ucrt64\\bin to PATH\n"
+                    "                   already installed somewhere unusual? "
+                    "--set HOST_CC=<path to gcc>",
+         "linux": "sudo apt install build-essential",
+         "macos": "xcode-select --install",
+     }),
+    ("PowerShell", "the test scripts, which are still PowerShell until M7 lands",
+     check_powershell, False, {
+         "windows": "already there as powershell.exe; for 7.x: "
+                    "winget install --id Microsoft.PowerShell",
+         "linux": "sudo snap install powershell --classic\n"
+                  "                   (no snap? add Microsoft's apt repo first, then "
+                  "sudo apt install powershell)",
+         "macos": "brew install --cask powershell",
+     }),
+    ("pyserial", "every case that opens a serial port", check_pyserial, False, {
+        "windows": "python -m pip install -r %s" % REQ_FILE,
+        # Debian 12+ refuses a plain pip install into the system interpreter
+        # (PEP 668), so the distro package is the path of least resistance.
+        "linux": "sudo apt install python3-serial\n"
+                 "                   (or, inside a venv: pip install -r %s)" % REQ_FILE,
+        "macos": "python3 -m pip install -r %s" % REQ_FILE,
+    }),
+]
+
+
+def check_prereqs(brief=False):
+    """Report the runtimes. Returns the names of the missing required ones.
+
+    brief=True is the one-line-each version printed by a normal run; the full
+    version, with install commands, is what --prereqs is for.
+    """
+    Section("prerequisites")
+    missing_required, missing_optional = [], []
+    for name, what_for, check, required, _install in PREREQS:
+        ok, detail = check()
+        if ok:
+            Ok("  %-13s %s" % (name, detail))
+            continue
+        (missing_required if required else missing_optional).append(name)
+        tag = "MISSING" if required else "missing"
+        Warn("  %-13s %s -- %s" % (name, tag, detail))
+
+    if brief:
+        if missing_required or missing_optional:
+            runner = "python" if IS_WIN else "python3"
+            Warn("  %s tools/init_machine.py --prereqs   how to install these"
+                 % runner)
+        return missing_required
+
+    for title, names, lead in (
+            ("cannot work without these", missing_required,
+             "Nothing runs until these are installed."),
+            ("missing -- these limit what can be run", missing_optional,
+             "Each one costs you a subset of the cases, not the whole run.")):
+        if not names:
+            continue
+        Section(title)
+        print("  %s" % lead)
+        for name, what_for, _check, _required, install in PREREQS:
+            if name not in names:
+                continue
+            print()
+            Warn("  %s" % name)
+            print("      needed for : %s" % what_for)
+            print("      install    : %s" % install[PLATFORM])
+
+    if not missing_required and not missing_optional:
+        Ok("  everything this project needs on PATH is here")
+    else:
+        print()
+        print("  What each one costs you when absent: "
+              "open_plc_cube_ide/CLAUDE.md, section 4.")
+    return missing_required
+
 # ---------------------------------------------------------------- asking
 # What to tell someone who has to paste a path: what the thing is, where this
 # script already looked, and what a right answer looks like here. Without the
@@ -393,6 +610,8 @@ EXAMPLES = {
         "BOOT_REPO": r"E:\WorkSpace\Schaeffer-AG\open_plc_cube_ide",
         "CORE_REPO": r"E:\WorkSpace\Schaeffer-AG\open_plc_arduino",
         "TOOL_REPO": r"E:\WorkSpace\Schaeffer-AG\IAPTranfer_Tool",
+        "HW_REPO": r"E:\WorkSpace\Schaeffer-AG\Hardware",
+        "REF_REPO": r"E:\WorkSpace\Schaeffer-AG\ref\Hello_World_OpenPLC",
         "A15": r"C:\Users\you\AppData\Local\Arduino15",
         "CORE_LIVE": r"C:\Users\you\AppData\Local\Arduino15\packages\OpenPLC_Alpha\hardware\stm32\0.1.3-pre",
         "CUBEIDE": r"D:\ST\STM32CubeIDE_1.10.0",
@@ -408,6 +627,8 @@ EXAMPLES = {
         "BOOT_REPO": "/home/you/Documents/WorkSpace/open_plc_cube_ide",
         "CORE_REPO": "/home/you/Documents/WorkSpace/open_plc_arduino",
         "TOOL_REPO": "/home/you/Documents/WorkSpace/IAPTranfer_Tool",
+        "HW_REPO": "/home/you/Documents/WorkSpace/Hardware",
+        "REF_REPO": "/home/you/Documents/WorkSpace/ref/Hello_World_OpenPLC",
         "A15": "/home/you/.arduino15",
         "CORE_LIVE": "/home/you/.arduino15/packages/OpenPLC_Alpha/hardware/stm32/0.1.3-pre",
         "CUBEIDE": "/opt/st/stm32cubeide_1.10.0",
@@ -419,12 +640,44 @@ EXAMPLES = {
         "LOG_PORTS": "/dev/ttyUSB0,/dev/ttyACM0",
         "CDC_PORT": "/dev/ttyACM1",
     },
+    # Only what macOS spells differently from Linux; the rest falls through to
+    # "posix". Handing a mac user a /home/you path or a /dev/ttyUSB0 would be a
+    # wrong answer dressed as help -- neither exists there.
+    "macos": {
+        "BOOT_REPO": "/Users/you/WorkSpace/open_plc_cube_ide",
+        "CORE_REPO": "/Users/you/WorkSpace/open_plc_arduino",
+        "TOOL_REPO": "/Users/you/WorkSpace/IAPTranfer_Tool",
+        "HW_REPO": "/Users/you/WorkSpace/Hardware",
+        "REF_REPO": "/Users/you/WorkSpace/ref/Hello_World_OpenPLC",
+        "A15": "/Users/you/Library/Arduino15",
+        "CORE_LIVE": "/Users/you/Library/Arduino15/packages/OpenPLC_Alpha/hardware/stm32/0.1.3-pre",
+        "CUBEIDE": "/Applications/STM32CubeIDE_1.10.0",
+        "IDE": "/Applications/Arduino IDE.app/Contents",
+        "ARDUINO_CLI": "/Applications/Arduino IDE.app/Contents/Resources/app/lib/backend/resources/arduino-cli",
+        "ARDUINO_CLI_CONFIG": "/Users/you/.arduinoIDE/arduino-cli.yaml",
+        "HOST_CC": "/usr/bin/clang",
+        "WORKSPACE": "/Users/you/WorkSpace",
+        "LOG_PORTS": "/dev/cu.usbserial-1410,/dev/cu.usbmodem1103",
+        "CDC_PORT": "/dev/cu.usbmodem1103",
+    },
 }
+
+
+def example_for(key):
+    """The platform's example, with macOS overriding the shared posix one."""
+    if IS_WIN:
+        return EXAMPLES["windows"].get(key)
+    if PLATFORM == "macos" and key in EXAMPLES["macos"]:
+        return EXAMPLES["macos"][key]
+    return EXAMPLES["posix"].get(key)
 
 WHAT_IT_IS = {
     "BOOT_REPO": "the open_plc_cube_ide clone -- bootloader plus the shared docs",
     "CORE_REPO": "the open_plc_arduino clone -- the board package under git",
     "TOOL_REPO": "this repo, IAPTranfer_Tool",
+    "HW_REPO": "the Hardware clone -- schematics and production files. Forgejo only, "
+               "there is no GitHub copy of it",
+    "REF_REPO": "the Hello_World_OpenPLC clone -- CubeIDE reference project for this board",
     "A15": "Arduino's data directory, the one holding packages/",
     "CORE_LIVE": "the installed OpenPLC_Alpha board package the IDE compiles against",
     "CUBEIDE": "the STM32CubeIDE install ROOT -- the directory that contains STM32CubeIDE/plugins",
@@ -434,6 +687,7 @@ WHAT_IT_IS = {
     "ARDUINO_CLI_CONFIG": "arduino-cli.yaml, which points the CLI at Arduino15 and user libraries",
     "HOST_CC": "a modern gcc or clang for the host-side C tests (GCC 5 or newer)",
     "LOG_PORTS": "serial port(s) carrying the bootloader/app printf, most likely first",
+    "LOG_BAUD": "baud rate of the log port -- a property of the firmware, not of this machine",
     "CDC_PORT": "the board's USB CDC port, when it is enumerated",
     "BOARD_IP": "the board's IP address",
     "IAPTOOL": "a specific IAPTool build; normally left empty so it is found by wildcard",
@@ -448,14 +702,17 @@ def searched_in(key):
     if key == "CORE_LIVE":
         a15 = RESOLVED.get("A15") or "<A15>"
         return [str(Path(a15) / "packages/OpenPLC_Alpha/hardware/stm32/*")]
-    if key in ("BOOT_REPO", "CORE_REPO", "TOOL_REPO"):
+    if key in ("BOOT_REPO", "CORE_REPO", "TOOL_REPO", "HW_REPO", "REF_REPO"):
         return ["next to %s, and one level further out" % TOOL_REPO_GUESS.parent]
     if key == "HOST_CC":
         return ["gcc or clang on PATH"] + (
             [r"C:\mingw64\bin", r"C:\msys64\mingw64\bin", r"D:\Soft\mingw64\bin"] if IS_WIN else [])
     if key == "LOG_PORTS":
-        return [r"HKLM\HARDWARE\DEVICEMAP\SERIALCOMM"] if IS_WIN else \
-               ["/dev/ttyUSB*", "/dev/ttyACM*"]
+        if IS_WIN:
+            return [r"HKLM\HARDWARE\DEVICEMAP\SERIALCOMM"]
+        if PLATFORM == "macos":
+            return ["/dev/cu.usbserial*", "/dev/cu.usbmodem*", "/dev/cu.*"]
+        return ["/dev/ttyUSB*", "/dev/ttyACM*"]
     return []
 
 
@@ -490,7 +747,7 @@ def describe(key, kind, indent="    "):
         print("%slooked in  : %s" % (indent, where[0]))
         for w in where[1:]:
             print("%s             %s" % (indent, w))
-    ex = EXAMPLES["windows" if IS_WIN else "posix"].get(key)
+    ex = example_for(key)
     if ex:
         print("%sexample    : %s" % (indent, ex))
     if kind == "ports":
@@ -665,6 +922,217 @@ def render_powershell(values):
     return head + render("#", lambda k: "$" + k, ps_literal, values)
 
 
+# ---------------------------------------------------------------- branches
+# A fresh clone checks out the remote's DEFAULT branch, and on this product that
+# is not where the work is: as of 2026-08-21 three of the five repos had a
+# default of master/main while the work sat on a version branch. Cloning and
+# starting is therefore a silent way to end up a whole version behind -- the
+# same symptom CLAUDE.md records for the stale Forgejo mirror, from a different
+# cause.
+#
+# Which branch is current is machine state, so it is reported, never written
+# down: the names change every release.
+ALL_REPO_KEYS = ("BOOT_REPO", "CORE_REPO", "TOOL_REPO", "HW_REPO", "REF_REPO")
+
+
+def repo_branch(repo):
+    """(checked-out branch, the remote's default branch) -- "" for either if git
+    cannot say. The default is read from the local ref that clone writes, so
+    this stays offline."""
+    def g(*args):
+        try:
+            r = subprocess.run(["git", "-C", str(repo)] + list(args),
+                               capture_output=True, text=True, timeout=30)
+        except Exception:
+            return ""
+        return r.stdout.strip() if r.returncode == 0 else ""
+
+    current = g("rev-parse", "--abbrev-ref", "HEAD")
+    ref = g("symbolic-ref", "refs/remotes/origin/HEAD")
+    return current, (ref.rsplit("/", 1)[-1] if ref else "")
+
+
+def report_branches():
+    Section("branches")
+    rows = []
+    for key in ALL_REPO_KEYS:
+        repo = RESOLVED.get(key)
+        if not repo or not Path(repo).is_dir():
+            continue
+        current, default = repo_branch(repo)
+        rows.append((key, current, default))
+        shown = "(default unknown)" if not default else \
+                ("= default" if current == default else "default: %s" % default)
+        print("  %-11s %-16s %s" % (key, current or "?", shown))
+
+    on_default = [k for k, c, d in rows if d and c == d]
+    off_default = [k for k, c, d in rows if d and c != d]
+    if on_default and off_default:
+        Warn("  %s sit(s) on the branch a fresh clone hands you, while %s do(es) not."
+             % (", ".join(on_default), ", ".join(off_default)))
+        Warn("    On a machine set up today that is the shape of a forgotten")
+        Warn("    checkout, and it leaves you a whole version behind in silence.")
+        Warn("    git -C <repo> branch -r     then check out the one being worked on.")
+
+
+# ------------------------------------------------- Claude Code working dirs
+# One product, several repositories, and no shared build system: a session
+# started in one of them has to read the others constantly. Claude Code asks
+# before it reads outside the directory it was started in, so without this the
+# first hour on a new machine is spent approving the same few directories over
+# and over.
+#
+# These go in .claude/settings.local.json, never in settings.json: they are
+# absolute paths for one machine, and settings.json is the committed, shared
+# half. The local file is gitignored in every repo that has one.
+# Everything a session may need to read...
+GRANTED_KEYS = ("BOOT_REPO", "CORE_REPO", "TOOL_REPO", "HW_REPO", "REF_REPO",
+                "A15", "CUBEIDE", "IDE")
+# ...but written only into the three repos work actually happens in. Hardware
+# and Hello_World_OpenPLC are read-only references; dropping a private file into
+# them buys nothing and risks the accident guarded against below.
+TARGET_KEYS = ("BOOT_REPO", "CORE_REPO", "TOOL_REPO")
+
+
+def _same_path(a, b):
+    return os.path.normcase(os.path.normpath(a)) == os.path.normcase(os.path.normpath(b))
+
+
+def ignored_by_own_rules(repo, relative):
+    """Is `relative` ignored by a rule that lives INSIDE this repository?
+
+    A plain `git check-ignore` is not enough. On the machine this was written
+    on, two of the repos were covered only by ~/.config/git/ignore, so the file
+    looked safe here and would have been committable on the next machine -- the
+    accident CLAUDE.md section 6 records having already happened once. So the
+    rule's own source has to be inside the repo, and -v is what tells us.
+    """
+    # -z, not -v alone: the -v format is source:line:pattern, and a Windows
+    # source path starts "C:\...", so splitting on the colon reads the drive
+    # letter as the whole path -- which is relative, so every repo on Windows
+    # looked safe. -z separates the fields with NUL and quotes nothing, and it
+    # is only accepted together with --stdin (git 2.30 says so outright).
+    try:
+        r = subprocess.run(["git", "-C", str(repo), "check-ignore", "-v", "-z",
+                            "--stdin"],
+                           input=relative + "\0",
+                           capture_output=True, text=True, timeout=30)
+    except Exception:
+        return None, "git could not be run"
+    if r.returncode != 0 or not r.stdout:
+        return False, "nothing ignores it"
+    source = r.stdout.split("\0")[0]
+    if not source:
+        return False, "nothing ignores it"
+    if os.path.isabs(source) or source.startswith("~"):
+        return False, "only %s ignores it, which is per-machine" % source
+    return True, source
+
+
+def write_claude_dirs(check_only=False):
+    """Merge the resolved directories into each repo's settings.local.json.
+
+    Read, merge, write -- never regenerate. The file next to this one on the
+    machine it was written for held 404 hand-approved permission rules, and
+    rewriting it from a template would throw all of them away.
+    """
+    Section("Claude Code working directories")
+
+    repos = [(k, RESOLVED.get(k)) for k in TARGET_KEYS]
+    repos = [(k, v) for k, v in repos if v and Path(v).is_dir()]
+    grants = [RESOLVED[k] for k in GRANTED_KEYS
+              if RESOLVED.get(k) and Path(RESOLVED[k]).is_dir()]
+
+    if not repos:
+        Warn("  no repository resolved yet -- nothing to write into")
+        return 1
+
+    print("  Granting %d directory/ies to %d repo settings file(s)."
+          % (len(grants), len(repos)))
+    print("  Target is permissions.additionalDirectories in "
+          ".claude/settings.local.json,")
+    print("  which is gitignored -- these are absolute paths for this machine only.")
+    print()
+
+    for key, repo in repos:
+        rel = ".claude/settings.local.json"
+        safe, why = ignored_by_own_rules(repo, rel)
+        if safe is False:
+            # Refuse. This file is full of absolute local paths; a repo that
+            # would commit it must be fixed first, not worked around.
+            Fail("  %-10s %s -- %s" % (key, repo, why))
+            Fail("             add a line to that repo's own .gitignore:")
+            Fail("               %s" % rel)
+            continue
+
+        path = Path(repo) / ".claude" / "settings.local.json"
+        data = {}
+        if path.exists():
+            try:
+                data = json.loads(path.read_text(encoding="utf-8"))
+            except Exception as e:
+                # Refuse rather than replace. Whatever is in there was approved
+                # by hand, and a parse error is a reason to stop, not a licence
+                # to start over.
+                Fail("  %-10s %s" % (key, path))
+                Fail("             could not be parsed (%s) -- left untouched" % e)
+                continue
+        if not isinstance(data, dict):
+            Fail("  %-10s %s holds %s, not an object -- left untouched"
+                 % (key, path, type(data).__name__))
+            continue
+
+        perms = data.get("permissions")
+        if perms is None:
+            perms = {}
+        if not isinstance(perms, dict):
+            Fail("  %-10s permissions is not an object -- left untouched" % key)
+            continue
+        current = perms.get("additionalDirectories")
+        if current is None:
+            current = []
+        if not isinstance(current, list):
+            Fail("  %-10s additionalDirectories is not a list -- left untouched" % key)
+            continue
+
+        # A repo does not need itself: that is the directory the session starts
+        # in.
+        wanted = [g for g in grants if not _same_path(g, repo)]
+        added = [w for w in wanted
+                 if not any(isinstance(c, str) and _same_path(c, w) for c in current)]
+
+        if not added:
+            print("  %-10s %s" % (key, "unchanged (all %d already listed)" % len(wanted)))
+            continue
+
+        if check_only:
+            Warn("  %-10s would add %d:" % (key, len(added)))
+            for a in added:
+                print("               %s" % a)
+            continue
+
+        merged = dict(data)
+        new_perms = dict(perms)
+        new_perms["additionalDirectories"] = current + added
+        merged["permissions"] = new_perms
+
+        path.parent.mkdir(parents=True, exist_ok=True)
+        backup = path.with_suffix(path.suffix + ".bak")
+        if path.exists() and not backup.exists():
+            shutil.copy2(str(path), str(backup))
+            Warn("  %-10s kept the previous file as %s" % ("", backup.name))
+        path.write_text(json.dumps(merged, indent=2, ensure_ascii=False) + "\n",
+                        encoding="utf-8", newline="\n")
+        Ok("  %-10s +%d  ->  %s" % (key, len(added), path))
+        for a in added:
+            print("               %s" % a)
+
+    print()
+    print("  A session already running does not pick these up. Restart it, or")
+    print("  approve the directory once by hand for the rest of this session.")
+    return 0
+
+
 # ---------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(add_help=True, description=__doc__,
@@ -680,7 +1148,20 @@ def main():
                     help="never ask; just report what could not be found")
     ap.add_argument("--ask", action="store_true",
                     help="ask even when the environment looks automated")
+    ap.add_argument("--prereqs", action="store_true",
+                    help="report the runtimes (git, Python, Go, cc, PowerShell, "
+                         "pyserial) and how to install what is missing; "
+                         "writes nothing")
+    ap.add_argument("--write-claude-dirs", action="store_true",
+                    help="also grant the resolved directories to each repo's "
+                         ".claude/settings.local.json, so a session started in "
+                         "one repo can read the others without asking")
     args = ap.parse_args()
+
+    # Nothing else to resolve for this one, and it must work on a machine where
+    # every other step would fail -- that is the point of it.
+    if args.prereqs:
+        return 1 if check_prereqs() else 0
 
     # Asking is the default, but only when somebody is there to answer. A prompt
     # written to a pipe raises EOFError and is handled; a prompt written to a
@@ -724,6 +1205,10 @@ def main():
     print("  %-19s %s   (Python %d.%d.%d)" % (
         "platform", PLATFORM, *sys.version_info[:3]))
     print("  %-19s %s" % ("config directory", CONFIG_DIR))
+
+    # Before any path detection: a missing runtime explains far more failures
+    # further down than any single missing path does, and it costs one line each.
+    check_prereqs(brief=True)
 
     existing = load_existing()
     redetect = {r.upper() for r in args.redetect}
@@ -809,6 +1294,8 @@ def main():
     for n in NOTES:
         print("  note: %s" % n)
 
+    report_branches()
+
     if not IS_WIN:
         check_dialout()
 
@@ -844,6 +1331,9 @@ def main():
             Warn("  Skipped at the prompt. Re-run to be asked again.")
         else:
             Warn("  Not asked for interactively, because %s." % why_not)
+        if args.write_claude_dirs:
+            Warn("  --write-claude-dirs was skipped: it can only grant "
+                 "directories it has resolved.")
         return 1
 
     if missing_optional:
@@ -880,11 +1370,17 @@ def main():
         path.write_text(text, encoding="utf-8", newline="\n")
         Ok("  wrote %s" % path)
 
+    if args.write_claude_dirs:
+        write_claude_dirs(check_only=args.check)
+
     if args.check:
         Warn("  --check: nothing was written")
         return 0
 
     Section("next")
+    if not args.write_claude_dirs:
+        print("  %s tools/init_machine.py --write-claude-dirs" % runner)
+        print("      let a session in one repo read the others without asking")
     print("  python%s tools/common.py --probe        confirm what A0 now sees"
           % ("" if IS_WIN else "3"))
     print("  pwsh ./tools/selfcheck.ps1              full host-side run (needs PowerShell)")
