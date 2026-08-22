@@ -52,7 +52,7 @@ pwsh ./tools/selfcheck.ps1        # Windows 上也可以 .\tools\selfcheck.ps1
 
 `tools/test_init_machine.py` 测的就是提问那段逻辑 —— 它按定义没法在自动化里跑到，所以引号剥离、`~` 展开、安装根目录校验这些最容易写错的地方靠它兜。
 
-`selfcheck.ps1` 是**所有不需要板子的检查**，改完代码就该跑一遍 —— 上板调试一轮的成本高一个数量级。它的 **A0** 会打出这台机器上每一项工具解析成什么，**缺什么点名说缺什么**。
+`selfcheck.py` 是**所有不需要板子的检查**，改完代码就该跑一遍 —— 上板调试一轮的成本高一个数量级。它的 **ENV** 一步会打出这台机器上每一项工具解析成什么，**缺什么点名说缺什么**。
 
 ## 脚本的平台规矩
 
@@ -83,7 +83,7 @@ pwsh ./tools/selfcheck.ps1        # Windows 上也可以 .\tools\selfcheck.ps1
 
 **`IAPTool` 只管上传烧写，不加任何测试专用功能。** 为验证设备行为而存在的东西一律放 `TestTool/`。
 
-三条原则（完整版和踩过的坑在 `open_plc_cube_ide/docs/BUILD-AND-TEST.md`）：
+三条原则（完整版和踩过的坑在 `open_plc_cube_ide/docs/test/BUILD-AND-TEST.md`）：
 
 1. **测真实代码路径。** 需要"传输进行中"的用例把 `IAPTool` 当子进程拉起来跑真实烧写，不自己实现传输
 2. **加密逻辑 import，不重写**

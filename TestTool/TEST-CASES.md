@@ -17,7 +17,7 @@ TestTool/
 │   ├── init_machine.py   ← ★ 换电脑第一条命令。先探测，搜不到才问你
 │   ├── test_init_machine.py ← init_machine 提问逻辑的单元测试
 │   ├── _common.ps1       ← 共用：读 config、找工具链、开串口、判目标电压
-│   ├── common.py         ← 同上，Python 侧。`python tools/common.py --probe` = A0
+│   ├── common.py         ← 同上，Python 侧。`python tools/common.py --probe` = ENV
 │   ├── selfcheck.ps1     ← ★ 所有不需要板子的检查，一条命令
 │   ├── check-version-sync.ps1  ← P1  版本号三处一致
 │   ├── check-mirror-sync.ps1   ← P2  跨仓镜像 8 锚点 + 备份寄存器占用
@@ -39,7 +39,7 @@ TestTool/
     └── checklist.md      ← 出厂 / 量产验收单
 ```
 
-> **需求清单和完整的覆盖矩阵在 `open_plc_cube_ide/docs/handover/`** —— [REQUIREMENTS.md](../../open_plc_cube_ide/docs/handover/REQUIREMENTS.md) 说要做到什么，[TEST-PLAN.md](../../open_plc_cube_ide/docs/handover/TEST-PLAN.md) 说每条用例覆盖哪条需求、最近一次跑出什么结果、还欠哪些用例。
+> **需求清单和完整的覆盖矩阵在 `open_plc_cube_ide/docs/handover/`** —— [REQUIREMENTS.md](../../open_plc_cube_ide/docs/STATUS.md) 说要做到什么，[TEST-PLAN.md](../../open_plc_cube_ide/docs/STATUS.md) 说每条用例覆盖哪条需求、最近一次跑出什么结果、还欠哪些用例。
 > **本文件只管判据和运行方法**（贴着代码走，跨仓不搬）。
 
 ⚠️ **机器相关的路径只允许出现在 `config/machine.{ps1,py}`。** 脚本里写死绝对路径、或用 `..\..\..\` 数上去，换台电脑或挪个目录就废 —— 这两种都犯过。
@@ -55,7 +55,7 @@ TestTool/
 
 退出码：0 全过，1 有失败，2 全过但 ask_for 那组因这台机器没有真 CubeIDE / Arduino IDE 而跳过 —— **不假装通过**。
 
-⚠️ **`--prereqs` 和 A0 的分工**：`--prereqs` 看 PATH 上的运行时（git / Python / Go / cc / PowerShell / pyserial）在不在，`selfcheck.ps1` 的 A0 看本机路径解析成了什么。前者必须在 Python 里，因为 **A0 要 PowerShell 才跑得起来，而 pwsh 恰好是 Debian / macOS 上最可能缺的那一个**。
+⚠️ **`--prereqs` 和 ENV 的分工**：`--prereqs` 看 PATH 上的运行时（git / Python / Go / cc / PowerShell / pyserial）在不在，selfcheck 的 ENV 一步看本机路径解析成了什么。前者必须在 Python 里，因为 **ENV 要 PowerShell 才跑得起来，而 pwsh 恰好是 Debian / macOS 上最可能缺的那一个**。
 
 ⚠️ **那两个文件是 `tools/init_machine.py` 生成的，不要手写、也没有模板可抄。** 需要一个新的本机路径时，把它连同探测方式加进那个脚本的 `SETTINGS` 表 —— 那里是"这台机器有什么"的唯一记录。以前的 `machine.example.*` 已删除：它和 `SETTINGS` 是同一份清单的两个出处，留着必然漂移。
 
@@ -75,7 +75,7 @@ python tools\init_machine.py      # Linux 上是 python3
 python tools\init_machine.py --write-claude-dirs
 
 # 所有不需要板子的检查。改完代码先跑这个，全绿了再考虑上板
-.\tools\selfcheck.ps1
+python tools\selfcheck.py         # 12 项；--quick 跳过慢的那 5 项
 
 # 构建 bootloader、烧写、抓启动日志、给判定（CubeIDE 必须关闭）
 .\tools\flash-bootloader.ps1
@@ -84,7 +84,9 @@ python tools\init_machine.py --write-claude-dirs
 .\tools\serial-watch.ps1
 ```
 
-`selfcheck.ps1` 缺什么会报 `SKIP` 并说清缺什么，**不会静默跳过** —— 一个被悄悄跳过的检查会被读成通过，那比没有这个检查更糟。
+⚠️ **`selfcheck` 用 Python 那一版。** `selfcheck.ps1` 还在，但只作为 M7 的对照基准留到第 6 步；两版**12 项结论逐项相同**（judged by `tools/m7-compare.ps1 -Only selfcheck`）。**板级脚本目前仍然只有 PowerShell 版**（M7 第 5 步还没做），所以上面后两条还是 `.ps1`。
+
+缺什么会报 `SKIP` 并说清缺什么，**不会静默跳过** —— 一个被悄悄跳过的检查会被读成通过，那比没有这个检查更糟。
 
 ## 编译
 
@@ -246,24 +248,38 @@ T1–T4 和 S1 都要求设备处于 bootloader 且以太网已起。三种办�
 
 跑得快、随时能跑，**改完代码先过这一层再上板**。
 
+**这一层每个脚本都有 PowerShell 和 Python 两个版本**（M7 第 3 步，2026-08-22）。两版在 Windows 上**输出逐字节相同**，判据由 `tools/m7-compare.ps1` 保证（10/10）。新写自动化用 Python 那一版；`.ps1` 留着当对照基准，到 M7 第 6 步才删。
+
 | 目录 | 怎么跑 | 覆盖什么 |
 |---|---|---|
 | `host/iapcrypto/` | 在 `IAPTranfer_Tool/` 下 `go test ./TestTool/...` | HMAC 原语对 RFC 4231 向量；派生公式 `HMAC-SHA256(password, machineID)`；同 UID 稳定、异 UID 必不同；一次完整挑战应答双方独立算出同一个 HMAC |
-| `host/bootloader_unit/` | `.\build.ps1` 或 `./build.sh`，需要 gcc/clang | 用 stub 在主机上编译**真实的** `sha256.c` / `iap_keyderive.c` / `iap_auth.c` 并跑断言 |
-| `host/fakeboard/` | `.\run-cases.ps1`，需要 python | **K1–K6** IAPTool 在传输开始前的密钥匹配决策，六种情况。**每种在真板子上都要换一把 bootloader 密钥才能构造** |
-| `host/fakeboard/` | `.\run-downgrade.ps1`，需要 python | **DG1** 降级拦截，五种情况。每条都额外断言**板子有没有真的收到 `flash` 命令** —— 只看工具打了什么，挡不住"打印了拒绝然后照样上传" |
-| `host/crypto_ref/` | `.\run-checks.ps1`，需要 python | SHA-256 构造对 hashlib（309 向量）；IAPTool 真实签名交给一份独立的纯算术 P-256 验证器 |
-| `host/variant_check/` | `.\build.ps1`，需要 arduino-cli | **P4** Arduino 变体头的编译期断言。目前一个：FMC 保留脚表（39 个）自洽。**编不过就是变体头坏了，不是 sketch 坏了** |
-| `host/examples_build/` | `.\build.ps1`，需要 arduino-cli | **P5** 编译 core 自有库的**每一个 example**。⚠️ **约十分钟，故意不进 selfcheck** —— 见下 |
+| `host/bootloader_unit/` | `python build.py`（或 `.\build.ps1` / `./build.sh`），需要 gcc/clang | 用 stub 在主机上编译**真实的** `sha256.c` / `iap_keyderive.c` / `iap_auth.c` 并跑断言 |
+| `host/fakeboard/` | `python run_cases.py`（或 `.\run-cases.ps1`） | **K1–K6** IAPTool 在传输开始前的密钥匹配决策，六种情况。**每种在真板子上都要换一把 bootloader 密钥才能构造** |
+| `host/fakeboard/` | `python run_downgrade.py`（或 `.\run-downgrade.ps1`） | **DG1** 降级拦截，五种情况。每条都额外断言**板子有没有真的收到 `flash` 命令** —— 只看工具打了什么，挡不住"打印了拒绝然后照样上传"。⚠️ **只覆盖工具侧**：bootloader 把版本号解析出来却从不比较（`IAPServer/IAP_server.c:332-357`），设备侧那半是 DG2 |
+| `host/crypto_ref/` | `python run_checks.py [--rounds N]`（或 `.\run-checks.ps1 -Rounds N`） | SHA-256 构造对 hashlib（309 向量）；IAPTool 真实签名交给一份独立的纯算术 P-256 验证器 |
+| `host/variant_check/` | `python build.py`（或 `.\build.ps1`），需要 arduino-cli | **P4** Arduino 变体头的编译期断言。目前一个：FMC 保留脚表（39 个）自洽。**编不过就是变体头坏了，不是 sketch 坏了** |
+| `host/examples_build/` | `python build.py [--only LIB]`（或 `.\build.ps1 -Only LIB`），需要 arduino-cli | **P5** 编译 core 自有库的**每一个 example**。⚠️ **约十分钟，故意不进 selfcheck** —— 见下 |
+
+⚠️ **两个 fakeboard 脚本一次只能有一个在跑。** 它们都在同一个端口起假板子，而 `fake_board.py` 的 TCP socket 设了 `SO_REUSEADDR` —— 两个同时跑不会报错，只会有两个进程同时监听、谁接到连接是未定义的，表现为莫名其妙的 FAIL。
+
+## ⚠️ 板级用例的顺序约束和标准载荷（2026-08-22 实测定的）
+
+**`SD1` 必须是任何序列里最后一条依赖网络的用例。** 它装上的 `SDRAM_Acceptance` app **会让板子对 IAPTool 不可达** —— 回 ICMP，但不回 UDP 发现，`IAPTool ether` 报 `No response`。它后面每一条走网络的用例都会以「板子没反应」失败，而原因和那些用例毫无关系。A/B 三态实测见 `open_plc_cube_ide/docs/test/MEASUREMENTS.md`；根因待查，见那个仓库 `docs/work/ISSUES.md` 的 **B5**。
+
+**所以板级用例的标准载荷是 `onboard/rs232/SerialPort`，不是 `SDRAM_Acceptance`。** 需要 `--bin` 的用例（S1 / S2 / T3 / S3 / upload-and-watch）都用它 —— 实测装上它之后发现应答在 **0.1 秒**内回来。
+
+**被 SD1 弄成不可达之后怎么恢复**（三条都行，前两条不需要人动手）：ST-Link 复位进不去 —— app 是有效的，会照常启动。要么 `flash_bootloader.py` 整片擦除后重烧，要么走 CDC（`COM11`），要么按住 BOOT0。
 
 ### P5 · example 不能腐烂
 
 **什么时候跑**：改了 `open_plc_arduino` 的任何库之后，以及发版前。**不在 `selfcheck` 里** —— selfcheck 是"改完代码就跑"的东西，往里加十分钟只会让人不跑它。
 
-```powershell
-.\host\examples_build\build.ps1              # 全部
-.\host\examples_build\build.ps1 -Only SDRAM  # 只挑一个库
 ```
+python host/examples_build/build.py              # 全部
+python host/examples_build/build.py --only SDRAM  # 只挑一个库
+```
+
+⚠️ **`m7-compare.ps1` 只比对 `--only SDRAM` 的子集。** 全量跑两遍要二十分钟，而对脚本逻辑不增加任何覆盖 —— 一个库的例子已经走完除「例子更多」以外的每个分支。**全量仍然要手工跑**，时机就是上面那句。
 
 **为什么值得有**：example 是新用户编译的第一个东西，也是最后一个有人回头看的东西。API 改了名，example 还引用旧名，**除非有人正好去打开它，否则永远没人知道** —— 别的检查一条都盖不到，因为 example 不属于任何应用的构建。
 
@@ -287,7 +303,7 @@ bootloader 每次启动会在**当前生效的根就是随项目发布的那把�
 
 ### M7 · PowerShell 版和 Python 版必须给出同一个结论
 
-**只在 M7 改写期间存在**（见 `open_plc_cube_ide/docs/handover/Todo/M7-python-scripts.md`）。两个脚本，都不碰板子，随时可跑：
+**只在 M7 改写期间存在**（见 `open_plc_cube_ide/docs/work/M7-python-scripts.md`）。两个脚本，都不碰板子，随时可跑：
 
 ```powershell
 .\tools\m7-compare.ps1            # 两版都当子进程跑，输出逐字节比对
@@ -347,14 +363,33 @@ STM32_Programmer_CLI -c port=SWD mode=UR -e 1   # 擦掉 app 扇区，bootloader
 
 以后的 `rs485/` `can/` `knx/` 按同样方式各自一个目录，每个目录一份说明文件写清"验证什么 / 前置条件 / 判据"，名字取成 `RS485-ECHO.md` 这种能看出内容的。
 
+### SD2 · SDRAM 数据总线诊断（不是通过/失败用例，是仪器）
+
+`tools\run-sdram-diag.ps1` —— 发一条串口命令、抓 bootloader 打出来的四张表：逐位统计、驻留扫描、释放时间对比、浮空测试。实现在 `boot:Core/Src/sdram_diag.c`，命令是 `sdramdiag` 和 `sdramlive [秒]`。
+
+**为什么要有它**：这块板的 SDRAM 数据总线**一个可测点都没有** —— 16 根线两端都在 BGA 球下，没有串阻也没有测试点（`boot:docs/design/HARDWARE-FACTS.md`）。万用表和示波器没有落点，固件是唯一的仪器。
+
+| 想干什么 | 命令 |
+|---|---|
+| 完整报告 | `.\run-sdram-diag.ps1 -Out run2.txt` |
+| 冷热喷剂测试（每秒一行错误率） | `.\run-sdram-diag.ps1 -Live 120` |
+
+**这里没有 PASS/FAIL 判据**，因为它输出的是测量值不是结论。判读规则和已经排除的解释在 `boot:docs/test/MEASUREMENTS.md`，给硬件工程师看的一页在 `boot:docs/work/investigations/sdram-d1-report.html`。
+
+⚠️ **前置条件：板子必须停在 bootloader。** 跑起 app 的板子根本不初始化 FMC，什么都测不到。
+
+⚠️ **释放时间只能在同一个 GPIO 端口内比较。** 好线之间跨 2.2 倍很正常（走线长度差别），跨端口比出来的数没有意义。
+
+⚠️ **capture 存进 `host/sdram_diag/`，一次一个文件，不要覆盖** —— 那是某一块板在某一刻的物理状态，修过或换过就再也测不到了。
+
 ## 未覆盖
 
-**完整的覆盖矩阵和每条待补用例的设计骨架在 [docs/handover/TEST-PLAN.md](../../open_plc_cube_ide/docs/handover/TEST-PLAN.md)**，这里只留摘要：
+**完整的覆盖矩阵和每条待补用例的设计骨架在 [docs/STATUS.md](../../open_plc_cube_ide/docs/STATUS.md)**，这里只留摘要：
 
 | ID | 内容 | 为什么还没做 |
 |---|---|---|
 | M3 | 两块板子的 MAC 不同 | ⛔ 手上只有一块板 |
-| S4a/S4b | 掉电中断，拆成传输中 / 擦写中两半 | 要人工断电。**脚本已就绪：`tools/run_s4.py`**。⛔ **2026-08-21 起被硬件阻塞** —— SDRAM 的 D1 线开路，任何上传都停在 checksum，见 `open_plc_cube_ide/docs/TODO.md` 的 B4 |
+| S4a/S4b | 掉电中断，拆成传输中 / 擦写中两半 | 要人工断电。**脚本已就绪：`tools/run_s4.py`**。⛔ **2026-08-21 起被硬件阻塞** —— SDRAM 的 D1 线开路，任何上传都停在 checksum，见 `open_plc_cube_ide/docs/work/ISSUES.md` 的 B4 |
 
 ### `tools/run_s4.py` —— S4a / S4b 怎么跑
 
@@ -391,12 +426,12 @@ S1 和 S2（密钥不匹配）必须分开测：两者现象都是"拒绝启动"
 
 ### SDRAM staging 改变了失败语义（2026-08-17 已实测）
 
-镜像先进 SDRAM 校验，**全部通过之后才擦 app 区**（见 `open_plc_cube_ide/docs/IAP-STATUS.md`）。于是：
+镜像先进 SDRAM 校验，**全部通过之后才擦 app 区**（见 `open_plc_cube_ide/docs/test/MEASUREMENTS.md`）。于是：
 
 | | 改前 | 改后（**已实测**） |
 |---|---|---|
 | S1 跑完 | 板子拒绝启动 app，必须重烧才能恢复 → 标了 `destructive` | **app 区没被碰过，旧 app 照常启动** → ✅ `destructive` 已改为 `false` |
-| S4 的做法 | 写到 49152 字节时拔电 | 那个时刻 flash 压根没被碰过，**用例失去意义**，仍待重写 |
+| 原来那个 S4 | 写到 49152 字节时拔电 | 那个时刻 flash 压根没被碰过，**用例失去意义**。✅ 已拆成 **S4a**（传输中拔电 → 旧 app 照常启动）和 **S4b**（擦写阶段拔电 → 报无效且可重传），骨架在 `open_plc_cube_ide/docs/test/CASE-DESIGNS.md`，跑法 `tools/run_s4.py` |
 
 **G1 的实测记录**（`tools/run-case.ps1 -Case S1 -ThenReset`）：
 

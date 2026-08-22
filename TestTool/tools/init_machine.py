@@ -342,7 +342,7 @@ def detect_workspace():
 SETTINGS = [
     ("__section__", "repositories",
      ["The three repos this product is built from.",
-      "See open_plc_cube_ide/docs/ARCHITECTURE.md."]),
+      "See open_plc_cube_ide/docs/design/ARCHITECTURE.md."]),
     ("BOOT_REPO", "path", detect_repo("open_plc_cube_ide"), True,
      ["bootloader, CubeIDE project, and the shared docs"]),
     ("CORE_REPO", "path", detect_repo("open_plc_arduino"), True,
@@ -422,7 +422,7 @@ NOTES = []
 # these are found on PATH or importable, so there is no path to write down --
 # either the machine has it or it does not.
 #
-# This check has to live in Python, not in selfcheck's A0, because A0 needs
+# This check has to live in Python, not in selfcheck's ENV step, because ENV needs
 # PowerShell to run and PowerShell is the single most likely thing to be missing
 # on Debian or macOS. A prerequisite checker that cannot run on a machine
 # missing a prerequisite is not a checker.
@@ -565,7 +565,7 @@ PREREQS = [
     # These two are install DIRECTORIES, not executables on PATH, so SETTINGS
     # records where they are. They are listed here as well because "what must I
     # install" is one question and deserves one answer.
-    ("Arduino IDE", "building the application; its bundled arduino-cli runs case A13",
+    ("Arduino IDE", "building the application; its bundled arduino-cli runs case P4",
      lambda: (bool(detect_ide()), detect_ide() or "not found in the usual places"),
      False, {
          "windows": auto("winget install --id ArduinoSA.IDE.stable"),
@@ -1423,7 +1423,7 @@ def main():
     if not args.write_claude_dirs:
         print("  %s tools/init_machine.py --write-claude-dirs" % runner)
         print("      let a session in one repo read the others without asking")
-    print("  python%s tools/common.py --probe        confirm what A0 now sees"
+    print("  python%s tools/common.py --probe        confirm what ENV now sees"
           % ("" if IS_WIN else "3"))
     print("  pwsh ./tools/selfcheck.ps1              full host-side run (needs PowerShell)")
     return 0

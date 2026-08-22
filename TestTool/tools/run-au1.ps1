@@ -119,20 +119,37 @@ $lastCounter = ($before.samples | Select-Object -Last 1).counter
 
 # ------------------------------------------------------------ power cycle ----
 
-Section "PULL THE POWER NOW"
+# The hands-on prompt. Same shape every time, because the operator scans for the
+# icon rather than reading the paragraph -- and once mistook a "please unplug"
+# buried in a progress report for narration, which cost a six-minute run.
+# Reasons go OUTSIDE the box; the box holds the action and nothing else.
+function Banner([string[]]$Lines) {
+    Write-Host ""
+    Write-Host ("=" * 68)
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $prefix = if ($i -eq 0) { "  " + [char]0xD83C + [char]0xDF4D + " " } else { "     " }
+        Write-Host ($prefix + $Lines[$i]) -ForegroundColor Yellow
+    }
+    Write-Host ("=" * 68)
+    Write-Host ""
+}
+
+Banner @("UNPLUG THE BOARD NOW -- pull the power, do not press reset.")
+
+Write-Host "  Why not reset: a reset never touches the RTC backup domain, so it would"
+Write-Host "  pass even on a board with a dead VBAT cell -- and that board is exactly"
+Write-Host "  what this case exists to catch."
 Write-Host ""
-Write-Host "  Remove power from the board -- unplug it, do not press reset." -ForegroundColor Yellow
-Write-Host "  A reset never touches the RTC backup domain, so a reset here would" -ForegroundColor Yellow
-Write-Host "  pass even on a board with a dead VBAT cell. That board is exactly" -ForegroundColor Yellow
-Write-Host "  what this case exists to catch." -ForegroundColor Yellow
+Write-Host "  Nothing to confirm afterwards: this script watches the board's own UDP"
+Write-Host "  discovery go quiet, so it knows the power really went."
 Write-Host ""
 Write-Host "  Waiting for the board to go quiet..."
 
 if (-not (Wait-BoardState $false "the board to stop answering" $WaitMinutes)) { exit 2 }
 
-Section "NOW RESTORE POWER"
-Write-Host ""
-Write-Host "  Plug it back in. Capturing the boot log while it comes up." -ForegroundColor Yellow
+Banner @("PLUG THE BOARD BACK IN.")
+
+Write-Host "  Capturing the boot log while it comes up."
 Write-Host ""
 
 # Hold the log ports open across power-up so the bootloader's own counter report

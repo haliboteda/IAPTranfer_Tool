@@ -193,7 +193,7 @@ if ($why.Count -gt 0) {
     # Both strings come from the same branch of server_decide() (IAP_server.c),
     # so seeing "no valid application" here is expected, not a second failure.
     # What separates "app corrupted" from "metadata lost" is the metadata word
-    # in the "Bootloader state:" line -- see docs/JOURNAL.md.
+    # in the "Bootloader state:" line -- see docs/design/JOURNAL.md.
     Write-Host "  ('no valid application' in the UPLOAD banner is the same branch, not a separate fault)"
 }
 

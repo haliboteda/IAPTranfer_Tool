@@ -7,7 +7,7 @@
 # ⚠️ THIS NEEDS SOMEBODY AT THE BOARD, and that is the whole point. takeown is
 # gated on BOOT0 having been held through the startup window: the first claim
 # carries no signature -- there is no owner yet to sign it -- so physical
-# presence is the only gate there can be. See docs/OWNERSHIP.md.
+# presence is the only gate there can be. See docs/design/OWNERSHIP.md.
 #
 # Before running: press RESET, then hold BOOT0 until the relays finish clicking
 # and let go. The board should be sitting in "UPLOAD Mod ... (BOOT0 held)".
@@ -54,6 +54,35 @@ function Send-Command([string]$cmd, [int]$timeoutMs = 8000) {
         $client.Close()
     }
 }
+
+# The hands-on prompt. Same shape every time, because the operator scans for the
+# icon rather than reading the paragraph. Reasons go OUTSIDE the box; the box
+# holds the action and nothing else.
+function Banner([string[]]$Lines) {
+    Write-Host ""
+    Write-Host ("=" * 68)
+    for ($i = 0; $i -lt $Lines.Count; $i++) {
+        $prefix = if ($i -eq 0) { "  " + [char]0xD83C + [char]0xDF4D + " " } else { "     " }
+        Write-Host ($prefix + $Lines[$i]) -ForegroundColor Yellow
+    }
+    Write-Host ("=" * 68)
+    Write-Host ""
+}
+
+# Said at run time, not only in the comment at the top of this file: the board
+# has to ALREADY be in this state before the first command goes out, and a
+# requirement nobody sees is a requirement nobody meets.
+Banner @(
+    "PRESS RESET, THEN HOLD BOOT0 UNTIL THE RELAYS STOP CLICKING.",
+    "Let go. The board should print: UPLOAD Mod ... (BOOT0 held)"
+)
+
+Write-Host "  Nothing to confirm -- if BOOT0 was not held, the board answers Refused"
+Write-Host "  and this script says so. That refusal IS the check."
+Write-Host ""
+Write-Host "  Why physical presence: the first claim carries no signature (there is no"
+Write-Host "  owner yet to sign it), so a button is the only gate there can be."
+Write-Host ""
 
 Section "before"
 $was = Send-Command "getpubkey"

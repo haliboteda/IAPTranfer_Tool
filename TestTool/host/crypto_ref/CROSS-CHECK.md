@@ -31,7 +31,7 @@ These scripts are the third party. They share no code with either side.
 .\run-checks.ps1 -Rounds 64   # after touching the signer or rotating keys
 ```
 
-Also run as step A11 of `tools\selfcheck.ps1`.
+Also run as steps X1-X2 of `tools/selfcheck.py`.
 
 ## Design notes
 

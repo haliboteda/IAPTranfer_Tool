@@ -20,7 +20,7 @@
 void setup() {
   // The transceiver is off by default (PB10 low = MAX3221 shutdown), so
   // nothing reaches the terminals until the sketch turns it on. See
-  // docs/HARDWARE-FACTS.md.
+  // docs/design/HARDWARE-FACTS.md.
   pinMode(RS232_EN_Pin, OUTPUT);
   digitalWrite(RS232_EN_Pin, HIGH);
 

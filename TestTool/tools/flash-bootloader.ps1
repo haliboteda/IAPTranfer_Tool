@@ -1,5 +1,5 @@
 # Build the bootloader headless, flash it over ST-Link, capture the boot log,
-# and give the T0 verdict (is the SDRAM staging buffer usable).
+# and give the BG1 verdict (is the SDRAM staging buffer usable).
 #
 #   .\flash-bootloader.ps1                  build + flash + watch
 #   .\flash-bootloader.ps1 -SkipBuild       flash what is already built
@@ -103,8 +103,8 @@ foreach ($k in $buf.Keys) {
     if ($buf[$k].Length -gt 0) { Write-Host $buf[$k] }
 }
 
-# -------------------------------------------------------------- T0 verdict
-Section "T0 verdict"
+# ------------------------------------------------------------- BG1 verdict
+Section "BG1 verdict"
 $all = ($buf.Values -join "`n")
 if ($all -match "SDRAM staging buffer OK") {
     Ok "PASS - staging buffer usable. Next: T1 (normal upload)."

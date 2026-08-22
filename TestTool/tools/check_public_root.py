@@ -11,7 +11,7 @@ that key by a SHA-256 fingerprint compiled into IAPServer/owner_slot.c.
 That fingerprint is a CONSTANT on purpose. Deriving it from fw_pubkey.inc at
 build time would make the comparison true for every build, so the warning would
 also fire on a customer board built with the customer's own key -- and a warning
-everyone learns to ignore protects nobody. See docs/OWNERSHIP.md.
+everyone learns to ignore protects nobody. See docs/design/OWNERSHIP.md.
 
 The cost of it being a constant is that rotating the project's default key
 (IAPServer/keys/rotate_keys.sh) leaves it pointing at the OLD key. Factory

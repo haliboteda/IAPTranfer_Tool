@@ -21,7 +21,7 @@ extern RTC_HandleTypeDef hrtc;
  * stub supports keeps the next reallocation from breaking the build.
  *
  * Backup register allocation is shared across three repositories; the record
- * is the table in open_plc_cube_ide/docs/ARCHITECTURE.md. */
+ * is the table in open_plc_cube_ide/docs/design/ARCHITECTURE.md. */
 #define RTC_BKP_DR0 0U
 #define RTC_BKP_DR1 1U
 #define RTC_BKP_DR2 2U

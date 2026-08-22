@@ -20,7 +20,7 @@ if (-not (Test-Path $ARDUINO_CLI_CONFIG)) {
     exit 2
 }
 
-# Kept in step with docs/BUILD-AND-TEST.md. The menu options matter: the
+# Kept in step with docs/test/BUILD-AND-TEST.md. The menu options matter: the
 # variant header is selected by pnum, and a wrong FQBN would compile a
 # different variant and prove nothing about this one.
 $fqbn = "OpenPLC_Alpha:stm32:OPEN-PLC:pnum=PLC_H743,usb=CDCgen,xusb=FS,upload_method=cdcMethod,knxrole=dual_device,downgrade=refuse"

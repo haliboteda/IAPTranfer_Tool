@@ -46,7 +46,7 @@ is case S1, against real hardware.
 ```
 
 Needs `python` and `go` on PATH. Builds `IAPTool.exe` if it is missing.
-Also run as step A10 of `tools\selfcheck.ps1`.
+Also run as steps K1-K6 of `tools/selfcheck.py`.
 
 ## Two things the runner has to do that are not obvious
 
@@ -130,4 +130,4 @@ device side of "a rejected upload does not damage the installed app" is case
 .\run-downgrade.ps1 -Keep        # keep the scratch directory to inspect logs
 ```
 
-Also run as step A12 of `tools\selfcheck.ps1`.
+Also run as step DG1 of `tools/selfcheck.py`.

@@ -37,7 +37,7 @@ for p in (cfg.CORE_LIVE, cfg.CORE_REPO):
 #   .vscode/                same shape: an editor writes it into whichever folder
 #                           you open. 2026-08-21 the CMake extension put a
 #                           settings.json holding one absolute local path into
-#                           the live package, and A9 went red on it. It is
+#                           the live package, and P3 went red on it. It is
 #                           gitignored in CORE_REPO too, so it can never be
 #                           "verified in live but uncommitted" either
 #   .gitignore              exists only on the repo side, by definition

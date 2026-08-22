@@ -39,7 +39,7 @@ void setup() {
 
   // 4. Driving an FMC pin still compiles -- deliberately. The guard is
   //    visibility, not prevention; runtime interception was rejected (see
-  //    docs/handover/Todo/M4-fmc-pin-guard.md, "已否决"). If this ever stops
+  //    docs/work/M4-fmc-pin-guard.md, "已否决"). If this ever stops
   //    compiling, someone has changed the decision without changing the note.
   pinMode(PE7, OUTPUT);
   digitalWrite(PE7, HIGH);

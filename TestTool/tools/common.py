@@ -2,7 +2,7 @@
 
     from common import cfg, Section, Ok, Warn, Fail, get_go_bin, ...
 
-This is the Python side of M7 (see open_plc_cube_ide/docs/handover/Todo/
+This is the Python side of M7 (see open_plc_cube_ide/docs/work/
 M7-python-scripts.md). It is a translation of tools/_common.ps1 and must behave
 identically to it -- the PowerShell version stays until every case has been
 shown to reach the same verdict through both.
@@ -18,6 +18,7 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 from pathlib import Path
 
 # ---------------------------------------------------------------- platform
@@ -184,6 +185,89 @@ def get_cube_ide_exe():
     return exe
 
 
+# ---------------------------------------------------------------- processes
+def have_cmd(name):
+    """PowerShell's `Get-Command <name> -ErrorAction SilentlyContinue`, as a bool.
+
+    Only for names expected on PATH. Settings that deliberately are NOT on PATH
+    (HOST_CC) hold an absolute path instead, so test those with Path.exists().
+    """
+    import shutil
+    return shutil.which(name) is not None
+
+
+def python_exe():
+    """This interpreter, for launching sibling scripts.
+
+    The PowerShell twins spell "python", which is wrong on any machine where
+    only python3 exists. sys.executable is both correct and guaranteed to be the
+    same interpreter that is already running -- neither of which changes a single
+    byte of output, so the M7 comparison is unaffected.
+    """
+    return sys.executable
+
+
+def run_capture(argv, cwd=None, empty_stdin=False):
+    """Run a program and return (merged stdout+stderr, exit code).
+
+    The equivalent of `& prog @args 2>&1 | Out-String -Width 4096`: one string,
+    never wrapped at a console width. -Width exists in the PowerShell versions
+    because the default wraps at the terminal size and splits the very lines the
+    assertions match on; Python has no such trap, but the callers still expect
+    one string.
+
+    empty_stdin gives the child an immediately-empty PIPE on stdin, which is what
+    PowerShell's `"" | & prog` does. It must be a pipe and not DEVNULL: on Windows
+    DEVNULL is NUL, NUL *is* a character device, and Go's os.Stdin.Stat() reports
+    ModeCharDevice for it -- so a tool checking "am I attached to a terminal"
+    decides yes, prints its prompt, reads EOF and takes the "operator declined"
+    branch instead of the "no terminal" branch. DG1's ask-no-console case asserts
+    the latter, and DEVNULL made it fail for a reason that had nothing to do with
+    what the case is about.
+    """
+    # input="" is what opens the pipe; subprocess.run refuses to be given both
+    # `stdin` and `input`, so the two cases pass different keyword sets.
+    kwargs = {"input": ""} if empty_stdin else {}
+    proc = subprocess.run([str(a) for a in argv],
+                          cwd=None if cwd is None else str(cwd),
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True, errors="replace", **kwargs)
+    return proc.stdout or "", proc.returncode
+
+
+def run_emit(argv, cwd=None):
+    """Run a program, pass its output straight through, return its exit code.
+
+    For children whose output belongs in this script's own output, where the
+    PowerShell twin simply lets the console inherit the stream.
+
+    Two things have to be right for the M7 comparison. Ordering: print() is
+    block-buffered when stdout is a pipe, so an inherited child would overtake
+    lines printed before it -- hence capture-then-write under this script's
+    control, with a flush first. And bytes, not text: a MinGW binary printing
+    "\\r\\n" to a text-mode stdout emits "\\r\\r\\n", and universal-newline
+    translation would turn that stray "\\r" into an extra blank line that the
+    PowerShell version does not produce.
+    """
+    proc = subprocess.run([str(a) for a in argv],
+                          cwd=None if cwd is None else str(cwd),
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.stdout:
+        sys.stdout.flush()
+        sys.stdout.buffer.write(proc.stdout)
+        sys.stdout.buffer.flush()
+    return proc.returncode
+
+
+def nonblank_lines(text):
+    """`$text -split "\\r?\\n" | Where-Object { $_.Trim() }`.
+
+    Used wherever a failing case dumps a captured log, so the dump keeps the same
+    shape on both sides of the comparison.
+    """
+    return [ln for ln in re.split(r"\r?\n", text) if ln.strip()]
+
+
 # ---------------------------------------------------------------- serial
 def _import_serial():
     """pyserial is the one dependency that is not in the standard library.
@@ -253,6 +337,30 @@ def open_log_ports(ports):
     return open_ports
 
 
+def decode_serial(data):
+    """Bytes off a serial port, as text, the same way the PowerShell side sees it.
+
+    ⚠️ ASCII with '?' for anything above 0x7F, and both halves of that matter.
+
+    The PowerShell version reads through .NET SerialPort.ReadExisting(), whose
+    Encoding defaults to ASCIIEncoding -- which turns every byte over 0x7F into
+    '?'. Decoding as UTF-8 with errors="replace" instead produces U+FFFD, and
+    that is wrong in two separate ways:
+
+      1. The two versions then render the SAME bytes as different characters, so
+         a board case's captured log differs between them for a reason that has
+         nothing to do with the case. M7 step 5 compares exactly that.
+      2. U+FFFD cannot be encoded by a GBK console, so printing a capture raised
+         UnicodeEncodeError and took the whole script down. This is not a corner
+         case: the app's boot emits a stray byte before its "[BOOT]" banner
+         (docs/work/ISSUES.md ISS-A2), so it happens on essentially every board run.
+
+    Found 2026-08-22 by running the serial half for the first time -- nothing had
+    ever imported it, and all thirteen board scripts are about to.
+    """
+    return data.decode("ascii", errors="replace").replace("�", "?")
+
+
 def read_log_ports(open_ports, seconds):
     """Drain the given ports for `seconds` and return name -> captured text."""
     import time
@@ -263,7 +371,7 @@ def read_log_ports(open_ports, seconds):
             try:
                 n = h.in_waiting
                 if n:
-                    buf[k] += h.read(n).decode("utf-8", "replace")
+                    buf[k] += decode_serial(h.read(n))
             except Exception:
                 pass
         time.sleep(0.1)
@@ -276,6 +384,37 @@ def read_log_ports(open_ports, seconds):
 
 
 # ---------------------------------------------------------------- board
+def wait_for_board(ip, timeout=60.0, port=None):
+    """Wait until the board answers UDP discovery. Returns True, or False on timeout.
+
+    ⚠️ Needed after every reset that is followed by anything on the network. The
+    board takes a second or two to bring the link up and take a DHCP lease, and a
+    script that starts talking before then gets "No response, exiting" -- which
+    reads exactly like a dead board.
+
+    This asks the same question IAPTool asks, on the same port, so "answered" here
+    means the next tool will get an answer too. A plain ICMP ping would come back
+    while the IAP server was still not listening.
+    """
+    import socket
+    if port is None:
+        port = 56865
+    deadline = time.monotonic() + timeout
+    payload = b"openplc_server_where_r_y"
+    while time.monotonic() < deadline:
+        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        try:
+            s.settimeout(1.0)
+            s.sendto(payload, (ip, int(port)))
+            s.recvfrom(512)
+            return True
+        except OSError:
+            pass
+        finally:
+            s.close()
+    return False
+
+
 def assert_target_reachable(cli):
     """Refuses to go further when SWD cannot reach the MCU, and says why. A target
     voltage of 0.00V means the board is unpowered or ST-Link VTREF is not wired --
@@ -309,7 +448,7 @@ def warn_config_platform():
     name on this machine. First Debian run, 2026-08-20, hit exactly that.
 
     Prints nothing when the config matches the platform, so a correct machine's
-    A0 is unchanged.
+    The ENV step is unchanged.
     """
     named = [(n, getattr(cfg, n, "")) for n in
              ("BOOT_REPO", "CORE_REPO", "TOOL_REPO", "CORE_LIVE", "CUBEIDE", "IDE", "A15")]
@@ -330,7 +469,7 @@ def warn_config_platform():
 
 
 def probe(verbose=True):
-    """What this machine actually has. This is selfcheck's step A0.
+    """What this machine actually has. This is selfcheck's ENV step.
 
     Nothing here fails the run: CubeIDE and a serial port are needed to reach the
     board, not to pass the host-side checks.
@@ -338,7 +477,7 @@ def probe(verbose=True):
     Returns the list of missing things, by label.
     """
     if verbose:
-        Section("A0  this machine")
+        Section("ENV  this machine")
         print("  %-19s %s   (Python %d.%d.%d)" % (
             "platform", PLATFORM,
             sys.version_info[0], sys.version_info[1], sys.version_info[2]))
@@ -377,9 +516,9 @@ def probe(verbose=True):
     show("CORE_REPO", cfg.CORE_REPO, "Arduino core repo; set it in config/machine.py")
     show("TOOL_REPO", cfg.TOOL_REPO, "this repo; set it in config/machine.py")
     show("CORE_LIVE", cfg.CORE_LIVE, "install the board package in the Arduino IDE first")
-    show_cmd("go", "go", "A1/A3 and every IAPTool build need it")
-    show_cmd("python", "python3" if not IS_WIN else "python", "A10/A11/A12 need it")
-    show("arduino-cli", cfg.ARDUINO_CLI, "A13 and command-line app builds need it")
+    show_cmd("go", "go", "H1/H3 and every IAPTool build need it")
+    show_cmd("python", "python3" if not IS_WIN else "python", "K1-K6 / X1-X2 / DG1 need it")
+    show("arduino-cli", cfg.ARDUINO_CLI, "P4 and command-line app builds need it")
     show("CubeIDE", cfg.CUBEIDE, "needed to build and flash the bootloader, not for the checks below")
 
     # The programmer and IAPTool are resolved by wildcard, so report what the

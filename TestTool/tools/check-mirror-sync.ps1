@@ -1,5 +1,5 @@
 # Checks the cross-repo mirrored code listed in
-# open_plc_cube_ide/docs/ARCHITECTURE.md ("跨仓镜像的代码").
+# open_plc_cube_ide/docs/design/ARCHITECTURE.md ("跨仓镜像的代码").
 #
 # Those copies cannot be enforced by any build system -- three repos, no shared
 # build -- so a one-sided edit diverges silently and only shows up at runtime as
@@ -268,7 +268,7 @@ foreach ($dr in ($claims.Keys | Sort-Object)) {
         Ok ("OK    {0} <- {1}" -f $dr, $claims[$dr][0])
     }
 }
-Write-Host "      (the allocation table in docs/ARCHITECTURE.md is the record; this only"
+Write-Host "      (the allocation table in docs/design/ARCHITECTURE.md is the record; this only"
 Write-Host "       scans the two iap_auth.c files, not the core's backup.h or HID indices)"
 
 # --- what this script does not check ----------------------------------------

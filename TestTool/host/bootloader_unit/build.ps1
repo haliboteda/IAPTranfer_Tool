@@ -13,7 +13,11 @@ $Here = Split-Path -Parent $MyInvocation.MyCommand.Path
 # it was wrong on any machine with a different layout anyway.
 $cfg = Join-Path $Here "..\..\config\machine.ps1"
 if (-not (Test-Path $cfg)) {
-    Write-Error "config/machine.ps1 is missing. Generate it -- this machine's paths are detected, not typed:  python tools/init_machine.py"
+    # Write-Host, not Write-Error: a redirected Write-Error is wrapped in a
+    # decorated ErrorRecord carrying this script's path and line number, so
+    # build.py could not reproduce it byte for byte and M7's comparison of the
+    # whole output would be impossible on any failing path.
+    Write-Host "config/machine.ps1 is missing. Generate it -- this machine's paths are detected, not typed:  python tools/init_machine.py"
     exit 1
 }
 . $cfg
@@ -27,7 +31,8 @@ foreach ($cand in @($env:CC, $HOST_CC, "gcc", "clang")) {
     if (Get-Command $cand -ErrorAction SilentlyContinue) { $cc = $cand; break }
 }
 if (-not $cc) {
-    Write-Error ("No C compiler found. Install MinGW-w64 or LLVM/clang, point `$HOST_CC in " +
+    # Write-Host for the same reason as above -- see the config check.
+    Write-Host ("No C compiler found. Install MinGW-w64 or LLVM/clang, point `$HOST_CC in " +
         "config/machine.ps1 at its gcc.exe, and re-run -- or run build.sh under WSL/Git Bash.")
     exit 1
 }
