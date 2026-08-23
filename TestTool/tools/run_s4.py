@@ -413,8 +413,9 @@ def main():
         result = run_once(args.case, args, cli, iaptool, image, ip)
         if result == "pass":
             Section("record it")
-            print("  TEST-PLAN.md   S4%s row: result and date" % args.case)
-            print("  REQUIREMENTS.md E8: this is one of its two halves")
+            print("  docs/STATUS.md            E8 row: status, result, date")
+            print("  docs/test/MEASUREMENTS.md S4%s: the numbers themselves"
+                  % args.case)
             return 0
         if result in ("fail", "setup"):
             return 1 if result == "fail" else 2

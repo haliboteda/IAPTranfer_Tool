@@ -20,7 +20,7 @@ TestTool/
 │   ├── common.py         ← 同上，Python 侧。`python tools/common.py --probe` = ENV
 │   ├── selfcheck.ps1     ← ★ 所有不需要板子的检查，一条命令
 │   ├── check-version-sync.ps1  ← P1  版本号三处一致
-│   ├── check-mirror-sync.ps1   ← P2  跨仓镜像 8 锚点 + 备份寄存器占用
+│   ├── check-mirror-sync.ps1   ← P2  跨仓镜像 9 锚点 + 备份寄存器占用
 │   ├── check-core-sync.ps1     ← P3  core live vs git 仓库
 │   ├── check-public-root.ps1   ← P6  公开根指纹没漂移
 │   ├── check_*.py              ← 上面四个的 Python 版（M7 第 2 步）
@@ -39,7 +39,7 @@ TestTool/
     └── checklist.md      ← 出厂 / 量产验收单
 ```
 
-> **需求清单和完整的覆盖矩阵在 `open_plc_cube_ide/docs/handover/`** —— [REQUIREMENTS.md](../../open_plc_cube_ide/docs/STATUS.md) 说要做到什么，[TEST-PLAN.md](../../open_plc_cube_ide/docs/STATUS.md) 说每条用例覆盖哪条需求、最近一次跑出什么结果、还欠哪些用例。
+> **需求、覆盖矩阵和最近结果在一张表里：[open_plc_cube_ide/docs/STATUS.md](../../open_plc_cube_ide/docs/STATUS.md)** —— 要做到什么、每条用例覆盖哪条需求、跑出什么结果、还欠哪些用例。（2026-08-22 之前那是分开的 `REQUIREMENTS.md` 和 `TEST-PLAN.md`。）实测数字的唯一出处是 [MEASUREMENTS.md](../../open_plc_cube_ide/docs/test/MEASUREMENTS.md)。
 > **本文件只管判据和运行方法**（贴着代码走，跨仓不搬）。
 
 ⚠️ **机器相关的路径只允许出现在 `config/machine.{ps1,py}`。** 脚本里写死绝对路径、或用 `..\..\..\` 数上去，换台电脑或挪个目录就废 —— 这两种都犯过。
