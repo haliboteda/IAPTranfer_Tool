@@ -18,12 +18,16 @@ TestTool/
 │   ├── test_init_machine.py ← init_machine 提问逻辑的单元测试
 │   ├── _common.ps1       ← 共用：读 config、找工具链、开串口、判目标电压
 │   ├── common.py         ← 同上，Python 侧。`python tools/common.py --probe` = ENV
-│   ├── selfcheck.ps1     ← ★ 所有不需要板子的检查，一条命令
+│   ├── selfcheck.py      ← ★ 所有不需要板子的检查，一条命令（15 步）
+│   ├── selfcheck.ps1     ← 同上，M7 的对照基准，第 6 步删
 │   ├── check-version-sync.ps1  ← P1  版本号三处一致
 │   ├── check-mirror-sync.ps1   ← P2  跨仓镜像 9 锚点 + 备份寄存器占用
 │   ├── check-core-sync.ps1     ← P3  core live vs git 仓库
 │   ├── check-public-root.ps1   ← P6  公开根指纹没漂移
 │   ├── check_*.py              ← 上面四个的 Python 版（M7 第 2 步）
+│   ├── check_status_sync.py    ← P7  总表和用例名单不得漂
+│   ├── check_doc_dupes.py      ← P8  同一句话不得出现在两个文件
+│   ├── check_doc_paths.py      ← P9  文档里提到的路径必须存在
 │   ├── m7-compare.ps1          ← ★ 两版输出逐字节比对
 │   ├── m7-compare-faults.ps1   ← ★ 注入故障后再比一次
 │   ├── flash-bootloader.ps1
@@ -39,7 +43,7 @@ TestTool/
     └── checklist.md      ← 出厂 / 量产验收单
 ```
 
-> **需求、覆盖矩阵和最近结果在一张表里：[open_plc_cube_ide/docs/STATUS.md](../../open_plc_cube_ide/docs/STATUS.md)** —— 要做到什么、每条用例覆盖哪条需求、跑出什么结果、还欠哪些用例。（2026-08-22 之前那是分开的 `REQUIREMENTS.md` 和 `TEST-PLAN.md`。）实测数字的唯一出处是 [MEASUREMENTS.md](../../open_plc_cube_ide/docs/test/MEASUREMENTS.md)。
+> **需求、覆盖矩阵和最近结果在一张表里：[open_plc_cube_ide/docs/STATUS.md](../../open_plc_cube_ide/docs/STATUS.md)** —— 要做到什么、每条用例覆盖哪条需求、跑出什么结果、还欠哪些用例。（2026-08-22 之前那是分开的 REQUIREMENTS.md 和 TEST-PLAN.md，两份都已不存在。）实测数字的唯一出处是 [MEASUREMENTS.md](../../open_plc_cube_ide/docs/test/MEASUREMENTS.md)。
 > **本文件只管判据和运行方法**（贴着代码走，跨仓不搬）。
 
 ⚠️ **机器相关的路径只允许出现在 `config/machine.{ps1,py}`。** 脚本里写死绝对路径、或用 `..\..\..\` 数上去，换台电脑或挪个目录就废 —— 这两种都犯过。
@@ -75,7 +79,7 @@ python tools\init_machine.py      # Linux 上是 python3
 python tools\init_machine.py --write-claude-dirs
 
 # 所有不需要板子的检查。改完代码先跑这个，全绿了再考虑上板
-python tools\selfcheck.py         # 12 项；--quick 跳过慢的那 5 项
+python tools\selfcheck.py         # 15 项；--list 先看它跑哪几步；--quick 跳过慢的那 5 项
 
 # 构建 bootloader、烧写、抓启动日志、给判定（CubeIDE 必须关闭）
 .\tools\flash-bootloader.ps1
@@ -84,7 +88,7 @@ python tools\selfcheck.py         # 12 项；--quick 跳过慢的那 5 项
 .\tools\serial-watch.ps1
 ```
 
-⚠️ **`selfcheck` 用 Python 那一版。** `selfcheck.ps1` 还在，但只作为 M7 的对照基准留到第 6 步；两版**12 项结论逐项相同**（judged by `tools/m7-compare.ps1 -Only selfcheck`）。**板级脚本目前仍然只有 PowerShell 版**（M7 第 5 步还没做），所以上面后两条还是 `.ps1`。
+⚠️ **`selfcheck` 用 Python 那一版。** `selfcheck.ps1` 还在，但只作为 M7 的对照基准留到第 6 步；两版**15 项结论逐项相同**（judged by `tools/m7-compare.ps1 -Only selfcheck`）。**板级脚本目前仍然只有 PowerShell 版**（M7 第 5 步还没做），所以上面后两条还是 `.ps1`。
 
 缺什么会报 `SKIP` 并说清缺什么，**不会静默跳过** —— 一个被悄悄跳过的检查会被读成通过，那比没有这个检查更糟。
 

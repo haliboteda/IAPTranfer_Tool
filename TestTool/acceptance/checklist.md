@@ -26,7 +26,7 @@
 | CHK-A6 | 设备行为用例 | 全过 | `TestTool all --ip=<板子IP> --bin=<app.bin> --password-file=<...>` |
 | CHK-A7 | 变体断言 + 公开根指纹（用例 **P4** / **P6**） | 全过 | 都在 `tools/selfcheck.py` 里 |
 
-**CHK-A1–A3、CHK-A7 一条命令跑完：`tools/selfcheck.py`**（`--list` 先看它会跑哪 12 步）。
+**CHK-A1–A3、CHK-A7 一条命令跑完：`tools/selfcheck.py`**（`--list` 先看它会跑哪 15 步）。
 
 ⚠️ **CHK-A4 的上限是 122,880 不是 131,072。** 扇区确实是 128K，但**尾部 8K 已经划给 owner 记录区**（需求 C10，2026-08-18），链接脚本只把 120K 给链接器。按 131,072 判会多算 8K 余量，并且掩盖真正开始失败的那个点。超了链接器会报 `region FLASH overflowed`。
 
