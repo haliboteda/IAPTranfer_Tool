@@ -46,6 +46,7 @@ $CATALOG = @(
     [pscustomobject]@{ Id = "P6";     Covers = "C10";                 Name = "the published-root warning still recognises the published root" }
     [pscustomobject]@{ Id = "P7";     Covers = "-";                   Name = "STATUS.md and TEST-CASES.md name the same set of cases" }
     [pscustomobject]@{ Id = "P8";     Covers = "-";                   Name = "no claim is written out in more than one document" }
+    [pscustomobject]@{ Id = "P9";     Covers = "-";                   Name = "every path a document names actually exists" }
     [pscustomobject]@{ Id = "H2";     Covers = "C5";                  Name = "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)" }
     [pscustomobject]@{ Id = "K1-K6";  Covers = "C8";                  Name = "IAPTool key-match logic against a stand-in board" }
     [pscustomobject]@{ Id = "X1-X2";  Covers = "C9";                  Name = "crypto cross-check against independent implementations" }
@@ -65,7 +66,7 @@ if ($List) {
     }
     Write-Host ""
     Write-Host ("  {0} steps. -Quick skips H2 / K1-K6 / X1-X2 / DG1 / P4." -f $CATALOG.Count)
-    Write-Host "  P7 and P8 check the documents, not the firmware."
+    Write-Host "  P7, P8 and P9 check the documents, not the firmware."
     exit 0
 }
 
@@ -211,6 +212,10 @@ Step "P7" "STATUS.md and TEST-CASES.md name the same set of cases" {
 
 Step "P8" "no claim is written out in more than one document" {
     & (Get-PythonExe) "$PSScriptRoot/check_doc_dupes.py" 2>&1
+}
+
+Step "P9" "every path a document names actually exists" {
+    & (Get-PythonExe) "$PSScriptRoot/check_doc_paths.py" 2>&1
 }
 
 if (-not $Quick) {

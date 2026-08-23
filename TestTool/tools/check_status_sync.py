@@ -46,6 +46,7 @@ NOT_A_STATUS_ROW = {
     "H3":         "go vet is hygiene, not evidence for a requirement -- tracked in COVERAGE-GAPS.md",
     "P7":         "this check itself; it guards the table rather than the product",
     "P8":         "the one-fact-one-file check; also guards documents, not firmware",
+    "P9":         "the documented-path check; also guards documents, not firmware",
     "S4":         "retired: SDRAM staging removed its meaning, split into S4a / S4b",
 }
 

@@ -80,6 +80,7 @@ CATALOG = [
     ("P6",      "C10",         "the published-root warning still recognises the published root"),
     ("P7",      "-",           "STATUS.md and TEST-CASES.md name the same set of cases"),
     ("P8",      "-",           "no claim is written out in more than one document"),
+    ("P9",      "-",           "every path a document names actually exists"),
     ("H2",      "C5",          "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)"),
     ("K1-K6",   "C8",          "IAPTool key-match logic against a stand-in board"),
     ("X1-X2",   "C9",          "crypto cross-check against independent implementations"),
@@ -104,7 +105,7 @@ def print_catalog():
         print("  %-*s  covers %-*s  %s" % (width, cid, cov, covers, name))
     print("")
     print("  %d steps. --quick skips H2 / K1-K6 / X1-X2 / DG1 / P4." % len(CATALOG))
-    print("  P7 and P8 check the documents, not the firmware.")
+    print("  P7, P8 and P9 check the documents, not the firmware.")
 
 
 def record(step_id, name, state, note=""):
@@ -208,6 +209,9 @@ def main():
 
     run_step("P8", "no claim is written out in more than one document",
              [python_exe(), HERE / "check_doc_dupes.py"], cwd=tool_repo)
+
+    run_step("P9", "every path a document names actually exists",
+             [python_exe(), HERE / "check_doc_paths.py"], cwd=tool_repo)
 
     if not args.quick:
         # HOST_CC from config wins; otherwise fall back to whatever "gcc"
