@@ -18,7 +18,7 @@
 
 | # | 做什么 | 判据 | 命令 |
 |---|---|---|---|
-| CHK-A1 | 主机侧 Go 测试（用例 **H1**） | 全过 | 在 `IAPTranfer_Tool/` 下 `go test ./TestTool/...` |
+| CHK-A1 | 主机侧 Go 测试（用例 **H1**） | 全过 | 见 [../TEST-CASES.md](../TEST-CASES.md) 的 host 层表 |
 | CHK-A2 | 主机侧 C 测试（用例 **H2**） | 全过 | `host/bootloader_unit/build.py` —— 编译器路径填 `config/machine.py` 的 `HOST_CC` |
 | CHK-A3 | 整模块静态检查（用例 **H3**） | 无输出 | `go vet ./...` |
 | CHK-A4 | bootloader 构建 | **0 errors 0 warnings**，且 `.bin` ≤ **122,880 B** | `tools/flash_bootloader.py`（构建阶段会打占用率） |

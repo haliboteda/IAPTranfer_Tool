@@ -82,6 +82,18 @@ function Get-ScratchDir {
 
 function Get-ScratchFile([string]$Name) { Join-Path (Get-ScratchDir) $Name }
 
+# The Python interpreter, for the checks that only exist in Python. Debian has no
+# "python", only "python3" -- spelling it literally is what made three selfcheck
+# steps SKIP on a python3-only machine. Prefer whichever actually resolves rather
+# than deriving from $PLATFORM: a Windows box can have either.
+function Get-PythonExe {
+    foreach ($n in @("python", "python3")) {
+        $c = Get-Command $n -ErrorAction SilentlyContinue
+        if ($c) { return $c.Source }
+    }
+    throw "neither python nor python3 is on PATH"
+}
+
 # Where compile_tool.sh and `go build -o Output/...` put binaries for THIS host.
 function Get-GoBin([string]$Name) {
     Join-Path $TOOL_REPO (Join-Path "Output" (Join-Path $GOOS_DIR "$Name$EXE"))

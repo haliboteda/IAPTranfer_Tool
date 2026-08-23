@@ -9,7 +9,8 @@
 产品的需求、架构、硬件事实、设计决策、协作规矩，**全部在 `open_plc_cube_ide/docs/` 下**，那里是唯一出处。这份文件不抄，只指路。
 
 ```
-git clone git@github.com:haliboteda/open_plc_cube_ide.git
+# 地址见 open_plc_cube_ide/CLAUDE.md 第三节那张表 —— 七个仓库只有那一份
+git clone <open_plc_cube_ide 的 SSH 地址>
 ```
 
 然后读它根目录的 `CLAUDE.md` —— **换机器要 clone 什么、装什么、配什么，那一份写全了**。
@@ -68,7 +69,7 @@ pwsh ./tools/selfcheck.ps1        # Windows 上也可以 .\tools\selfcheck.ps1
 | 板卡包平台目录 | `$A15_DIR`（`win`/`linux`/`macosx`） | 硬写 `win` |
 | CubeIDE 插件后缀 | `$CUBE_PLUG`（`win32`/`linux64`/`macos64`） | 硬写 `win32` |
 
-**遇到一个新的、只有本机知道的路径** —— 加进 `tools/init_machine.py` 的 `SETTINGS` 表（连同探测方式和一段说明），不要硬编码，也不要猜。加进去它就会在每台机器上被自动找出来，而不是变成又一条要人工填的说明。
+**遇到一个新的、只有本机知道的路径** —— 加进 `tools/init_machine.py` 的 `SETTINGS` 表（连同探测方式和一段说明），不要硬编码，也不要猜。加进去它就会在每台机器上被自动找出来（理由见 `open_plc_cube_ide/CLAUDE.md` 第七节）。
 
 > ⚠️ 2026-08-19 的双平台改造**只在 Windows 上验证过**（selfcheck 12/12）。Linux 侧是逐条消除平台依赖做的，**没有真机验证**。
 
@@ -83,11 +84,12 @@ pwsh ./tools/selfcheck.ps1        # Windows 上也可以 .\tools\selfcheck.ps1
 
 **`IAPTool` 只管上传烧写，不加任何测试专用功能。** 为验证设备行为而存在的东西一律放 `TestTool/`。
 
-三条原则（完整版和踩过的坑在 `open_plc_cube_ide/docs/test/BUILD-AND-TEST.md`）：
+四条原则，**完整版和每条背后踩过的坑在 `open_plc_cube_ide/docs/test/CASE-DESIGNS.md`**：
 
-1. **测真实代码路径。** 需要"传输进行中"的用例把 `IAPTool` 当子进程拉起来跑真实烧写，不自己实现传输
-2. **加密逻辑 import，不重写**
-3. **破坏性用例标 `destructive`**，`all` 模式自动排到最后
+1. 测真实代码路径
+2. 加密逻辑 import，不重写
+3. 反向用例和正向用例一样重要
+4. 破坏性用例标 `destructive`
 
 ## 语言
 

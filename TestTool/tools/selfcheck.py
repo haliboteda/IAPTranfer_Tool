@@ -78,6 +78,8 @@ CATALOG = [
     ("P2",      "D8 A6 A7 C7 E1 E6", "cross-repo mirrored code has not diverged"),
     ("P3",      "D9",          "Arduino core: live matches the git repo"),
     ("P6",      "C10",         "the published-root warning still recognises the published root"),
+    ("P7",      "-",           "STATUS.md and TEST-CASES.md name the same set of cases"),
+    ("P8",      "-",           "no claim is written out in more than one document"),
     ("H2",      "C5",          "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)"),
     ("K1-K6",   "C8",          "IAPTool key-match logic against a stand-in board"),
     ("X1-X2",   "C9",          "crypto cross-check against independent implementations"),
@@ -102,6 +104,7 @@ def print_catalog():
         print("  %-*s  covers %-*s  %s" % (width, cid, cov, covers, name))
     print("")
     print("  %d steps. --quick skips H2 / K1-K6 / X1-X2 / DG1 / P4." % len(CATALOG))
+    print("  P7 and P8 check the documents, not the firmware.")
 
 
 def record(step_id, name, state, note=""):
@@ -195,6 +198,16 @@ def main():
 
     run_step("P6", "the published-root warning still recognises the published root",
              [python_exe(), HERE / "check_public_root.py"], cwd=tool_repo)
+
+    # These two guard the documents rather than the product. They are here because
+    # a table that has drifted from the cases, or a fact claimed in two files, is
+    # exactly as expensive to find later as a code divergence -- and 2026-08-22
+    # proved nobody finds either by eye.
+    run_step("P7", "STATUS.md and TEST-CASES.md name the same set of cases",
+             [python_exe(), HERE / "check_status_sync.py"], cwd=tool_repo)
+
+    run_step("P8", "no claim is written out in more than one document",
+             [python_exe(), HERE / "check_doc_dupes.py"], cwd=tool_repo)
 
     if not args.quick:
         # HOST_CC from config wins; otherwise fall back to whatever "gcc"

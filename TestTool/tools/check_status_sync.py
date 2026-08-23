@@ -43,7 +43,9 @@ NOT_A_STATUS_ROW = {
     "OW2-attack": "a negative assertion inside OW2",
     "DG2":        "referenced but never defined -- a hole in the matrix, tracked in COVERAGE-GAPS.md",
     "P5":         "covers the F group as a whole, not one requirement -- tracked in COVERAGE-GAPS.md",
+    "H3":         "go vet is hygiene, not evidence for a requirement -- tracked in COVERAGE-GAPS.md",
     "P7":         "this check itself; it guards the table rather than the product",
+    "P8":         "the one-fact-one-file check; also guards documents, not firmware",
     "S4":         "retired: SDRAM staging removed its meaning, split into S4a / S4b",
 }
 
@@ -55,10 +57,16 @@ REQ_RE = re.compile(r"^[A-F][0-9]{1,2}$")
 
 
 def find_docs():
+    """STATUS.md, and every document that defines criteria for a case.
+
+    checklist.md is in that second set, not just TEST-CASES.md: BG1 (the boot
+    gate) is defined there and nowhere else, deliberately -- it gates the three
+    acceptance grids rather than being a device-behaviour case.
+    """
     boot = Path(cfg.BOOT_REPO)
     status = boot / "docs" / "STATUS.md"
-    cases = TESTTOOL / "TEST-CASES.md"
-    missing = [str(p) for p in (status, cases) if not p.exists()]
+    cases = [TESTTOOL / "TEST-CASES.md", TESTTOOL / "acceptance" / "checklist.md"]
+    missing = [str(p) for p in [status] + cases if not p.exists()]
     if missing:
         for m in missing:
             Fail("not found: %s" % m)
@@ -112,9 +120,10 @@ def cases_from_testcases(path):
             heads.append(re.split(r"[·:：]", m.group(1))[0])
         # Emphasised inline, which is how the P and host groups are written --
         # they are described in the prose of their section rather than given a
-        # heading of their own.
-        heads.extend(re.findall(r"\*\*([A-Za-z0-9][\w-]*)\*\*", line))
-        heads.extend(re.findall(r"←\s*([A-Za-z0-9][\w-]*)\b", line))
+        # heading of their own. The run after an arrow may be "X1/X2" or
+        # "K1–K6", so take the whole run and let the splitter below deal with it.
+        heads.extend(re.findall(r"\*\*([A-Za-z0-9][\w–/-]*)\*\*", line))
+        heads.extend(re.findall(r"←\s*([A-Za-z0-9][\w–/-]*)", line))
         for head in heads:
             for tok in re.split(r"[\s,/]+", head.strip().strip("*` ")):
                 tok = tok.strip("()[]`*、")
@@ -124,10 +133,15 @@ def cases_from_testcases(path):
 
 
 def expand(ids):
-    """K1-K6 in one document and K1..K6 in the other are the same six cases."""
+    """K1-K6 in one document and K1..K6 in the other are the same six cases.
+
+    The dash may be ASCII or an en dash: TEST-CASES.md writes "K1–K6" in Chinese
+    prose, selfcheck writes "K1-K6" in an id. Treating those as different ids is
+    what made the first run report K1 as an orphan.
+    """
     out = set()
     for i in ids:
-        m = re.match(r"^([A-Z]+)(\d+)-(?:[A-Z]+)?(\d+)$", i)
+        m = re.match(r"^([A-Z]+)(\d+)[-–](?:[A-Z]+)?(\d+)$", i)
         if m:
             pre, lo, hi = m.group(1), int(m.group(2)), int(m.group(3))
             if 0 < hi - lo < 20:
@@ -148,10 +162,14 @@ def main():
     if status is None:
         return 2
     print("  status  %s" % status)
-    print("  cases   %s" % cases_doc)
+    for c in cases_doc:
+        print("  cases   %s" % c)
 
     claimed, reqs = cases_from_status(status)
-    defined = cases_from_testcases(cases_doc)
+    defined = {}
+    for c in cases_doc:
+        for cid, lineno in cases_from_testcases(c).items():
+            defined.setdefault(cid, "%s:%d" % (c.name, lineno))
 
     if args.list_only:
         print("")
@@ -160,7 +178,7 @@ def main():
         for cid in sorted(claimed):
             print("    %-8s covers %s" % (cid, " ".join(r for _, r in claimed[cid])))
         print("")
-        print("  %d case id(s) defined in TEST-CASES.md" % len(defined))
+        print("  %d case id(s) defined across the criteria docs" % len(defined))
         print("    " + " ".join(sorted(defined)))
         return 0
 
@@ -174,7 +192,7 @@ def main():
     if orphans:
         for cid in orphans:
             where = claimed.get(cid) or [(0, "?")]
-            Fail("  %-8s STATUS.md:%d claims it for %s, TEST-CASES.md does not define it"
+            Fail("  %-8s STATUS.md:%d claims it for %s, no criteria doc defines it"
                  % (cid, where[0][0], where[0][1]))
         problems += len(orphans)
     else:
@@ -188,8 +206,8 @@ def main():
             print("  %-8s expected: %s" % (cid, NOT_A_STATUS_ROW[cid]))
     if real:
         for cid in real:
-            Fail("  %-8s TEST-CASES.md:%d defines it, no STATUS.md row points at it"
-                 % (cid, defined.get(cid, 0)))
+            Fail("  %-8s %s defines it, no STATUS.md row points at it"
+                 % (cid, defined.get(cid, "?")))
         problems += len(real)
     else:
         Ok("  none unexpected")

@@ -44,6 +44,8 @@ $CATALOG = @(
     [pscustomobject]@{ Id = "P2";     Covers = "D8 A6 A7 C7 E1 E6";   Name = "cross-repo mirrored code has not diverged" }
     [pscustomobject]@{ Id = "P3";     Covers = "D9";                  Name = "Arduino core: live matches the git repo" }
     [pscustomobject]@{ Id = "P6";     Covers = "C10";                 Name = "the published-root warning still recognises the published root" }
+    [pscustomobject]@{ Id = "P7";     Covers = "-";                   Name = "STATUS.md and TEST-CASES.md name the same set of cases" }
+    [pscustomobject]@{ Id = "P8";     Covers = "-";                   Name = "no claim is written out in more than one document" }
     [pscustomobject]@{ Id = "H2";     Covers = "C5";                  Name = "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)" }
     [pscustomobject]@{ Id = "K1-K6";  Covers = "C8";                  Name = "IAPTool key-match logic against a stand-in board" }
     [pscustomobject]@{ Id = "X1-X2";  Covers = "C9";                  Name = "crypto cross-check against independent implementations" }
@@ -63,6 +65,7 @@ if ($List) {
     }
     Write-Host ""
     Write-Host ("  {0} steps. -Quick skips H2 / K1-K6 / X1-X2 / DG1 / P4." -f $CATALOG.Count)
+    Write-Host "  P7 and P8 check the documents, not the firmware."
     exit 0
 }
 
@@ -196,6 +199,18 @@ Step "P3" "Arduino core: live matches the git repo" {
 
 Step "P6" "the published-root warning still recognises the published root" {
     & "$PSScriptRoot/check-public-root.ps1" 2>&1
+}
+
+# These two guard the documents rather than the product, and they exist only in
+# Python -- they were written after M7 started, so there is no PowerShell twin to
+# be a baseline for. Calling the .py from here keeps the two versions' verdicts
+# comparable, which is what M7 step 4 actually requires.
+Step "P7" "STATUS.md and TEST-CASES.md name the same set of cases" {
+    & (Get-PythonExe) "$PSScriptRoot/check_status_sync.py" 2>&1
+}
+
+Step "P8" "no claim is written out in more than one document" {
+    & (Get-PythonExe) "$PSScriptRoot/check_doc_dupes.py" 2>&1
 }
 
 if (-not $Quick) {
