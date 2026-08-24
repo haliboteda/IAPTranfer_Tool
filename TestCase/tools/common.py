@@ -149,15 +149,19 @@ def skills_repo():
     return None
 
 
-# Points at the PLUGIN ROOT, not at its docs/ subdirectory: pointing it at docs/
-# made $PROD/docs/x.md resolve to .../docs/docs/x.md, which P9 caught at once.
+# Points one level ABOVE docs/, so a citation reads $PROD/docs/STATUS.md. Pointing
+# it at docs/ itself made $PROD/docs/x.md resolve to .../docs/docs/x.md, which P9
+# caught at once.
 def prod_docs():
-    """$PROD -- the openplc plugin: product-level documents under its docs/.
-    What the relationship between the repositories is, and what the product as a
-    whole is. Inside a plugin because that is the mechanism that reaches a
-    session opened in any of the product's repositories."""
+    """$PROD -- where the product-level documents live: what the relationship
+    between the repositories is, and what the product as a whole is.
+
+    In the AI-Skills checkout rather than in one of the six product repos,
+    because its subject is all of them. Every repo's CLAUDE.md points here by
+    name; there is no plugin involved -- reading a document needs a path, not a
+    loading mechanism."""
     s = skills_repo()
-    return s / "OpenPLC" / "Software" if s else None
+    return s / "OpenPLC" if s else None
 
 
 # ---------------------------------------------------------------- paths

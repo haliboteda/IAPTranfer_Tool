@@ -4,6 +4,8 @@
 
 这个仓库装两样东西：出货给客户的 **`IAPTool`**（Go，负责把固件烧进板子），以及**整套测试资产 `TestCase/`**（用例、主机侧单元测试、板上 sketch、自动化脚本、验收单）。
 
+> 产品全貌：`<AI-Skills>/OpenPLC/docs/OVERVIEW.md`（本机位置见 `SKILLS_REPO`）。
+
 ## 这个仓库自己的东西
 
 | 在哪 | 是什么 |

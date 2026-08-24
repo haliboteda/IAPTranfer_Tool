@@ -70,7 +70,14 @@ FENCE = re.compile(r"^\s*```")
 # a real sentence rather than by hand. An exception that looks like protection and
 # is not is worse than none, because the next person to touch that document will
 # trust it.
-ALLOWED = {}
+ALLOWED = {
+    # The one pointer every product repository carries, by design: each repo's
+    # CLAUDE.md names where the product-level documents are. That is the whole
+    # point -- a pointer in one repo only would leave the other five silent. It
+    # is long enough to read as a claim, so it needs an entry here rather than
+    # being shortened until the check stops noticing it.
+    "产品全貌<AISkills/OpenPLC/docs/OVERVIEW.md（本机位置见SKILLS_REPO）": "the product-docs pointer; every repo is meant to carry it",
+}
 
 
 SKIP_WALK = {".git", "artifacts", "__pycache__", "node_modules", ".claude"}

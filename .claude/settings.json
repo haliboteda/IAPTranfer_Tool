@@ -32,7 +32,6 @@
       "Bash(ssh -T git@github.com)",
       "Bash(pwsh --version)",
       "Bash(git check-ignore *)",
-
       "Bash(go build *)",
       "Bash(go test *)",
       "Bash(go run *)",
@@ -46,7 +45,6 @@
       "Bash(./compile_tool.sh)",
       "Bash(bash compile_tool.sh)",
       "Bash(bash run_cases.sh)",
-
       "Bash(cd TestCase && NO_COLOR=1 python tools/selfcheck.py*)",
       "Bash(cd TestCase && NO_COLOR=1 python tools/init_machine.py --check*)",
       "Bash(cd TestCase && python tools/m7_compare_board.py*)",
@@ -58,7 +56,6 @@
       "Bash(python -m py_compile *)",
       "Bash(python3 -m py_compile *)",
       "Bash(cd TestCase && python tools/test_init_machine.py*)",
-
       "PowerShell(Set-Location TestCase; & .\\tools\\selfcheck.ps1*)",
       "PowerShell(Set-Location TestCase; & .\\tools\\m7-compare.ps1*)",
       "PowerShell(Set-Location TestCase; & .\\tools\\check-core-sync.ps1*)",
@@ -69,16 +66,5 @@
       "PowerShell(Set-Location TestCase; & .\\host\\examples_build\\build.ps1*)",
       "PowerShell(Set-Location TestCase; & .\\host\\crypto_ref\\run-checks.ps1*)"
     ]
-  },
-  "extraKnownMarketplaces": {
-    "ai-skills": {
-      "source": {
-        "source": "github",
-        "repo": "haliboteda/AI-Skills"
-      }
-    }
-  },
-  "enabledPlugins": {
-    "openplc@ai-skills": true
   }
 }
