@@ -132,19 +132,24 @@ def skills_repo():
     return None
 
 
+# Both point at a PLUGIN ROOT, not at its docs/ subdirectory, so that one name
+# covers both halves of a plugin: $PORT/docs/WORKSPACES.md and
+# $PORT/tools/bootstrap.py. Pointing them at docs/ instead made $PORT/docs/x.md
+# resolve to .../docs/docs/x.md, which P9 caught on the first run.
 def prod_docs():
-    """$PROD -- the product-level documents: what the relationship between the
-    repositories is, and what the product as a whole is. Inside the openplc
-    plugin, because that is the mechanism that reaches a session in any repo."""
+    """$PROD -- the openplc plugin: product-level documents under its docs/.
+    What the relationship between the repositories is, and what the product as a
+    whole is. Inside a plugin because that is the mechanism that reaches a
+    session opened in any of the product's repositories."""
     s = skills_repo()
-    return s / "OpenPLC" / "Software" / "docs" if s else None
+    return s / "OpenPLC" / "Software" if s else None
 
 
 def port_docs():
-    """$PORT -- the machine bring-up documents: clone, branch, prerequisites,
-    path detection. Inside the portable plugin, for the same reason."""
+    """$PORT -- the portable plugin: machine bring-up documents under its docs/
+    and the scripts that do the work under its tools/."""
     s = skills_repo()
-    return s / "Portable" / "Machine" / "docs" if s else None
+    return s / "Portable" / "Machine" if s else None
 
 
 # ---------------------------------------------------------------- paths
