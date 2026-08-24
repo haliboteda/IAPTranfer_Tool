@@ -21,7 +21,7 @@ param(
 if (-not $Ip)   { $Ip = $BOARD_IP }
 if (-not $Port) { $Port = $LOG_PORTS[0] }
 
-$sketch = Join-Path $TOOL_REPO "TestTool\onboard\sdram\SDRAM_Acceptance"
+$sketch = Join-Path $TOOL_REPO "TestCase/onboard/sdram/SDRAM_Acceptance"
 if (-not (Test-Path $sketch)) { Fail "sketch not found: $sketch"; exit 2 }
 
 if (-not $SkipFlash) {

@@ -31,7 +31,7 @@ people to re-run it, and a warning everyone learned to ignore. Narrower coverage
 that can be trusted beats broader coverage that cannot.
 
 What that costs: a bare `tools/foo.ps1` that gets deleted still goes unnoticed.
-Write `$TOOL/TestTool/tools/foo.ps1` when you want it checked.
+Write `$TOOL/TestCase/tools/foo.ps1` when you want it checked.
 
 Line numbers in a path (fmc.c:153-193) are stripped before checking: the file has
 to exist, but a line number is a hint and drifts by design -- M4 already carries
@@ -96,8 +96,8 @@ def repos():
 def docs(boot, tool, core, skills):
     out = []
     for root, subs in ((boot, ["docs", "CLAUDE.md", "RELEASE-NOTES.md", "OpenPLC_Bootloader.md"]),
-                       (tool, ["CLAUDE.md", "TestTool/TEST-CASES.md",
-                               "TestTool/acceptance/checklist.md"]),
+                       (tool, ["CLAUDE.md", "TestCase/TEST-CASES.md",
+                               "TestCase/acceptance/checklist.md"]),
                        (core, ["CLAUDE.md"]),
                        (skills, ["OpenPLC", "Portable", "_shared",
                                  "CLAUDE.md", "README.md"])):

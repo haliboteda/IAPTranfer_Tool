@@ -1,4 +1,4 @@
-# Python dependencies for TestTool.
+# Python dependencies for TestCase.
 #
 # Only one entry, and that is deliberate: everything else the test scripts need
 # is in the standard library. Sockets, hashing, subprocesses and path handling

@@ -2,7 +2,7 @@
 
 **这份文件是给 AI 会话看的。**
 
-这个仓库装两样东西：出货给客户的 **`IAPTool`**（Go，负责把固件烧进板子），以及**整套测试资产 `TestTool/`**（用例、主机侧单元测试、板上 sketch、自动化脚本、验收单）。
+这个仓库装两样东西：出货给客户的 **`IAPTool`**（Go，负责把固件烧进板子），以及**整套测试资产 `TestCase/`**（用例、主机侧单元测试、板上 sketch、自动化脚本、验收单）。
 
 ## ⚠️ 共享文档不在这个仓库里
 
@@ -21,18 +21,18 @@ git clone <open_plc_cube_ide 的 SSH 地址>
 |---|---|
 | 根目录的 `.go` | `IAPTool`：CDC / 以太网两条烧写通道、签名、认证、上传锁 |
 | `iapcrypto/` | 加密原语。**测试用例 import 它，不重写** |
-| `TestTool/TEST-CASES.md` | **每个用例的判据、前置条件、怎么跑。判据贴着代码走，不搬去 docs/** |
-| `TestTool/tools/` | 自动化脚本（烧写、抓串口、跑用例、各种一致性检查） |
-| `TestTool/host/` | 不需要板子的检查：假板子、加密交叉验证、主机侧编译真实 bootloader C 源码 |
-| `TestTool/onboard/` | 跑在板子上的验证 sketch |
-| `TestTool/acceptance/checklist.md` | 出厂与发版验收单 |
-| `TestTool/config/machine.{ps1,py}` | **本机路径的唯一出处**，gitignored，且**两份都是生成的** |
-| `TestTool/tools/init_machine.py` | 生成上面那两份。**"这台机器有什么"的唯一记录是它里面的 `SETTINGS` 表**，没有模板可抄 |
+| `TestCase/TEST-CASES.md` | **每个用例的判据、前置条件、怎么跑。判据贴着代码走，不搬去 docs/** |
+| `TestCase/tools/` | 自动化脚本（烧写、抓串口、跑用例、各种一致性检查） |
+| `TestCase/host/` | 不需要板子的检查：假板子、加密交叉验证、主机侧编译真实 bootloader C 源码 |
+| `TestCase/onboard/` | 跑在板子上的验证 sketch |
+| `TestCase/acceptance/checklist.md` | 出厂与发版验收单 |
+| `TestCase/config/machine.{ps1,py}` | **本机路径的唯一出处**，gitignored，且**两份都是生成的** |
+| `TestCase/tools/init_machine.py` | 生成上面那两份。**"这台机器有什么"的唯一记录是它里面的 `SETTINGS` 表**，没有模板可抄 |
 
 ## 开工前
 
 ```powershell
-cd TestTool
+cd TestCase
 python tools/init_machine.py      # Linux 上是 python3。探测本机路径，写出两份配置
 pwsh ./tools/selfcheck.ps1        # Windows 上也可以 .\tools\selfcheck.ps1
 ```
@@ -78,11 +78,11 @@ pwsh ./tools/selfcheck.ps1        # Windows 上也可以 .\tools\selfcheck.ps1
 | 目标 | 命令 |
 |---|---|
 | `IAPTool`（三平台） | `./compile_tool.sh` —— 别手搓 `go build`，输出布局是约定好的 |
-| `TestTool`（本机） | `go build -o Output/<GOOS>/TestTool ./TestTool` |
+| `TestCase`（本机） | `go build -o Output/<GOOS>/TestCase ./TestCase` |
 
 ## 边界
 
-**`IAPTool` 只管上传烧写，不加任何测试专用功能。** 为验证设备行为而存在的东西一律放 `TestTool/`。
+**`IAPTool` 只管上传烧写，不加任何测试专用功能。** 为验证设备行为而存在的东西一律放 `TestCase/`。
 
 四条原则，**完整版和每条背后踩过的坑在 `open_plc_cube_ide/docs/test/CASE-DESIGNS.md`**：
 

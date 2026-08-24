@@ -11,9 +11,9 @@ cmd/
 #
 # Both languages are listed while M7 (the PowerShell -> Python rewrite) is in
 # progress; machine.ps1 stops being generated at step 6.
-TestTool/config/machine.ps1
-TestTool/config/machine.py
-TestTool/config/*.bak
+TestCase/config/machine.ps1
+TestCase/config/machine.py
+TestCase/config/*.bak
 __pycache__/
 *.pyc
 

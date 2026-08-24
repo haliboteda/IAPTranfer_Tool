@@ -1,4 +1,4 @@
-// TestTool drives the OpenPLC bootloader through its test cases.
+// TestCase drives the OpenPLC bootloader through its test cases.
 //
 // It is deliberately separate from IAPTool: IAPTool only uploads firmware,
 // everything that exists to exercise or probe the device lives here. Cases that
@@ -58,7 +58,7 @@ var cases = map[string]testCase{}
 func register(c testCase) { cases[c.id] = c }
 
 func usage() {
-	fmt.Fprintf(os.Stderr, "Usage:\n  TestTool <case-id|all> --ip=<addr> [--port=56865] [--bin=<file.bin>]\n"+
+	fmt.Fprintf(os.Stderr, "Usage:\n  TestCase <case-id|all> --ip=<addr> [--port=56865] [--bin=<file.bin>]\n"+
 		"      [--iaptool=<path>] [--password-file=<iap_fixed_password.txt>] [--minutes=N]\n"+
 		"      [--state=<file> --phase=1|2 --count=N]   (AU1)\n\nCases:\n")
 	ids := make([]string, 0, len(cases))

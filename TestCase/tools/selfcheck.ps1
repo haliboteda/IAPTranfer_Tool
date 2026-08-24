@@ -28,7 +28,7 @@ param([switch]$Quick, [switch]$List)
 $results = New-Object System.Collections.ArrayList
 
 $STATUS_DOC   = "open_plc_cube_ide/docs/STATUS.md"
-$CRITERIA_DOC = "TestTool/TEST-CASES.md"
+$CRITERIA_DOC = "TestCase/TEST-CASES.md"
 
 # What each step is, in run order. This is the ONE place the step list lives:
 # -List prints it, and Step looks up Covers here and throws if a step is missing,
@@ -179,7 +179,7 @@ if ($missing.Count -gt 0) {
 Push-Location $TOOL_REPO
 
 Step "H1" "host Go tests (crypto primitives, key derivation, challenge/response)" {
-    go test ./TestTool/... 2>&1
+    go test ./TestCase/... 2>&1
 } "go"
 
 Step "H3" "go vet over the whole module" {

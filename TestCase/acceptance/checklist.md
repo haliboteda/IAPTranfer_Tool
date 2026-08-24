@@ -23,7 +23,7 @@
 | CHK-A3 | 整模块静态检查（用例 **H3**） | 无输出 | `go vet ./...` |
 | CHK-A4 | bootloader 构建 | **0 errors 0 warnings**，且 `.bin` ≤ **122,880 B** | `tools/flash_bootloader.py`（构建阶段会打占用率） |
 | CHK-A5 | 烧写 + 启动日志 | 见 [BG1](#bg1--启动门禁) | `tools/flash_bootloader.py` |
-| CHK-A6 | 设备行为用例 | 全过 | `TestTool all --ip=<板子IP> --bin=<app.bin> --password-file=<...>` |
+| CHK-A6 | 设备行为用例 | 全过 | `TestCase all --ip=<板子IP> --bin=<app.bin> --password-file=<...>` |
 | CHK-A7 | 变体断言 + 公开根指纹（用例 **P4** / **P6**） | 全过 | 都在 `tools/selfcheck.py` 里 |
 
 **CHK-A1–A3、CHK-A7 一条命令跑完：`tools/selfcheck.py`**（`--list` 先看它会跑哪 15 步）。

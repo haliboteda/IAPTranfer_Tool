@@ -6,8 +6,8 @@
 #   .\run-au1.ps1 -Resume            keep the nonces already collected and go
 #                                    straight to waiting for the power cut
 #
-# Why a script and not one TestTool invocation: the network goes away with the
-# power, so the nonces from before the cut have to survive on disk. TestTool
+# Why a script and not one TestCase invocation: the network goes away with the
+# power, so the nonces from before the cut have to survive on disk. TestCase
 # does the protocol and the verdict; this file does the choreography.
 #
 # It never asks you to press Enter. It watches the board's own UDP discovery to
@@ -34,14 +34,14 @@ if (-not $Ports) { $Ports = $LOG_PORTS }
 if (-not $Ip)    { $Ip = $BOARD_IP }
 if (-not $Ip)    { Fail "need -Ip (or set BOARD_IP in config/machine.ps1)"; exit 2 }
 
-$testTool = Get-GoBin "TestTool"
+$testTool = Get-GoBin "TestCase"
 if (-not (Test-Path $testTool)) {
-    Warn "TestTool not built, building it now"
+    Warn "TestCase not built, building it now"
     Push-Location $TOOL_REPO
-    go build -o "Output/$GOOS_DIR/TestTool$EXE" ./TestTool
+    go build -o "Output/$GOOS_DIR/TestCase$EXE" ./TestCase
     $rc = $LASTEXITCODE
     Pop-Location
-    if ($rc -ne 0 -or -not (Test-Path $testTool)) { Fail "cannot build TestTool"; exit 2 }
+    if ($rc -ne 0 -or -not (Test-Path $testTool)) { Fail "cannot build TestCase"; exit 2 }
 }
 
 $stateFile = Get-ScratchFile "au1_phase1.json"

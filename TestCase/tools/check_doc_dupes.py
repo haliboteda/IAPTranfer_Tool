@@ -59,12 +59,17 @@ FENCE = re.compile(r"^\s*```")
 # Deliberate exceptions. Each needs a reason, because "it is special" is how real
 # drift hides. Keyed on a distinctive fragment of the normalised sentence.
 #
-# Empty since 2026-08-24. The one entry it held ("TestToolTEST-CASESmd") had never
-# matched anything: NOISE strips '-' but not '/' or '.', so the sentence normalises
-# to "TestTool/TESTCASES.md" and the key was not a substring of it. Removing it
-# changed neither the output nor the exit code. An exception that looks like
-# protection and is not is worse than none, because the next person to touch that
-# document will trust it.
+# Empty since 2026-08-24. The one entry it held had never matched anything: its
+# key was written with the hyphens and the dot removed, but NOISE strips '-'
+# without stripping '/' or '.', so the normalised sentence still carried both and
+# the key was not a substring of it. Emptying the dict changed neither the output
+# nor the exit code, which is how we know.
+#
+# The lesson is about the shape of a key, not about that one document: a key here
+# has to be a fragment of the sentence AFTER NOISE runs, so build it by normalising
+# a real sentence rather than by hand. An exception that looks like protection and
+# is not is worse than none, because the next person to touch that document will
+# trust it.
 ALLOWED = {}
 
 

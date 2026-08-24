@@ -1,4 +1,4 @@
-# TestTool
+# TestCase
 
 **这个产品的测试与验收总入口。** 和 IAPTool 分开：**IAPTool 只负责上传烧写**，所有为了验证设备行为而存在的东西放在这里。
 
@@ -7,7 +7,7 @@
 ## 目录结构
 
 ```
-TestTool/
+TestCase/
 ├── *.go                  ← 设备行为用例（T/S/N 系列），package main
 ├── config/
 │   ├── machine.ps1       ← 本机路径（gitignore）。**生成的，不要手抄**
@@ -97,7 +97,7 @@ python tools\selfcheck.py         # 15 项；--list 先看它跑哪几步；--qu
 
 ```sh
 # 在 IAPTranfer_Tool/ 下
-go build -o Output/windows/TestTool.exe ./TestTool
+go build -o Output/windows/TestCase.exe ./TestCase
 ```
 
 和 IAPTool 共用一个 Go module，不引入额外依赖，也不会让 `IAPTool.exe` 变大。
@@ -105,7 +105,7 @@ go build -o Output/windows/TestTool.exe ./TestTool
 ## 运行
 
 ```sh
-TestTool <case-id|all> --ip=<addr> [--port=56865] [--bin=<file.bin>] [--iaptool=<path>]
+TestCase <case-id|all> --ip=<addr> [--port=56865] [--bin=<file.bin>] [--iaptool=<path>]
 ```
 
 - `--ip` 必填。设备 IP 从串口日志的 `[NET]` 行读，或用 `IAPTool ether` 的广播发现看。
@@ -257,7 +257,7 @@ T1–T4 和 S1 都要求设备处于 bootloader 且以太网已起。三种办�
 
 | 目录 | 怎么跑 | 覆盖什么 |
 |---|---|---|
-| `host/iapcrypto/` | 在 `IAPTranfer_Tool/` 下 `go test ./TestTool/...` | HMAC 原语对 RFC 4231 向量；派生公式 `HMAC-SHA256(password, machineID)`；同 UID 稳定、异 UID 必不同；一次完整挑战应答双方独立算出同一个 HMAC |
+| `host/iapcrypto/` | 在 `IAPTranfer_Tool/` 下 `go test ./TestCase/...` | HMAC 原语对 RFC 4231 向量；派生公式 `HMAC-SHA256(password, machineID)`；同 UID 稳定、异 UID 必不同；一次完整挑战应答双方独立算出同一个 HMAC |
 | `host/bootloader_unit/` | `python build.py`（或 `.\build.ps1` / `./build.sh`），需要 gcc/clang | 用 stub 在主机上编译**真实的** `sha256.c` / `iap_keyderive.c` / `iap_auth.c` 并跑断言 |
 | `host/fakeboard/` | `python run_cases.py`（或 `.\run-cases.ps1`） | **K1–K6** IAPTool 在传输开始前的密钥匹配决策，六种情况。**每种在真板子上都要换一把 bootloader 密钥才能构造** |
 | `host/fakeboard/` | `python run_downgrade.py`（或 `.\run-downgrade.ps1`） | **DG1** 降级拦截，五种情况。每条都额外断言**板子有没有真的收到 `flash` 命令** —— 只看工具打了什么，挡不住"打印了拒绝然后照样上传"。⚠️ **只覆盖工具侧**：bootloader 把版本号解析出来却从不比较（`IAPServer/IAP_server.c:332-357`），设备侧那半是 DG2 |
@@ -510,5 +510,5 @@ Signature verification FAILED - firmware not trusted. Application region untouch
 
 还没做的：
 
-1. **G1 收进 TestTool** —— 现在靠 `tools/run-case.ps1 -ThenReset` 跑，判据是复位后出现 `APP Mod`。要变成正式用例得让 TestTool 自己能复位板子（现在复位是 ST-Link 做的）
+1. **G1 收进 TestCase** —— 现在靠 `tools/run-case.ps1 -ThenReset` 跑，判据是复位后出现 `APP Mod`。要变成正式用例得让 TestCase 自己能复位板子（现在复位是 ST-Link 做的）
 2. **S4 拆两半** —— 传输中拔电（旧 app 应照常启动）／擦写阶段拔电（应报 app 无效且可重传）。后者窗口只剩几秒，不好命中，**都要人工断电配合**

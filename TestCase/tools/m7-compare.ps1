@@ -29,7 +29,7 @@ param(
 
 . "$PSScriptRoot/_common.ps1"
 
-$TestTool = Split-Path -Parent $PSScriptRoot
+$TestCase = Split-Path -Parent $PSScriptRoot
 
 # Known is the escape hatch, and it is deliberately narrow: an exact string that
 # is ALLOWED to differ, with the reason. Anything not listed here is a failure.
@@ -122,7 +122,7 @@ foreach ($p in $pairs) {
     Section ("M7 compare: {0}" -f $p.Name)
     if ($p.Note) { Write-Host ("  note: {0}" -f $p.Note) }
 
-    $dir = Join-Path $TestTool $p.Dir
+    $dir = Join-Path $TestCase $p.Dir
     $ps1 = Join-Path $dir $p.Ps1
     $py  = Join-Path $dir $p.Py
     $missing = @($ps1, $py) | Where-Object { -not (Test-Path $_) }

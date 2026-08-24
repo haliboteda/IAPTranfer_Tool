@@ -539,7 +539,7 @@ PREREQS = [
          "linux": auto("sudo apt-get install -y python3"),
          "macos": auto("brew install python@3.12"),
      }),
-    ("Go", "building IAPTool and TestTool", check_go, False, {
+    ("Go", "building IAPTool and TestCase", check_go, False, {
         "windows": auto("winget install --id GoLang.Go"),
         "linux": auto("sudo apt-get install -y golang-go"),
         "macos": auto("brew install go"),

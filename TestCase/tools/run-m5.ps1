@@ -28,7 +28,7 @@ param(
 if (-not $Ip)   { $Ip = $BOARD_IP }
 if (-not $Port) { $Port = $LOG_PORTS[0] }
 
-$sketch = Join-Path $TOOL_REPO "TestTool\onboard\rs232\M5_SerialConflict"
+$sketch = Join-Path $TOOL_REPO "TestCase/onboard/rs232/M5_SerialConflict"
 if (-not (Test-Path $sketch)) { Fail "sketch not found: $sketch"; exit 2 }
 
 # ---------------------------------------------------------------- build ------

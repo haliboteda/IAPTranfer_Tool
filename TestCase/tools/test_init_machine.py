@@ -1,4 +1,4 @@
-"""Unit tests for init_machine. Run from TestTool/:
+"""Unit tests for init_machine. Run from TestCase/:
 
     python3 tools/test_init_machine.py
 

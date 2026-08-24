@@ -90,7 +90,7 @@ CATALOG = [
 COVERS = {cid: covers for cid, covers, _ in CATALOG}
 
 STATUS_DOC = "open_plc_cube_ide/docs/STATUS.md"
-CRITERIA_DOC = "TestTool/TEST-CASES.md"
+CRITERIA_DOC = "TestCase/TEST-CASES.md"
 
 
 def print_catalog():
@@ -183,7 +183,7 @@ def main():
     tool_repo = cfg.TOOL_REPO
 
     run_step("H1", "host Go tests (crypto primitives, key derivation, challenge/response)",
-             ["go", "test", "./TestTool/..."], needs="go", cwd=tool_repo, indent=2)
+             ["go", "test", "./TestCase/..."], needs="go", cwd=tool_repo, indent=2)
 
     run_step("H3", "go vet over the whole module",
              ["go", "vet", "./..."], needs="go", cwd=tool_repo, indent=2)

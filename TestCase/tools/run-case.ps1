@@ -1,4 +1,4 @@
-# Run one TestTool case while capturing the board's serial log, and optionally
+# Run one TestCase case while capturing the board's serial log, and optionally
 # reset afterwards to see what the board does on the next boot.
 #
 #   .\run-case.ps1 -Case N1
@@ -28,8 +28,8 @@ if (-not $Ip)    { Fail "need -Ip (or set BOARD_IP in config)"; exit 1 }
 if (-not $IapTool)      { $IapTool = Get-IapTool }
 if (-not $PasswordFile) { $PasswordFile = Join-Path (Split-Path -Parent $IapTool) "keys/iap_fixed_password.txt" }
 
-$TT = Get-GoBin "TestTool"
-if (-not (Test-Path $TT)) { Fail "TestTool not built - run: go build -o Output/$GOOS_DIR/TestTool$EXE ./TestTool"; exit 1 }
+$TT = Get-GoBin "TestCase"
+if (-not (Test-Path $TT)) { Fail "TestCase not built - run: go build -o Output/$GOOS_DIR/TestCase$EXE ./TestCase"; exit 1 }
 
 $argv = @($Case, "--ip=$Ip", "--iaptool=$IapTool")
 if ($Bin) { $argv += "--bin=$Bin" }
@@ -37,7 +37,7 @@ if (Test-Path $PasswordFile) { $argv += "--password-file=$PasswordFile" }
 
 Section "Case $Case"
 $open = Open-LogPorts $Ports
-Write-Host "TestTool $($argv -join ' ')"
+Write-Host "TestCase $($argv -join ' ')"
 
 $ttOut = Get-ScratchFile "tt.out"
 $ttErr = Get-ScratchFile "tt.err"
@@ -58,7 +58,7 @@ foreach ($k in @($open.Keys)) {
 }
 $proc.WaitForExit()
 
-Section "TestTool output (exit $($proc.ExitCode))"
+Section "TestCase output (exit $($proc.ExitCode))"
 Get-Content $ttOut -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
 Get-Content $ttErr -ErrorAction SilentlyContinue | ForEach-Object { Write-Host $_ }
 
