@@ -41,6 +41,9 @@ FQBN = ("OpenPLC_Alpha:stm32:OPEN-PLC:pnum=PLC_H743,usb=CDCgen,xusb=FS,"
         "upload_method=cdcMethod,knxrole=dual_device,downgrade=refuse")
 
 
+SKIP_DIRS = {"__pycache__", ".vscode", "build"}
+
+
 def walk_dirs(root):
     """Directories under root, pre-order, name-sorted at each level.
 
@@ -48,7 +51,11 @@ def walk_dirs(root):
     rglob() sort would put the suite's sections in a different order the first
     time an example grows a subdirectory.
     """
-    for child in sorted(p for p in root.iterdir() if p.is_dir()):
+    # Same guard as variant_check: a directory that is not a sketch must not be
+    # handed to arduino-cli. Defensive here -- this walks the board package, not a
+    # Python tree -- but the two suites should not disagree about what a sketch is.
+    for child in sorted(p for p in root.iterdir()
+                        if p.is_dir() and p.name not in SKIP_DIRS):
         yield child
         for deeper in walk_dirs(child):
             yield deeper

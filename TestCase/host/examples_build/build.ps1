@@ -43,7 +43,8 @@ foreach ($lib in $ownLibraries) {
     $dir = Join-Path $CORE_LIVE "libraries/$lib/examples"
     if (-not (Test-Path $dir)) { continue }
     # An Arduino example is a directory holding a .ino of the same name.
-    foreach ($d in (Get-ChildItem $dir -Directory -Recurse)) {
+    $skipDirs = @('__pycache__', '.vscode', 'build')
+    foreach ($d in (Get-ChildItem $dir -Directory -Recurse | Where-Object { $skipDirs -notcontains $_.Name })) {
         if (Test-Path (Join-Path $d.FullName "$($d.Name).ino")) {
             $sketches += [pscustomobject]@{ Lib = $lib; Name = $d.Name; Path = $d.FullName }
         }

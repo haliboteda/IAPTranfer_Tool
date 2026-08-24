@@ -26,7 +26,12 @@ if (-not (Test-Path $ARDUINO_CLI_CONFIG)) {
 $fqbn = "OpenPLC_Alpha:stm32:OPEN-PLC:pnum=PLC_H743,usb=CDCgen,xusb=FS,upload_method=cdcMethod,knxrole=dual_device,downgrade=refuse"
 
 $failed = 0
-foreach ($sketch in (Get-ChildItem $PSScriptRoot -Directory)) {
+# Any directory here is treated as a sketch, so skip the ones that are not.
+# __pycache__ appears the moment anything imports a module from this tree, and
+# arduino-cli dutifully tried to compile it -- a FAIL that says nothing about the
+# variant.
+$skipDirs = @('__pycache__', '.vscode', 'build')
+foreach ($sketch in (Get-ChildItem $PSScriptRoot -Directory | Where-Object { $skipDirs -notcontains $_.Name })) {
     Section "compiling $($sketch.Name)"
     $buildPath = Join-Path ([System.IO.Path]::GetTempPath()) ("variant_check_" + $sketch.Name)
 

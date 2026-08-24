@@ -16,7 +16,7 @@ problem. It flags entries that look like they can only ever match once:
 
   * an absolute path baked into the pattern (`E:\\...`, `/e/...`, `C:\\...`)
     that is not simply a personally-installed tool this machine looked up
-    (those legitimately live here; see $PROD/docs/CONVENTIONS.md's
+    (those legitimately live here; see this repo's CLAUDE.md's
     "跨仓调用用相对路径" -- the object is cross-repo *script* invocations,
     not per-machine install paths)
   * a `Select-Object -First/-Last N` or similar count baked into the allowed
@@ -106,8 +106,8 @@ def main():
         return 2
 
     if args.fail_over is not None and worst > args.fail_over:
-        Fail("a repo's allow list is over %d entries -- prune it (see WORKING-AGREEMENTS.md "
-             "'跨仓调用用相对路径' and the treat-the-symptom fix in that same file)" % args.fail_over)
+        Fail("a repo's allow list is over %d entries -- prune it. Cross-repo calls "
+             "belong in relative form; see this repo's CLAUDE.md" % args.fail_over)
         return 1
 
     return 0

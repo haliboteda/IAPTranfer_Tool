@@ -60,17 +60,12 @@ TestCase/
 
 退出码：0 全过，1 有失败，2 全过但 ask_for 那组因这台机器没有真 CubeIDE / Arduino IDE 而跳过 —— **不假装通过**。
 
-⚠️ **`--prereqs` 和 ENV 的分工**：`--prereqs` 看 PATH 上的运行时（git / Python / Go / cc / PowerShell / pyserial）在不在，selfcheck 的 ENV 一步看本机路径解析成了什么。前者必须在 Python 里，因为 **ENV 要 PowerShell 才跑得起来，而 pwsh 恰好是 Debian / macOS 上最可能缺的那一个**。
-
 ⚠️ **那两个文件是 `tools/init_machine.py` 生成的，不要手写、也没有模板可抄。** 需要一个新的本机路径时，把它连同探测方式加进那个脚本的 `SETTINGS` 表 —— 那里是"这台机器有什么"的唯一记录。以前的 `machine.example.*` 已删除：它和 `SETTINGS` 是同一份清单的两个出处，留着必然漂移。
 
 ## 快速开始
 
 ```powershell
 # 手工的话：
-
-# 缺哪些运行时，以及这台系统上怎么装
-python tools\init_machine.py --prereqs      # Linux 上是 python3
 
 # 一次性：探测本机路径，生成 config/machine.ps1 和 machine.py
 python tools\init_machine.py      # Linux 上是 python3

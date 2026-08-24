@@ -45,7 +45,13 @@ def main():
     failed = 0
     # sorted(): Get-ChildItem returns directories in name order, and a suite
     # whose output order depends on the filesystem cannot be compared.
-    for sketch in sorted(p for p in HERE.iterdir() if p.is_dir()):
+    # Any directory here is treated as a sketch, so skip the ones that are not.
+    # __pycache__ appears the moment anything imports a module from this tree, and
+    # arduino-cli dutifully tried to compile it -- a FAIL that says nothing about
+    # the variant.
+    SKIP = {"__pycache__", ".vscode", "build"}
+    for sketch in sorted(p for p in HERE.iterdir()
+                         if p.is_dir() and p.name not in SKIP):
         Section("compiling %s" % sketch.name)
         build_path = Path(tempfile.gettempdir()) / ("variant_check_" + sketch.name)
 
