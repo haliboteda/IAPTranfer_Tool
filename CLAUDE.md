@@ -28,7 +28,7 @@ python tools/selfcheck.py --list   # 先看它会跑哪几步、各证明哪条�
 
 **改完代码就该跑一遍** —— 上板调试一轮的成本高一个数量级。它的 **ENV** 一步会打出这台机器上每一项工具解析成什么，**缺什么点名说缺什么**，不静默跳过。
 
-配置还没生成过（`config/machine.py is missing`）就跑 `/portable:init`，或者直接跑 `$PORT/tools/init_machine.py`。那两份配置是**生成的**，没有模板，来源写在它们自己的文件头里。
+配置还没生成过（`config/machine.py is missing`），或者板卡包升级后路径变了，就跑 `python tools/init_machine.py`。那两份配置是**生成的**，没有模板，来源写在它们自己的文件头里。
 
 ## 脚本的平台规矩
 
@@ -65,7 +65,7 @@ python tools/selfcheck.py --list   # 先看它会跑哪几步、各证明哪条�
 
 ⚠️ **判断一个值该不该进配置：另一台同样系统的机器会不会有不同的值？** 不会就不属于那里 —— 那是平台派生量，归 `_common.ps1` / `common.py`。
 
-⚠️ **新的、只有本机知道的路径不许硬编码，也不许猜。** 该往哪儿加、为什么，在 `$PORT/docs/CONFIGURE.md`。
+⚠️ **新的、只有本机知道的路径不许硬编码，也不许猜。** 该往哪儿加、为什么，在 `$TOOL/TestCase/tools/init_machine.py`。
 
 > **2026-08-20 删掉了 `machine.example.{ps1,py}`。** 它们和 `SETTINGS` 表是同一份清单的两个出处。而且模板那套"两个平台的值都给、删掉不用的那套"的用法，**忘记删是最常见的错误** —— 第一次在 Debian 上就踩了，表现是一堆互不相关的 MISSING，加上一句让人去查串口线的错误建议。
 

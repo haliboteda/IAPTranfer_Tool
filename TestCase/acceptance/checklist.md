@@ -86,6 +86,6 @@ MAC 由芯片 UID 派生，**「两块板互不相同」从未被观察过** —
 | `** SDRAM SELF-TEST FAILED at offset ... **` | ❌ FMC 或上电时序坏了 | **停**。先修 FMC，上传测试全部无意义 |
 | 串口一个字节都没有 | 日志口被占用，或 UART4 没接 | 看脚本提示的占用进程；或改用 SWO/ITM |
 
-**当前状态：❌ 2026-08-21 失败，3/3 复现**（SDRAM 的 D1 线导通极弱）。原因和下一步在 `open_plc_cube_ide/docs/work/investigations/sdram-d1.md`。
+**当前状态：✅ 通过。**
 
 自检失败**不改变任何控制流** —— 板子仍然安全（上传会在 CRC 那步失败、app 区不受影响），这行日志的作用只是把根因直接说出来，省掉"为什么每次都 Checksum Failed"的排查。

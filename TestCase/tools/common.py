@@ -129,15 +129,14 @@ def read_text(path):
 
 
 # ---------------------------------------------------------------- document roots
-# The product-level documents and the machine bring-up documents live in the
-# AI-Skills checkout, not in any of the six product repos. Three checks need to
-# find them (P8, P9, and check_status_sync), so the locating happens once, here.
+# The product-level documents live in the AI-Skills checkout, not in any of the
+# six product repos. Three checks need to find them (P8, P9 and
+# check_status_sync), so the locating happens once, here.
 #
 # SKILLS_REPO comes from config/machine.py because AI-Skills is shared across
-# projects and is NOT a sibling of the product repos on every machine -- on this
-# one it is one level further out. The two-candidate probe below is the fallback
-# for a config written before SKILLS_REPO existed; it is the same allowance
-# bootstrap.py makes, and it is why these are functions and not constants.
+# projects and is not a sibling of the product repos here -- it sits one level
+# further out. The two-candidate probe below is the fallback for a config written
+# before SKILLS_REPO existed, and is why these are functions, not constants.
 def skills_repo():
     """The AI-Skills checkout, or None if this machine has no clone of it."""
     configured = getattr(cfg, "SKILLS_REPO", "")
@@ -150,10 +149,8 @@ def skills_repo():
     return None
 
 
-# Both point at a PLUGIN ROOT, not at its docs/ subdirectory, so that one name
-# covers both halves of a plugin: $PORT/docs/WORKSPACES.md and
-# $PORT/tools/bootstrap.py. Pointing them at docs/ instead made $PORT/docs/x.md
-# resolve to .../docs/docs/x.md, which P9 caught on the first run.
+# Points at the PLUGIN ROOT, not at its docs/ subdirectory: pointing it at docs/
+# made $PROD/docs/x.md resolve to .../docs/docs/x.md, which P9 caught at once.
 def prod_docs():
     """$PROD -- the openplc plugin: product-level documents under its docs/.
     What the relationship between the repositories is, and what the product as a
@@ -161,13 +158,6 @@ def prod_docs():
     session opened in any of the product's repositories."""
     s = skills_repo()
     return s / "OpenPLC" / "Software" if s else None
-
-
-def port_docs():
-    """$PORT -- the portable plugin: machine bring-up documents under its docs/
-    and the scripts that do the work under its tools/."""
-    s = skills_repo()
-    return s / "Portable" / "Machine" if s else None
 
 
 # ---------------------------------------------------------------- paths

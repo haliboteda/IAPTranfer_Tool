@@ -38,7 +38,6 @@ TESTTOOL = HERE.parent
 # Ids that live in TEST-CASES.md but are deliberately not rows in STATUS.md.
 # Each one needs a reason, because "it is special" is how a real gap hides.
 NOT_A_STATUS_ROW = {
-    "SD2":        "an instrument, not a case -- no PASS/FAIL criteria (sdram_diag.c)",
     "OW1-neg":    "a negative assertion inside OW1",
     "OW2-attack": "a negative assertion inside OW2",
     "DG2":        "referenced but never defined -- a hole in the matrix, tracked in COVERAGE-GAPS.md",

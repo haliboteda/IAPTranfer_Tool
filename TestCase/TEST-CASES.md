@@ -67,7 +67,6 @@ TestCase/
 ## 快速开始
 
 ```powershell
-# 换台电脑时最省事的一条：/portable:init（Claude Code skill，走完下面全部步骤）
 # 手工的话：
 
 # 缺哪些运行时，以及这台系统上怎么装
@@ -427,25 +426,6 @@ STM32_Programmer_CLI -c port=SWD mode=UR -e 1   # 擦掉 app 扇区，bootloader
 ⚠️ 端子 C05/C06 是**真 RS-232 电平（±12V）**，接 TTL 适配器可能烧掉适配器。
 
 以后的 `rs485/` `can/` `knx/` 按同样方式各自一个目录，每个目录一份说明文件写清"验证什么 / 前置条件 / 判据"，名字取成 `RS485-ECHO.md` 这种能看出内容的。
-
-### SD2 · SDRAM 数据总线诊断（不是通过/失败用例，是仪器）
-
-`tools\run-sdram-diag.ps1` —— 发一条串口命令、抓 bootloader 打出来的四张表：逐位统计、驻留扫描、释放时间对比、浮空测试。实现在 `boot:Core/Src/sdram_diag.c`，命令是 `sdramdiag` 和 `sdramlive [秒]`。
-
-**为什么要有它**：这块板的 SDRAM 数据总线**一个可测点都没有** —— 16 根线两端都在 BGA 球下，没有串阻也没有测试点（`boot:docs/design/HARDWARE-FACTS.md`）。万用表和示波器没有落点，固件是唯一的仪器。
-
-| 想干什么 | 命令 |
-|---|---|
-| 完整报告 | `.\run-sdram-diag.ps1 -Out run2.txt` |
-| 冷热喷剂测试（每秒一行错误率） | `.\run-sdram-diag.ps1 -Live 120` |
-
-**这里没有 PASS/FAIL 判据**，因为它输出的是测量值不是结论。判读规则和已经排除的解释在 `boot:docs/test/MEASUREMENTS.md`，给硬件工程师看的一页在 `boot:docs/work/investigations/sdram-d1-report.html`。
-
-⚠️ **前置条件：板子必须停在 bootloader。** 跑起 app 的板子根本不初始化 FMC，什么都测不到。
-
-⚠️ **释放时间只能在同一个 GPIO 端口内比较。** 好线之间跨 2.2 倍很正常（走线长度差别），跨端口比出来的数没有意义。
-
-⚠️ **capture 存进 `host/sdram_diag/`，一次一个文件，不要覆盖** —— 那是某一块板在某一刻的物理状态，修过或换过就再也测不到了。
 
 ## 未覆盖
 
