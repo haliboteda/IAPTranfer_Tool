@@ -89,10 +89,28 @@ def _paint(text, code):
     return "\033[%sm%s\033[0m" % (code, text) if _COLOUR else text
 
 
-def Section(t): print(); print(_paint("===== " + t, "36"))
-def Ok(t):      print(_paint(t, "32"))
-def Warn(t):    print(_paint(t, "33"))
-def Fail(t):    print(_paint(t, "31"))
+def _emit(text):
+    """print(), but never crash on a console that cannot encode the text.
+
+    Windows consoles default to a legacy codepage -- GBK on this machine -- and
+    these documents are Chinese and full of characters like the warning sign. On
+    2026-08-24 P8 found a real duplicated claim and then died with
+    UnicodeEncodeError while printing it, exit 1 with a traceback instead of the
+    finding. A check whose whole job is to tell you what it found must not be
+    silenced by the terminal it happens to run in, so unencodable characters are
+    replaced rather than fatal.
+    """
+    try:
+        print(text)
+    except UnicodeEncodeError:
+        enc = (sys.stdout.encoding or "ascii")
+        print(text.encode(enc, "replace").decode(enc, "replace"))
+
+
+def Section(t): _emit(""); _emit(_paint("===== " + t, "36"))
+def Ok(t):      _emit(_paint(t, "32"))
+def Warn(t):    _emit(_paint(t, "33"))
+def Fail(t):    _emit(_paint(t, "31"))
 
 
 # ---------------------------------------------------------------- files
