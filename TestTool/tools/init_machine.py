@@ -355,6 +355,15 @@ SETTINGS = [
     ("REF_REPO", "path", detect_repo("Hello_World_OpenPLC"), False,
      ["CubeIDE reference project for the same board. Optional; read it before",
       "inventing a new way to drive a peripheral."]),
+    ("SKILLS_REPO", "path", detect_repo("AI-Skills"), False,
+     ["The AI-Skills checkout: the product-level documents and the machine",
+      "bring-up documents live in it, plus the standing rules that get synced",
+      "into ~/.claude/rules/.",
+      "",
+      "It is shared across projects, so it does NOT sit beside the six product",
+      "repos on every machine -- on this one it is one level further out. That is",
+      "why it is detected here instead of being guessed at the three places that",
+      "need it: P8 and P9 read its documents, and bootstrap.py runs from it."]),
 
     ("__section__", "Arduino",
      ["A15 is Arduino's data directory. CORE_LIVE is the board package the IDE",
@@ -654,6 +663,10 @@ EXAMPLES = {
         "TOOL_REPO": r"E:\WorkSpace\Schaeffer-AG\IAPTranfer_Tool",
         "HW_REPO": r"E:\WorkSpace\Schaeffer-AG\Hardware",
         "REF_REPO": r"E:\WorkSpace\Schaeffer-AG\ref\Hello_World_OpenPLC",
+        # One level OUT from the product workspace, not inside it -- AI-Skills is
+        # shared across projects. Showing it beside the others would teach the
+        # wrong shape on the one setting most likely to be pasted wrong.
+        "SKILLS_REPO": r"E:\WorkSpace\AI-Skills",
         "A15": r"C:\Users\you\AppData\Local\Arduino15",
         "CORE_LIVE": r"C:\Users\you\AppData\Local\Arduino15\packages\OpenPLC_Alpha\hardware\stm32\0.1.3-pre",
         "CUBEIDE": r"D:\ST\STM32CubeIDE_1.10.0",
@@ -671,6 +684,7 @@ EXAMPLES = {
         "TOOL_REPO": "/home/you/Documents/WorkSpace/IAPTranfer_Tool",
         "HW_REPO": "/home/you/Documents/WorkSpace/Hardware",
         "REF_REPO": "/home/you/Documents/WorkSpace/ref/Hello_World_OpenPLC",
+        "SKILLS_REPO": "/home/you/Documents/AI-Skills",
         "A15": "/home/you/.arduino15",
         "CORE_LIVE": "/home/you/.arduino15/packages/OpenPLC_Alpha/hardware/stm32/0.1.3-pre",
         "CUBEIDE": "/opt/st/stm32cubeide_1.10.0",
@@ -691,6 +705,7 @@ EXAMPLES = {
         "TOOL_REPO": "/Users/you/WorkSpace/IAPTranfer_Tool",
         "HW_REPO": "/Users/you/WorkSpace/Hardware",
         "REF_REPO": "/Users/you/WorkSpace/ref/Hello_World_OpenPLC",
+        "SKILLS_REPO": "/Users/you/AI-Skills",
         "A15": "/Users/you/Library/Arduino15",
         "CORE_LIVE": "/Users/you/Library/Arduino15/packages/OpenPLC_Alpha/hardware/stm32/0.1.3-pre",
         "CUBEIDE": "/Applications/STM32CubeIDE_1.10.0",
@@ -720,6 +735,10 @@ WHAT_IT_IS = {
     "HW_REPO": "the Hardware clone -- schematics and production files. Forgejo only, "
                "there is no GitHub copy of it",
     "REF_REPO": "the Hello_World_OpenPLC clone -- CubeIDE reference project for this board",
+    "SKILLS_REPO": "the AI-Skills clone -- the product-level and machine bring-up "
+                   "documents, plus the standing rules synced into ~/.claude/rules/. "
+                   "Shared across projects, so it is usually NOT beside the six "
+                   "product repos",
     "A15": "Arduino's data directory, the one holding packages/",
     "CORE_LIVE": "the installed OpenPLC_Alpha board package the IDE compiles against",
     "CUBEIDE": "the STM32CubeIDE install ROOT -- the directory that contains STM32CubeIDE/plugins",

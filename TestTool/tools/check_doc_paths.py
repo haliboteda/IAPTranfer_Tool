@@ -12,6 +12,15 @@ It checks only the three shapes whose base directory is unambiguous:
   * repo-var paths            $BOOT/docs/work/M7-python-scripts.md
   * backticked docs/ paths    `docs/test/MEASUREMENTS.md`        -- some repo root
 
+$PROD and $PORT name the product-level and machine bring-up documents, which live
+in the AI-Skills checkout. They exist because a relative link from a product repo
+into AI-Skills is not writable: AI-Skills is shared across projects and is not a
+sibling of the six product repos on every machine. So a citation that crosses
+that boundary has to be a backticked $PROD/... -- and being a repo-var path, it
+gets checked. A missing AI-Skills clone is now a setup failure (exit 2), not a
+warning: without it most of the link graph goes unchecked, and a check that goes
+green while blind is worse than no check at all.
+
 ⚠️ **It deliberately ignores every other backticked path**, and that is the whole
 design. The docs write `tools/init_machine.py` and `host/fakeboard/run_cases.py`
 meaning "relative to whichever repo this paragraph is about", which a checker
@@ -46,13 +55,21 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from common import Fail, Ok, Section, Warn, cfg  # noqa: E402
+from common import Fail, Ok, Section, Warn, cfg, port_docs, prod_docs, skills_repo  # noqa: E402
 
 TESTTOOL = HERE.parent
 
 MD_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
-# $BOOT/... and $TOOL:... -- the repo-variable convention the docs declare
-VAR_PATH = re.compile(r"\$(BOOT|TOOL|CORE)(?:_REPO)?[:/]([\w./+-]+)")
+# $BOOT/... and $TOOL:... -- the repo-variable convention the docs declare.
+#
+# $PROD and $PORT joined on 2026-08-24, when the product-level documents moved
+# into the AI-Skills checkout. They are not a convenience: AI-Skills is NOT a
+# sibling of the product repos on every machine, so a relative markdown link from
+# a product repo into it cannot be written at all. A backticked $PROD/... is the
+# only citation shape that both survives on another machine and gets checked --
+# which means these two names extend this check across a repository boundary
+# rather than costing it coverage.
+VAR_PATH = re.compile(r"\$(BOOT|TOOL|CORE|PROD|PORT)(?:_REPO)?[:/]([\w./+-]+)")
 # `docs/...` in backticks. Only docs/, because that prefix pins the base to a
 # repo root -- every other bare path in these documents is relative to whichever
 # repo the surrounding paragraph is about, which is not knowable from here.
@@ -69,16 +86,11 @@ def repos():
     boot = Path(cfg.BOOT_REPO)
     tool = TESTTOOL.parent
     core = Path(getattr(cfg, "CORE_REPO", "") or "")
-    # AI-Skills is shared across projects, so it reasonably sits one level up
-    # from this project's workspace -- which is where it is on this machine.
-    # bootstrap.py makes the same allowance; assuming a fixed spot would mean
-    # reporting the skills as missing rather than checking them.
-    skills = None
-    for cand in (boot.parent / "AI-Skills", boot.parent.parent / "AI-Skills"):
-        if cand.is_dir():
-            skills = cand
-            break
-    return boot, tool, core, skills
+    # Located, not assumed: AI-Skills is shared across projects and does not sit
+    # beside the six product repos on every machine. common.skills_repo() reads
+    # SKILLS_REPO from config and keeps the old two-candidate probe as fallback,
+    # so all three document checks agree on where it is.
+    return boot, tool, core, skills_repo()
 
 
 def docs(boot, tool, core, skills):
@@ -87,7 +99,8 @@ def docs(boot, tool, core, skills):
                        (tool, ["CLAUDE.md", "TestTool/TEST-CASES.md",
                                "TestTool/acceptance/checklist.md"]),
                        (core, ["CLAUDE.md"]),
-                       (skills, ["OpenPLC", "_shared", "CLAUDE.md"])):
+                       (skills, ["OpenPLC", "Portable", "_shared",
+                                 "CLAUDE.md", "README.md"])):
         if root is None or not str(root) or not root.exists():
             continue
         for s in subs:
@@ -113,7 +126,8 @@ def resolve(token, doc, doc_root, boot, tool, core, skills):
 
     m = VAR_PATH.match(token)
     if m:
-        base = {"BOOT": boot, "TOOL": tool, "CORE": core}[m.group(1)]
+        base = {"BOOT": boot, "TOOL": tool, "CORE": core,
+                "PROD": prod_docs(), "PORT": port_docs()}[m.group(1)]
         if not base or not str(base):
             return None
         return base / m.group(2).replace("/", os.sep)
@@ -151,7 +165,19 @@ def main():
         return 2
     print("  boot    %s" % boot)
     print("  tool    %s" % tool)
-    print("  skills  %s" % (skills or "not on this machine -- its paths go unchecked"))
+    if skills is None:
+        # Until 2026-08-24 this was a Warn and the run still passed. That was
+        # right while AI-Skills held two skills; it is wrong now that it holds
+        # STATUS.md and the rest of the product-level documents. Without it this
+        # check cannot resolve any $PROD/ or $PORT/ citation -- it would go green
+        # while blind to most of the link graph, which is the one outcome a check
+        # must never produce.
+        Fail("SKILLS_REPO is not set and no AI-Skills clone was found.")
+        Fail("  $PROD and $PORT cannot be resolved, so most citations go unchecked.")
+        Warn("  clone it, then: python tools/init_machine.py --redetect SKILLS_REPO")
+        return 2
+    print("  prod    %s" % prod_docs())
+    print("  port    %s" % port_docs())
 
     files = docs(boot, tool, core, skills)
     print("  %d document(s)" % len(files))
@@ -196,9 +222,6 @@ def main():
         return 1
 
     Ok("every path named in a document exists")
-    if skills is None:
-        Warn("AI-Skills is not on this machine, so the two skills went unchecked")
-        Warn("  they are what a new machine runs first -- clone it and re-run")
     return 0
 
 

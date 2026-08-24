@@ -110,6 +110,43 @@ def read_text(path):
     return text[1:] if text.startswith("﻿") else text
 
 
+# ---------------------------------------------------------------- document roots
+# The product-level documents and the machine bring-up documents live in the
+# AI-Skills checkout, not in any of the six product repos. Three checks need to
+# find them (P8, P9, and check_status_sync), so the locating happens once, here.
+#
+# SKILLS_REPO comes from config/machine.py because AI-Skills is shared across
+# projects and is NOT a sibling of the product repos on every machine -- on this
+# one it is one level further out. The two-candidate probe below is the fallback
+# for a config written before SKILLS_REPO existed; it is the same allowance
+# bootstrap.py makes, and it is why these are functions and not constants.
+def skills_repo():
+    """The AI-Skills checkout, or None if this machine has no clone of it."""
+    configured = getattr(cfg, "SKILLS_REPO", "")
+    if configured and Path(configured).is_dir():
+        return Path(configured)
+    boot = Path(getattr(cfg, "BOOT_REPO", "") or ".")
+    for cand in (boot.parent / "AI-Skills", boot.parent.parent / "AI-Skills"):
+        if cand.is_dir():
+            return cand
+    return None
+
+
+def prod_docs():
+    """$PROD -- the product-level documents: what the relationship between the
+    repositories is, and what the product as a whole is. Inside the openplc
+    plugin, because that is the mechanism that reaches a session in any repo."""
+    s = skills_repo()
+    return s / "OpenPLC" / "Software" / "docs" if s else None
+
+
+def port_docs():
+    """$PORT -- the machine bring-up documents: clone, branch, prerequisites,
+    path detection. Inside the portable plugin, for the same reason."""
+    s = skills_repo()
+    return s / "Portable" / "Machine" / "docs" if s else None
+
+
 # ---------------------------------------------------------------- paths
 def get_scratch_dir():
     """Scratch files (redirected stdout, oversized test images, phase-1 state).
