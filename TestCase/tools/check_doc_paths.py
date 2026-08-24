@@ -2,7 +2,7 @@
 
 Case P9. Added 2026-08-22 after the docs/ reorganisation broke 105 references and
 every one of them was found by hand. Two of the places that broke are the worst
-possible ones: the /openplc:init and /openplc:wrap-up skills, which are what a
+possible ones: the /portable:init and /openplc:wrap-up skills, which are what a
 new machine and a new session run first -- they misled at the exact moment nobody
 yet knew their way around, and nothing would ever have told anyone.
 

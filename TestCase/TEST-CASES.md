@@ -67,7 +67,7 @@ TestCase/
 ## 快速开始
 
 ```powershell
-# 换台电脑时最省事的一条：/openplc:init（Claude Code skill，走完下面全部步骤）
+# 换台电脑时最省事的一条：/portable:init（Claude Code skill，走完下面全部步骤）
 # 手工的话：
 
 # 缺哪些运行时，以及这台系统上怎么装

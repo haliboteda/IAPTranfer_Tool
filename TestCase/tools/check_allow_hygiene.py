@@ -16,7 +16,7 @@ problem. It flags entries that look like they can only ever match once:
 
   * an absolute path baked into the pattern (`E:\\...`, `/e/...`, `C:\\...`)
     that is not simply a personally-installed tool this machine looked up
-    (those legitimately live here; see docs/process/WORKING-AGREEMENTS.md's
+    (those legitimately live here; see $PROD/docs/CONVENTIONS.md's
     "跨仓调用用相对路径" -- the object is cross-repo *script* invocations,
     not per-machine install paths)
   * a `Select-Object -First/-Last N` or similar count baked into the allowed
