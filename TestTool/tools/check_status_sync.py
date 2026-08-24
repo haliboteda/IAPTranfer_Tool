@@ -47,6 +47,7 @@ NOT_A_STATUS_ROW = {
     "P7":         "this check itself; it guards the table rather than the product",
     "P8":         "the one-fact-one-file check; also guards documents, not firmware",
     "P9":         "the documented-path check; also guards documents, not firmware",
+    "P10":        "the allow-list hygiene check; advisory, guards local config, not firmware",
     "S4":         "retired: SDRAM staging removed its meaning, split into S4a / S4b",
 }
 
