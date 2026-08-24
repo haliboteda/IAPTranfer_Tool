@@ -31,7 +31,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from common import Fail, Ok, Section, Warn, cfg  # noqa: E402
+from common import Fail, Ok, Section, Warn, cfg, prod_docs  # noqa: E402
 
 TESTTOOL = HERE.parent
 
@@ -65,8 +65,19 @@ def find_docs():
     gate) is defined there and nowhere else, deliberately -- it gates the three
     acceptance grids rather than being a device-behaviour case.
     """
-    boot = Path(cfg.BOOT_REPO)
-    status = boot / "docs" / "STATUS.md"
+    prod = prod_docs()
+    if prod is None:
+        Fail("no AI-Skills clone found, so STATUS.md cannot be located.")
+        Fail("  it moved there on 2026-08-24 -- the requirement table is about all")
+        Fail("  the repositories, not about the bootloader.")
+        Warn("  clone it, then: python tools/init_machine.py --redetect SKILLS_REPO")
+        return None, None
+    # STATUS.md is product-level and lives in the openplc plugin; the criteria
+    # documents are in this repo, next to the code they judge. So this check is
+    # now genuinely cross-repository -- and it FAILS rather than skipping when the
+    # other side is absent, because a skip here would pass vacuously on exactly
+    # the machine that is set up wrong.
+    status = prod / "docs" / "STATUS.md"
     cases = [TESTTOOL / "TEST-CASES.md", TESTTOOL / "acceptance" / "checklist.md"]
     missing = [str(p) for p in [status] + cases if not p.exists()]
     if missing:

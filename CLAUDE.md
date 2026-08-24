@@ -4,17 +4,6 @@
 
 这个仓库装两样东西：出货给客户的 **`IAPTool`**（Go，负责把固件烧进板子），以及**整套测试资产 `TestCase/`**（用例、主机侧单元测试、板上 sketch、自动化脚本、验收单）。
 
-## ⚠️ 共享文档不在这个仓库里
-
-产品的需求、架构、硬件事实、设计决策、协作规矩，**全部在 `open_plc_cube_ide/docs/` 下**，那里是唯一出处。这份文件不抄，只指路。
-
-```
-# 地址见 open_plc_cube_ide/CLAUDE.md 第三节那张表 —— 七个仓库只有那一份
-git clone <open_plc_cube_ide 的 SSH 地址>
-```
-
-然后读它根目录的 `CLAUDE.md` —— **换机器要 clone 什么、装什么、配什么，那一份写全了**。
-
 ## 这个仓库自己的东西
 
 | 在哪 | 是什么 |
@@ -33,27 +22,13 @@ git clone <open_plc_cube_ide 的 SSH 地址>
 
 ```powershell
 cd TestCase
-python tools/init_machine.py      # Linux 上是 python3。探测本机路径，写出两份配置
-pwsh ./tools/selfcheck.ps1        # Windows 上也可以 .\tools\selfcheck.ps1
+python tools/selfcheck.py          # 所有不需要板子的检查
+python tools/selfcheck.py --list   # 先看它会跑哪几步、各证明哪条需求
 ```
 
-**AI 会话在新机器上的「初始化」循环**（完整版在 `open_plc_cube_ide/CLAUDE.md` 第五节）：
+**改完代码就该跑一遍** —— 上板调试一轮的成本高一个数量级。它的 **ENV** 一步会打出这台机器上每一项工具解析成什么，**缺什么点名说缺什么**，不静默跳过。
 
-1. 跑 `python3 tools/init_machine.py` —— **在 AI 会话里它不提问，只报告**。
-2. 读 `not found` 一节：每项都带"这是什么 / 已经找过哪些地方 / 例子 / 固化命令"。
-3. **把这些问用户**，连"已经找过哪些地方"一起给他。
-4. 用户发来路径 → `--set NAME=<path>` 固化（可一次多个）。
-5. 重复到只剩他也没装的东西，再 `python3 tools/common.py --probe` 确认。
-
-**不要让用户手工编辑 `config/machine.*`，也不要替他猜路径。**
-
-⚠️ 提问自动关掉靠的是 `CLAUDECODE` / `AI_AGENT` / `CI` / `GIT_TERMINAL_PROMPT=0` 这些标记 —— **这些环境里 `isatty()` 也返回 True**，光看它会挂住。`--no-input` 强制关，`--ask` 强制开。
-
-已有且仍然成立的值会保留，所以手工改过的地方重跑不会被冲掉。
-
-`tools/test_init_machine.py` 测的就是提问那段逻辑 —— 它按定义没法在自动化里跑到，所以引号剥离、`~` 展开、安装根目录校验这些最容易写错的地方靠它兜。
-
-`selfcheck.py` 是**所有不需要板子的检查**，改完代码就该跑一遍 —— 上板调试一轮的成本高一个数量级。它的 **ENV** 一步会打出这台机器上每一项工具解析成什么，**缺什么点名说缺什么**。
+配置还没生成过（`config/machine.py is missing`）就跑 `/portable:init`，或者直接跑 `$PORT/tools/init_machine.py`。那两份配置是**生成的**，没有模板，来源写在它们自己的文件头里。
 
 ## 脚本的平台规矩
 
@@ -73,6 +48,46 @@ pwsh ./tools/selfcheck.ps1        # Windows 上也可以 .\tools\selfcheck.ps1
 
 > ⚠️ 2026-08-19 的双平台改造**只在 Windows 上验证过**（selfcheck 12/12）。Linux 侧是逐条消除平台依赖做的，**没有真机验证**。
 
+
+### 为什么这条是硬的
+
+**2026-08-19 定。** 目标是：换一台 Linux 机器，clone 下来、装好工具、填一份 `machine.ps1`，全套脚本照跑。
+
+| 要做的事 | 用这个 | 不要用 | 为什么 |
+|---|---|---|---|
+| 判断平台 | `_common.ps1` 的 `$PLATFORM` | `$IsWindows` | 那是 PowerShell 6+ 才有的变量，**5.1 下是 `$null`**，判断会反过来 |
+| 临时文件 | `Get-ScratchFile` | `$env:TEMP` | Linux 上该变量为空，`"$env:TEMP/x.out"` 会**塌成往文件系统根目录写** |
+| 可执行文件 | `Get-GoBin` / `Get-IapTool` / `Get-ProgrammerCli` / `Get-CubeIdeExe` / `$EXE` | 硬写 `.exe` | — |
+| 相对路径 | `/` | `\` | Windows 的 .NET 路径 API 接受 `/`，Linux 不接受 `\` —— `/` 是唯一两边都对的 |
+| 平台目录名 | `$GOOS_DIR` / `$A15_DIR` / `$CUBE_PLUG` | 硬写 `windows` / `win` / `win32` | 同样三个平台，三套工具用三种叫法，集中在一处映射 |
+
+**机器相关的路径一律进 `$TOOL/TestCase/config/machine.{ps1,py}`，而那两份是 `tools/init_machine.py` 生成的** —— 不手写，也没有模板可抄。
+
+⚠️ **判断一个值该不该进配置：另一台同样系统的机器会不会有不同的值？** 不会就不属于那里 —— 那是平台派生量，归 `_common.ps1` / `common.py`。
+
+⚠️ **新的、只有本机知道的路径不许硬编码，也不许猜。** 该往哪儿加、为什么，在 `$PORT/docs/CONFIGURE.md`。
+
+> **2026-08-20 删掉了 `machine.example.{ps1,py}`。** 它们和 `SETTINGS` 表是同一份清单的两个出处。而且模板那套"两个平台的值都给、删掉不用的那套"的用法，**忘记删是最常见的错误** —— 第一次在 Debian 上就踩了，表现是一堆互不相关的 MISSING，加上一句让人去查串口线的错误建议。
+
+⚠️ **这条不止管脚本内部，还管 AI 会话怎么打命令。** 从一个仓库的会话里调另一个仓库的脚本（例如在 `open_plc_cube_ide` 里跑 `IAPTranfer_Tool/TestCase/tools/selfcheck.ps1`），**用相对路径 `../IAPTranfer_Tool/TestCase`，不要绝对路径**。第三节那张兄弟目录表已经把布局钉死了，相对路径换机器天然成立；绝对路径（`E:\WorkSpace\...`）只在这台机器上对，写进 `.claude/settings.local.json` 的 allow 列表里，换机器就是一条永远不会再命中的死记录。
+
+**2026-08-23 实测：allow 列表不支持在字符串中间用 `*` 匹配任意前缀**，只有结尾通配符是文档确认支持的（`Bash(git *)` 这种）。所以"允许这条命令、不管前面的绝对路径是什么"这件事做不到，唯一可移植的办法就是从一开始就不在命令里写绝对路径。
+
+⚠️ **提交进 `.claude/settings.json` 的 allow 规则只放不碰硬件、不改产品文件的命令**（读文件、跑静态检查、编译到本地产物）。**给板子刷固件、生成/替换密钥、往真实设备发升级命令**——这些哪怕本人已经批准过一百次，也不进那份**团队共享**的文件，因为一进去就是给每个 clone 这仓库的人默认放行，没人再会被问一句。这类命令要保留就放个人的 `.claude/settings.local.json`（本机专属、不进 git）。2026-08-23 把 `IAPTool.exe cdc/ether/genkey/sign` 和 `flash-bootloader.ps1` / `run-*.ps1` 这批从提交文件里挪回本地文件时发现的。
+
+### 脚本和工具不许放临时目录
+
+**任何要用第二次的东西，都直接写进仓库里的固定位置**，不要放 `%TEMP%` / scratchpad。
+
+放临时目录的东西**换台电脑就全废**，而且不进 git、别人拿不到、下次会重写一遍。
+
+| 东西 | 去哪 |
+|---|---|
+| 测试脚本、自动化工具（烧写、抓串口……） | `$TOOL/TestCase/tools/` |
+| 一次性的探查命令（`grep` 一下、看个尺寸） | 不落盘，直接跑 |
+
+> 2026-08-16 犯过：把自动烧写脚本写进 scratchpad，还硬编码了 `D:\ST\STM32CubeIDE_1.10.0` 和工作区绝对路径 —— 换电脑双重报废。**机器相关的路径一律进 `config/machine.ps1`。**
+
 ## 构建
 
 | 目标 | 命令 |
@@ -90,7 +105,3 @@ pwsh ./tools/selfcheck.ps1        # Windows 上也可以 .\tools\selfcheck.ps1
 2. 加密逻辑 import，不重写
 3. 反向用例和正向用例一样重要
 4. 破坏性用例标 `destructive`
-
-## 语言
-
-代码注释、脚本的 stdout/stderr、`README.md` 一律**英文**；本文件和 `docs/` 下的项目笔记用中文。

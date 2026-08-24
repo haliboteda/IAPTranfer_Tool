@@ -44,7 +44,7 @@ TestCase/
     └── checklist.md      ← 出厂 / 量产验收单
 ```
 
-> **需求、覆盖矩阵和最近结果在一张表里：[open_plc_cube_ide/docs/STATUS.md](../../open_plc_cube_ide/docs/STATUS.md)** —— 要做到什么、每条用例覆盖哪条需求、跑出什么结果、还欠哪些用例。（2026-08-22 之前那是分开的 REQUIREMENTS.md 和 TEST-PLAN.md，两份都已不存在。）实测数字的唯一出处是 [MEASUREMENTS.md](../../open_plc_cube_ide/docs/test/MEASUREMENTS.md)。
+> **需求、覆盖矩阵和最近结果在一张表里：[open_plc_cube_ide/docs/STATUS.md]($PROD/docs/STATUS.md)** —— 要做到什么、每条用例覆盖哪条需求、跑出什么结果、还欠哪些用例。（2026-08-22 之前那是分开的 REQUIREMENTS.md 和 TEST-PLAN.md，两份都已不存在。）实测数字的唯一出处是 [MEASUREMENTS.md](../../open_plc_cube_ide/docs/test/MEASUREMENTS.md)。
 > **本文件只管判据和运行方法**（贴着代码走，跨仓不搬）。
 
 ⚠️ **机器相关的路径只允许出现在 `config/machine.{ps1,py}`。** 脚本里写死绝对路径、或用 `..\..\..\` 数上去，换台电脑或挪个目录就废 —— 这两种都犯过。
@@ -336,7 +336,7 @@ python tools/check_core_sync.py          # 或 .\tools\check-core-sync.ps1
 python tools/check_status_sync.py        # 或加 --list 只打印解析结果
 ```
 
-`docs/STATUS.md` 和 `TEST-CASES.md` 里的用例编号必须是同一个集合。抓三类漏洞：STATUS.md 拿某条用例当证据、但 TEST-CASES.md 没定义它（需求指着一条谁都跑不了的用例）；TEST-CASES.md 定义了某条用例、但没有需求在引用它（一条跑出来的结果没人记录，烂了也没人发现）；某条用例引用的需求号 STATUS.md 里不存在。**抓不到的**：状态本身过期（"BG1 昨天就失败了但 D4 还写 PASS"）——那需要跑分结果自己传回表里，今天还是人工填的，`docs/test/COVERAGE-GAPS.md` 的"证据是否仍然有效"那一列就是留着补这个洞。退出码：0 两边一致，1 有漂移，2 缺文件。
+`$PROD/docs/STATUS.md` 和 `TEST-CASES.md` 里的用例编号必须是同一个集合。抓三类漏洞：STATUS.md 拿某条用例当证据、但 TEST-CASES.md 没定义它（需求指着一条谁都跑不了的用例）；TEST-CASES.md 定义了某条用例、但没有需求在引用它（一条跑出来的结果没人记录，烂了也没人发现）；某条用例引用的需求号 STATUS.md 里不存在。**抓不到的**：状态本身过期（"BG1 昨天就失败了但 D4 还写 PASS"）——那需要跑分结果自己传回表里，今天还是人工填的，`docs/test/COVERAGE-GAPS.md` 的"证据是否仍然有效"那一列就是留着补这个洞。退出码：0 两边一致，1 有漂移，2 缺文件。
 
 ### P8 · 一个事实只能写在一个文件里
 
@@ -449,7 +449,7 @@ STM32_Programmer_CLI -c port=SWD mode=UR -e 1   # 擦掉 app 扇区，bootloader
 
 ## 未覆盖
 
-**完整的覆盖矩阵和每条待补用例的设计骨架在 [docs/STATUS.md](../../open_plc_cube_ide/docs/STATUS.md)**，这里只留摘要：
+**完整的覆盖矩阵和每条待补用例的设计骨架在 [docs/STATUS.md]($PROD/docs/STATUS.md)**，这里只留摘要：
 
 | ID | 内容 | 为什么还没做 |
 |---|---|---|
