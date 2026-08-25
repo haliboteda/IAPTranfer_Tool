@@ -120,10 +120,9 @@ def docs():
 
     _walk_md(boot / "docs", out)
     if skills:
-        # The product-level documents ($PROD), the machine bring-up documents
-        # ($PORT), every skill body, and the standing rules. AI-Skills holds
-        # product facts from 2026-08-24 on, so it is inside the guard, not beside
-        # it -- see its own CLAUDE.md for the placement rule.
+        # The product-level documents ($PROD) and the standing rules. AI-Skills
+        # holds product facts from 2026-08-24 on, so it is inside the guard, not
+        # beside it -- see its own CLAUDE.md for the placement rule.
         for sub in ("OpenPLC", "_shared"):
             _walk_md(skills / sub, out)
     return sorted(set(out))

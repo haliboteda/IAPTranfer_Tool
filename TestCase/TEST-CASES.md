@@ -14,7 +14,7 @@ TestCase/
 │   └── machine.py        ← 同上，Python 侧。M7 期间两份并存，同一处生成
 ├── requirements.txt      ← 唯一的 pip 依赖：pyserial
 ├── tools/                ← 自动化工具，本身不是测试
-│   ├── init_machine.py   ← ★ 换电脑第一条命令。先探测，搜不到才问你
+│   ├── init_machine.py   ← ★ 本机路径生成器。先探测，搜不到才问你。`CORE_LIVE` 每次发版要重跑
 │   ├── test_init_machine.py ← init_machine 提问逻辑的单元测试
 │   ├── _common.ps1       ← 共用：读 config、找工具链、开串口、判目标电压
 │   ├── common.py         ← 同上，Python 侧。`python tools/common.py --probe` = ENV
