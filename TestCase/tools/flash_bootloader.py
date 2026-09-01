@@ -9,7 +9,6 @@ give the BG1 verdict (is the SDRAM staging buffer usable).
 ⚠️ CubeIDE must be CLOSED for a build: a headless build cannot take a locked
 workspace. --reset-only and --skip-build do not care.
 
-M7 step 5, and a drop-in for flash-bootloader.ps1.
 """
 
 import argparse

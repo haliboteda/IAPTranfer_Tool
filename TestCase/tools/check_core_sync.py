@@ -10,7 +10,6 @@ This is release-checklist item B3, automated.
 
 Exit 0 = identical, 1 = differences, 2 = a repo path is wrong.
 
-M7 step 2: a translation of check-core-sync.ps1.
 """
 
 import hashlib
@@ -46,11 +45,11 @@ for p in (cfg.CORE_LIVE, cfg.CORE_REPO):
 #
 # A check that is red every single run is one nobody reads.
 #
-# re.I because PowerShell's -match is case-insensitive; without it CLAUDE.md
+# re.I on purpose; without it CLAUDE.md
 # would still be skipped but Claude.md would not, and the check would go red on
 # a rename nobody made.
 #
-# This pattern must stay identical to the one in check-core-sync.ps1: M7 step 2
+# One pattern, one place:
 # holds the two versions to byte-identical output, so fixing one alone breaks
 # the comparison rather than the check.
 SKIP = re.compile(

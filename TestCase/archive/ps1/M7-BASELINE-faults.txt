@@ -1,0 +1,40 @@
+
+===== fault: RELEASE-NOTES.md heading names a different version
+both versions produced identical output under this fault
+
+===== fault: owner_slot.c fingerprint is one byte off
+both versions produced identical output under this fault
+
+===== fault: discovery reply cap changed on the bootloader side only
+both versions produced identical output under this fault
+
+===== fault: one FMC pin renamed in fmc.c only
+both versions produced identical output under this fault
+
+===== fault: IAP_boot_handoff.h missing on the bootloader side
+both versions produced identical output under this fault
+
+===== fault: a file exists in live but not in the repo
+both versions produced identical output under this fault
+
+===== fault: a file exists in the repo but not in live
+both versions produced identical output under this fault
+
+===== working tree restored?
+  E:\WorkSpace\Schaeffer-AG\open_plc_cube_ide
+     M CLAUDE.md
+     M Core/Src/main.c
+     M TestCase/common/bringup_test.h
+     M docs/INDEX.md
+     M docs/design/HARDWARE-FACTS.md
+     M docs/test/BOARD-BRINGUP-CASES.md
+     M docs/test/MEASUREMENTS.md
+     M docs/work/ISSUES.md
+    ?? TestCase/RS485/
+    ?? "open_plc_cube_ide test 485.zip"
+  the repos above are not clean.
+  If you had uncommitted work before this run, that is expected.
+  If you did not, check the entries against the faults listed above.
+
+===== result
+all 7 fault case(s) drove both versions down the same path

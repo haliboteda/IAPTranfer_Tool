@@ -39,7 +39,7 @@ import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import (cfg, Section, Ok, Warn, Fail, get_iap_tool,  # noqa: E402
+from common import (cfg, Section, Ok, Warn, Fail, banner, get_iap_tool,  # noqa: E402
                     get_programmer_cli, get_scratch_file, open_log_ports)
 
 # Exactly the strings the bootloader prints. Anchored on IAPServer/IAP_server.c
@@ -185,17 +185,6 @@ def pad_image(src, target_bytes):
     return out
 
 
-def banner(lines):
-    """The hands-on prompt. Same shape every time, because the user scans for the
-    icon rather than reading the paragraph."""
-    print()
-    print("=" * 68)
-    for i, line in enumerate(lines):
-        print(("  🍍 " if i == 0 else "     ") + line)
-    print("=" * 68)
-    print()
-
-
 def wait_for(predicate, timeout, tick=0.2, on_tick=None):
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -205,6 +194,26 @@ def wait_for(predicate, timeout, tick=0.2, on_tick=None):
             on_tick(deadline - time.monotonic())
         time.sleep(tick)
     return False
+
+
+def ticker(label, expect=None):
+    """A one-line live clock for wait_for's on_tick.
+
+    The operator has to act inside a window of a few seconds and cannot see the
+    serial log, so counting in their head against somebody else's message is the
+    only cue they otherwise have -- which is how the first S4b attempts were
+    missed by seconds in both directions. This puts the clock on their screen.
+    """
+    t0 = time.monotonic()
+
+    def tick(_remaining):
+        el = time.monotonic() - t0
+        bar = "  %s  %5.1fs" % (label, el)
+        if expect:
+            bar += " / ~%.0fs" % expect
+        sys.stdout.write("\r" + bar + "    ")
+        sys.stdout.flush()
+    return tick
 
 
 def run_once(case, args, cli, iaptool, image, ip):
@@ -235,21 +244,25 @@ def run_once(case, args, cli, iaptool, image, ip):
         # --- wait for the window to open -------------------------------------
         if case == "a":
             Section("waiting for the transfer window")
-            if not wait_for(lambda: tail.seen(STAGING) >= 0, args.window_timeout):
+            if not wait_for(lambda: tail.seen(STAGING) >= 0, args.window_timeout,
+                            on_tick=ticker("uploading, window not open yet", 10)):
                 Fail("never saw %r -- the upgrade did not get as far as staging"
                      % STAGING)
                 print(Path(out_file).read_text(encoding="utf-8", errors="replace")[-800:])
                 return "setup"
+            print()
             banner(["PULL THE POWER NOW.",
                     "The board is receiving into SDRAM; flash is untouched.",
                     "Expected afterwards: the OLD application still boots."])
             missed = ERASING
         else:
             Section("waiting for the erase window")
-            if not wait_for(lambda: tail.seen(ERASING) >= 0, args.window_timeout):
+            if not wait_for(lambda: tail.seen(ERASING) >= 0, args.window_timeout,
+                            on_tick=ticker("transferring, window not open yet", 44)):
                 Fail("never saw %r" % ERASING)
                 print(Path(out_file).read_text(encoding="utf-8", errors="replace")[-800:])
                 return "setup"
+            print()
             banner(["PULL THE POWER NOW.",
                     "The board is erasing and copying out of SDRAM.",
                     "This window is only a few seconds -- go.",
@@ -257,28 +270,49 @@ def run_once(case, args, cli, iaptool, image, ip):
             missed = FINISHED
 
         # --- did they hit it? ------------------------------------------------
-        cut_seen = wait_for(
-            lambda: tail.quiet_for() > 2.5 and not discovery_answers(ip),
-            args.cut_timeout)
+        # The rail, not the silence, decides. A board busy erasing is quiet and
+        # does not answer discovery either, so in case b the silence test is true
+        # from the instant the window opens -- treating it as the trigger meant
+        # reading the voltage while the operator was still walking to the board,
+        # finding 3.2V and giving up before they could touch anything.
+        #
+        # Silence stays as a cheap pre-filter: it keeps this from spawning the
+        # programmer while the board is still printing. The voltage read is rate
+        # limited because each one is a separate SWD attach worth seconds.
+        state = {"v": None, "next_probe": 0.0}
+
+        def rail_is_down():
+            if tail.quiet_for() <= 2.5 or discovery_answers(ip):
+                return False
+            now = time.monotonic()
+            if now < state["next_probe"]:
+                return False
+            state["next_probe"] = now + 4.0
+            state["v"] = target_voltage(cli)
+            return state["v"] is None or state["v"] <= 1.0
+
+        cut_seen = wait_for(rail_is_down, args.cut_timeout,
+                            on_tick=ticker(">>> CUT THE POWER NOW <<<  window open",
+                                           34 if case == "a" else 20))
+        print()
 
         if tail.seen(missed) >= 0:
             Warn("the log shows %r -- the window closed before the power went."
                  % missed)
             return "missed"
         if not cut_seen:
+            if state["v"] is not None and state["v"] > 1.0:
+                Fail("the rail never fell; last read %.2fV after %ds."
+                     % (state["v"], args.cut_timeout))
+                Warn("  Either the power was never pulled, or ST-Link is feeding")
+                Warn("  the target -- disable its power output and try again.")
+                return "setup"
             Warn("no sign of the power going within %ds" % args.cut_timeout)
             return "missed"
 
-        # Power, not just silence. A board busy erasing is also quiet.
-        v1 = target_voltage(cli)
         print("target voltage during the cut: %s"
-              % ("%.2fV" % v1 if v1 is not None else "SWD cannot reach the target"))
-        if v1 is not None and v1 > 1.0:
-            Fail("the rail is still at %.2fV, so the MCU never lost power." % v1)
-            Warn("  ST-Link is very likely feeding the target. Disable its power")
-            Warn("  output, or power the board from a supply you can actually cut.")
-            return "setup"
-
+              % ("%.2fV" % state["v"] if state["v"] is not None
+                 else "SWD cannot reach the target"))
         Ok("power is off")
 
         # --- wait for it to come back ---------------------------------------
@@ -363,9 +397,11 @@ def main():
     ap.add_argument("--no-recover", action="store_true",
                     help="S4b: stop before the recovery upload")
     ap.add_argument("--pad-to", type=int, metavar="BYTES",
-                    help="zero-pad the image to this size so the transfer lasts "
-                         "long enough to interrupt by hand. 1200000 gives a few "
-                         "seconds; the cap is IAP_APP_MAX_SIZE (1835008)")
+                    help="zero-pad the image so both windows last long enough to "
+                         "hit by hand. Measured 2026-09-01 at the cap, 1835008 "
+                         "(= IAP_APP_MAX_SIZE): transfer window 33.7s, erase+write "
+                         "window 20.2s. Use the cap for case b -- 1200000 leaves "
+                         "the erase window too short to catch")
     args = ap.parse_args()
 
     Section("S4%s  power cut %s" % (args.case,
@@ -410,6 +446,15 @@ def main():
     for attempt in range(1, args.retry + 1):
         if args.retry > 1:
             Section("attempt %d of %d" % (attempt, args.retry))
+        # A missed attempt ends with the board unplugged, and the operator needs
+        # a moment to put the power back. Starting the next upload immediately
+        # just gets "No response" from IAPTool and burns the attempt on nothing.
+        if attempt > 1 and not discovery_answers(ip):
+            print("  waiting for the board to come back...")
+            if not wait_for(lambda: bool(discovery_answers(ip)), 180):
+                Fail("the board never came back at %s -- plug the power in" % ip)
+                return 2
+            Ok("  board is back")
         result = run_once(args.case, args, cli, iaptool, image, ip)
         if result == "pass":
             Section("record it")

@@ -7,8 +7,6 @@ like a failed upgrade. This is release-checklist item B1, automated.
 
 Exit 0 = all agree, 1 = drift, 2 = a file is missing.
 
-M7 step 2: a translation of check-version-sync.ps1. Behaviour must be
-identical -- the PowerShell version is the reference until every case has
 been shown to reach the same verdict through both.
 """
 
@@ -56,7 +54,7 @@ if v_boot != v_notes:
 # names an older version is either stale or a genuinely unfixed regression, and
 # either way someone has to look.
 #
-# The PowerShell -match operator is case-insensitive, so the phrase test here is
+# The phrase test here is deliberately case-insensitive, so it is
 # too. Getting that wrong would silently narrow the check.
 stale = []
 for line_no, line in enumerate(read_text(rel_notes).splitlines(), 1):

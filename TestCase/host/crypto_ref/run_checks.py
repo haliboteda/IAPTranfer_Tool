@@ -14,15 +14,8 @@ eventually will).
     python run_checks.py                default 12 signatures
     python run_checks.py --rounds 64    more, when key or signer code changed
 
-The Python side of M7 step 3, and a drop-in for run-checks.ps1 (whose switch is
-spelled -Rounds).
-
-One deliberate difference: the PowerShell version starts by refusing to run if
-"python" is not on PATH. There is nothing to check here -- this interpreter is
-already running, and it is the one used to launch both reference scripts. On a
-machine carrying python3 but no python the PowerShell version stops at that gate
-while this one works, which is the whole point of M7. Neither prints anything on
-a machine that has both, so the comparison is unaffected.
+No interpreter check up front: this one is already running, and it is the one
+used to launch both reference scripts.
 
 Exit 0 = everything verified, 1 = something did not, 2 = prerequisites missing.
 """

@@ -24,11 +24,11 @@ These scripts are the third party. They share no code with either side.
 |---|---|---|
 | `sha256_ref.py` | a transcription of the bootloader's `sha256.c` against Python `hashlib`, 309 vectors | python only |
 | `ecdsa_verify.py` | one signature, using plain modular arithmetic — no crypto library | python only |
-| `run-checks.ps1` | both, driving real `IAPTool sign` for the signatures | python, go |
+| `run_checks.py` | both, driving real `IAPTool sign` for the signatures | python, go |
 
 ```powershell
-.\run-checks.ps1              # 12 signatures
-.\run-checks.ps1 -Rounds 64   # after touching the signer or rotating keys
+python run_checks.py             # 12 signatures
+python run_checks.py --rounds 64  # after touching the signer or rotating keys
 ```
 
 Also run as steps X1-X2 of `tools/selfcheck.py`.
@@ -45,7 +45,7 @@ It does **not** test the compiled C — `host/bootloader_unit/` does that by
 compiling the real `sha256.c` on the host. The two are complementary: this one
 needs no toolchain and runs anywhere.
 
-**Signing is randomised, so one signature is not enough.** `run-checks.ps1`
+**Signing is randomised, so one signature is not enough.** `run_checks.py`
 signs the same blob N times and verifies each. A leading zero byte in r or s
 appears in roughly one signature in 256 — rare enough to reach the field, common
 enough that it eventually will. One passing signature proves the encoding

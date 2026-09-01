@@ -29,9 +29,6 @@ directly.
     python run_downgrade.py              run all five
     python run_downgrade.py --keep       keep the scratch directory
 
-The Python side of M7 step 3, and a drop-in for run-downgrade.ps1 (whose switch
-is spelled -Keep). Same three deliberate differences as run_cases.py.
-
 Exit 0 = all five matched, 1 = at least one did not, 2 = prerequisites missing.
 """
 
@@ -143,7 +140,7 @@ def main():
         flashed = "CMD 'flash" in board_saw
 
         why = []
-        # PowerShell's -match is case-insensitive, so these comparisons are too.
+        # Deliberately case-insensitive.
         if c["expect"].lower() not in out.lower():
             why.append("IAPTool never said: %s" % c["expect"])
         if flashed != c["flash"]:

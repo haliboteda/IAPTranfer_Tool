@@ -25,6 +25,14 @@ returns True unconditionally would otherwise pass this script.
 import hashlib
 import sys
 
+# A Windows console on a legacy codepage cannot encode the warning signs in
+# the docstring above, and argparse writes --help straight to stdout.
+try:
+    sys.stdout.reconfigure(errors="replace")
+    sys.stderr.reconfigure(errors="replace")
+except (AttributeError, ValueError):
+    pass
+
 # secp256r1 domain parameters (NIST P-256)
 P = 0xFFFFFFFF00000001000000000000000000000000FFFFFFFFFFFFFFFFFFFFFFFF
 A = -3 % P

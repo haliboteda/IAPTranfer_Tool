@@ -5,7 +5,6 @@
     python tools/serial_watch.py --reset         reset over ST-Link first, to catch a boot log
     python tools/serial_watch.py --ports COM7    override the ports from config
 
-M7 step 5, and a drop-in for serial-watch.ps1.
 """
 
 import argparse

@@ -1,4 +1,4 @@
-"""Work out what this machine has, and write config/machine.py and machine.ps1.
+"""Work out what this machine has, and write config/machine.py.
 
     python3 tools/init_machine.py                    detect, ask for the rest, write
     python3 tools/init_machine.py --check            look, change nothing, ask nothing
@@ -33,9 +33,9 @@ naming:
     a pile of unrelated MISSING lines. (Debian, 2026-08-20.)
   - CORE_LIVE ends in the board-package version, so the template goes stale on
     every release. Here it is a glob, resolved at detection time.
-  - machine.ps1 and machine.py were two hand-maintained files holding the same
-    values, with nothing keeping them equal. Both are generated from the table
-    below, so they cannot disagree.
+  - machine.py used to have a hand-maintained PowerShell twin, with nothing
+    keeping the two equal. The PowerShell scripts are gone (2026-09-01) and so
+    is the twin; this table is the only source.
 
 Values already in config/machine.py are KEPT when they still make sense on this
 platform and still exist on disk, so a deliberate choice survives a re-run. Use
@@ -697,17 +697,6 @@ def py_literal(value):
     return '"%s"' % s.replace('"', '\\"')
 
 
-def ps_literal(value):
-    """Single-quoted, so a $ or a backtick in a path cannot be interpolated."""
-    if isinstance(value, bool):
-        return "$true" if value else "$false"
-    if isinstance(value, int):
-        return str(value)
-    if isinstance(value, (list, tuple)):
-        return "@(" + ", ".join("'%s'" % str(v).replace("'", "''") for v in value) + ")"
-    return "'%s'" % str(value).replace("'", "''")
-
-
 def header_lines():
     runner = "python" if IS_WIN else "python3"
     return [
@@ -752,14 +741,6 @@ def render(comment_prefix, assign, literal, values):
 def render_python(values):
     body = render("#", lambda k: k, py_literal, values)
     return '"""Machine-local paths. Imported by tools/common.py."""\n' + body
-
-
-def render_powershell(values):
-    head = ("# Machine-local paths. Dot-sourced by tools/_common.ps1.\n"
-            "#\n"
-            "# Kept in step with machine.py by tools/init_machine.py, which writes both.\n"
-            "# It stops being written once M7 removes the PowerShell scripts.\n")
-    return head + render("#", lambda k: "$" + k, ps_literal, values)
 
 
 # ------------------------------------------------- Claude Code working dirs
@@ -931,8 +912,6 @@ def main():
                     help="force a value; repeatable")
     ap.add_argument("--redetect", action="append", default=[], metavar="NAME",
                     help="ignore the current value for NAME and detect it again")
-    ap.add_argument("--no-powershell", action="store_true",
-                    help="write only machine.py")
     ap.add_argument("--no-input", action="store_true",
                     help="never ask; just report what could not be found")
     ap.add_argument("--ask", action="store_true",
@@ -1123,8 +1102,6 @@ def main():
 
     Section("files")
     targets = [("machine.py", render_python(RESOLVED))]
-    if not args.no_powershell:
-        targets.append(("machine.ps1", render_powershell(RESOLVED)))
 
     for name, text in targets:
         path = CONFIG_DIR / name
@@ -1157,7 +1134,8 @@ def main():
         print("      let a session in one repo read the others without asking")
     print("  python%s tools/common.py --probe        confirm what ENV now sees"
           % ("" if IS_WIN else "3"))
-    print("  pwsh ./tools/selfcheck.ps1              full host-side run (needs PowerShell)")
+    print("  python%s tools/selfcheck.py             full host-side run"
+          % ("" if IS_WIN else "3"))
     return 0
 
 

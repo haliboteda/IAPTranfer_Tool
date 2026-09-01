@@ -3,9 +3,8 @@ bootloader source in open_plc_cube_ide/IAPServer. Case H2.
 
     python build.py
 
-The Python side of M7 step 3, and a drop-in for build.ps1: same compiler
-resolution, same flags, same file list, same output, same exit code. build.sh
-stays as the POSIX twin of the PowerShell version until step 6 removes both.
+build.sh is the POSIX twin: same compiler resolution, same flags, same file
+list, same output, same exit code.
 
 Compiler, first match wins: $CC, then HOST_CC from config/machine.py, then gcc
 or clang on PATH. HOST_CC exists because a compiler installed for this one
@@ -38,7 +37,7 @@ def resolve_cc():
 
     An absolute path is tried first because HOST_CC deliberately is not on PATH.
     Returns the candidate exactly as written, since that string is printed and
-    the PowerShell version prints the same one.
+    kept deliberately terse.
     """
     import os
     import shutil
@@ -58,10 +57,9 @@ def emit(argv):
     Bytes, deliberately, not text=True. The bootloader's own printf calls end in
     "\\r\\n", and a MinGW binary writing that to a text-mode stdout emits
     "\\r\\r\\n". Python's universal-newline translation turns the stray "\\r"
-    into a second line break, so the same test run gained a blank line that the
-    PowerShell version -- which splits on "\\r\\n" and leaves the stray "\\r" at
-    the end of the line -- does not have. Passing the child's bytes straight
-    through reproduces it exactly.
+    into a second line break, so the same test run gains a blank line that is not
+    in the child's actual output. Passing the child's bytes straight through
+    reproduces what it really wrote.
     """
     proc = subprocess.run([str(a) for a in argv],
                           stdout=subprocess.PIPE, stderr=subprocess.STDOUT)

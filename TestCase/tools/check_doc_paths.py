@@ -29,8 +29,8 @@ this project has already paid for that lesson twice: a flaky case that trained
 people to re-run it, and a warning everyone learned to ignore. Narrower coverage
 that can be trusted beats broader coverage that cannot.
 
-What that costs: a bare `tools/foo.ps1` that gets deleted still goes unnoticed.
-Write `$TOOL/TestCase/tools/foo.ps1` when you want it checked.
+What that costs: a bare `tools/foo.py` that gets deleted still goes unnoticed.
+Write `$TOOL/TestCase/tools/foo.py` when you want it checked.
 
 Line numbers in a path (fmc.c:153-193) are stripped before checking: the file has
 to exist, but a line number is a hint and drifts by design -- M4 already carries

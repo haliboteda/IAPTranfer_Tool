@@ -10,29 +10,31 @@
 TestCase/
 ├── *.go                  ← 设备行为用例（T/S/N 系列），package main
 ├── config/
-│   ├── machine.ps1       ← 本机路径（gitignore）。**生成的，不要手抄**
-│   └── machine.py        ← 同上，Python 侧。M7 期间两份并存，同一处生成
+│   └── machine.py        ← 本机路径（gitignore）。**生成的，不要手抄**
 ├── requirements.txt      ← 唯一的 pip 依赖：pyserial
 ├── tools/                ← 自动化工具，本身不是测试
 │   ├── init_machine.py   ← ★ 本机路径生成器。先探测，搜不到才问你。`CORE_LIVE` 每次发版要重跑
 │   ├── test_init_machine.py ← init_machine 提问逻辑的单元测试
-│   ├── _common.ps1       ← 共用：读 config、找工具链、开串口、判目标电压
-│   ├── common.py         ← 同上，Python 侧。`python tools/common.py --probe` = ENV
+│   ├── common.py         ← ★ 共用件：读 config、找工具链、开串口、跑子进程时排空串口、动手提示。`--probe` = ENV
 │   ├── selfcheck.py      ← ★ 所有不需要板子的检查，一条命令（15 步）
-│   ├── selfcheck.ps1     ← 同上，M7 的对照基准，第 6 步删
-│   ├── check-version-sync.ps1  ← P1  版本号三处一致
-│   ├── check-mirror-sync.ps1   ← P2  跨仓镜像 9 锚点 + 备份寄存器占用
-│   ├── check-core-sync.ps1     ← P3  core live vs git 仓库
-│   ├── check-public-root.ps1   ← P6  公开根指纹没漂移
-│   ├── check_*.py              ← 上面四个的 Python 版（M7 第 2 步）
+│   ├── check_version_sync.py  ← P1  版本号三处一致
+│   ├── check_mirror_sync.py   ← P2  跨仓镜像 9 锚点 + 备份寄存器占用
+│   ├── check_core_sync.py     ← P3  core live vs git 仓库
+│   ├── check_public_root.py   ← P6  公开根指纹没漂移
 │   ├── check_status_sync.py    ← P7  总表和用例名单不得漂
 │   ├── check_doc_dupes.py      ← P8  同一句话不得出现在两个文件
 │   ├── check_doc_paths.py      ← P9  文档里提到的路径必须存在
 │   ├── check_allow_hygiene.py  ← P10 本机 allow 列表不许攒字面命令（建议性，不进 selfcheck）
-│   ├── m7-compare.ps1          ← ★ 两版输出逐字节比对
-│   ├── m7-compare-faults.ps1   ← ★ 注入故障后再比一次
-│   ├── flash-bootloader.ps1
-│   └── serial-watch.ps1
+│   ├── flash_bootloader.py     ← 无头编译 + ST-Link 烧写 + BG1 判定
+│   ├── enter_bootloader.py     ← 把板子请进 bootloader，不用碰板子
+│   ├── serial_watch.py
+│   ├── run_case.py             ← 跑一条 TestCase 用例，`--then-reset` 变成 G1
+│   ├── run_s3.py  run_s4.py    ← S3 启动期验签 / S4 掉电中断
+│   ├── run_au1.py              ← AU1 nonce 唯一性，绕一次真实掉电
+│   ├── run_m5.py  run_sdram.py ← M5 串口冲突 / SD1 SDRAM 封装
+│   ├── run_takeown.py  run_setowner.py  inject_owner_record.py  ← 所有权 OW1/OW2
+│   ├── upload_and_watch.py     ← 走真实 IAPTool 上传并判 SDRAM 暂存行为
+│   └── can_send.py  can_watch.py  rs485_echo.py  ← 板级端口
 ├── host/                 ← 不需要板子，纯主机跑
 │   ├── iapcrypto/        ← H1  密钥派生与挑战应答的 Go 单元测试
 │   ├── bootloader_unit/  ← H2  用 stub 编译真实 bootloader 源码的 C 单元测试
@@ -47,7 +49,7 @@ TestCase/
 > **需求、覆盖矩阵和最近结果在一张表里：[open_plc_cube_ide/docs/STATUS.md]($PROD/docs/STATUS.md)** —— 要做到什么、每条用例覆盖哪条需求、跑出什么结果、还欠哪些用例。（2026-08-22 之前那是分开的 REQUIREMENTS.md 和 TEST-PLAN.md，两份都已不存在。）实测数字的唯一出处是 [MEASUREMENTS.md](../../open_plc_cube_ide/docs/test/MEASUREMENTS.md)。
 > **本文件只管判据和运行方法**（贴着代码走，跨仓不搬）。
 
-⚠️ **机器相关的路径只允许出现在 `config/machine.{ps1,py}`。** 脚本里写死绝对路径、或用 `..\..\..\` 数上去，换台电脑或挪个目录就废 —— 这两种都犯过。
+⚠️ **机器相关的路径只允许出现在 `config/machine.py`。** 脚本里写死绝对路径、或用 `..\..\..\` 数上去，换台电脑或挪个目录就废 —— 这两种都犯过。
 
 ⚠️ **`init_machine.py` 有单元测试**：`python tools/test_init_machine.py`（**32 个用例**，四组）。
 
@@ -67,7 +69,7 @@ TestCase/
 ```powershell
 # 手工的话：
 
-# 一次性：探测本机路径，生成 config/machine.ps1 和 machine.py
+# 一次性：探测本机路径，生成 config/machine.py
 python tools\init_machine.py      # Linux 上是 python3
 
 # 让一个仓库里的 Claude 会话读得到兄弟仓库，不必一路批权限
@@ -77,13 +79,13 @@ python tools\init_machine.py --write-claude-dirs
 python tools\selfcheck.py         # 15 项；--list 先看它跑哪几步；--quick 跳过慢的那 5 项
 
 # 构建 bootloader、烧写、抓启动日志、给判定（CubeIDE 必须关闭）
-.\tools\flash-bootloader.ps1
+python tools/flash_bootloader.py
 
 # 只看串口，不碰板子
-.\tools\serial-watch.ps1
+python tools/serial_watch.py
 ```
 
-⚠️ **`selfcheck` 用 Python 那一版。** `selfcheck.ps1` 还在，但只作为 M7 的对照基准留到第 6 步；两版**15 项结论逐项相同**（judged by `tools/m7-compare.ps1 -Only selfcheck`）。**板级脚本目前仍然只有 PowerShell 版**（M7 第 5 步还没做），所以上面后两条还是 `.ps1`。
+⚠️ **测试脚本一律用 Python**（2026-09-01 定）。PowerShell 版已整体归档到 `archive/ps1/`，**不再运行也不再维护** —— 见那里的 `README.md` 和两份迁移基线。
 
 缺什么会报 `SKIP` 并说清缺什么，**不会静默跳过** —— 一个被悄悄跳过的检查会被读成通过，那比没有这个检查更糟。
 
@@ -154,10 +156,10 @@ N5 的第二半判据同样重要：**上限要是限速器，不能是保险丝
 | **S1** | 签名无效的镜像被拒绝 | 设备停在 bootloader，需 `--bin` 和 `--password-file` | 传完后设备回 `Signature Failed`（或 `No Signature`） |
 | **S2** | 被**别的密钥**签过的镜像被拒绝 | 同 S1，另需 `--iaptool`（用它生成临时密钥并签名） | 同上。**外加**上传前 `getpubkey` 必须和临时密钥不同 |
 | **S3** | **已装好的** app 被改坏 → 启动期拒绝 | 板上有能启动的 app、ST-Link、**一个已签名的恢复镜像** | `metadata present` + `App signature invalid or absent`，且**没有** `** APP Mod` |
-| **G1** | 被拒绝的上传**不破坏已装好的 app** | 紧接 S1 之后复位 | 下次启动出现 `** APP Mod ...`，**不是** `no valid application`。用 `tools/run-case.ps1 -Case S1 -ThenReset` 跑 |
+| **G1** | 被拒绝的上传**不破坏已装好的 app** | 紧接 S1 之后复位 | 下次启动出现 `** APP Mod ...`，**不是** `no valid application`。用 `python tools/run_case.py --case S1 --then-reset` 跑 |
 
 ```powershell
-.\tools\run-s3.ps1 -Bin <app.bin>       # 破坏 + 判定 + 自动恢复
+python tools/run_s3.py --bin <app.bin>       # 破坏 + 判定 + 自动恢复
 ```
 
 **S3 是破坏性的，但自带恢复，而且恢复路径先证明后破坏** —— 脚本第 1/4 步先烧一次恢复镜像并看着板子起来，不通就拒绝往下走。
@@ -172,12 +174,12 @@ N5 的第二半判据同样重要：**上限要是限速器，不能是保险丝
 
 ⚠️ **S2 上传前必须先 `getpubkey` 确认板子信的不是这把临时密钥。** 密钥是每次现生成的，撞上是不可能事件 —— 这道闸防的是将来有人把它改成固定密钥文件：那样用例不会报错，它会**真的把 `--bin` 指的东西刷进板子**。
 
-### 所有权（`tools/run-takeown.ps1`，需求 C10）
+### 所有权（`python tools/run_takeown.py`，需求 C10）
 
 | ID | 验证什么 | 前置条件 | 判据 |
 |---|---|---|---|
 | **OW1** | 认领把板子绑到一把新密钥上 | 板子停在 bootloader，**且这次启动按住过 BOOT0** | `takeown` 回 `OK`；`getpubkey` 返回新密钥；复位后仍然认得，公开根告警消失 |
-| **OW1-neg** | BOOT0 没按时认领被拒 | 停在 bootloader，**没按 BOOT0**（用 `enter-bootloader.ps1` 进） | 回 `Refused`，`getpubkey` **一字节不变** |
+| **OW1-neg** | BOOT0 没按时认领被拒 | 停在 bootloader，**没按 BOOT0**（用 `enter_bootloader.py` 进） | 回 `Refused`，`getpubkey` **一字节不变** |
 
 | **OW2** | 换 owner：现任签名才算数 | 板子已被一把**你持有私钥**的密钥认领 | 正确签名 → `OK` 且 generation +1；坏签名 → `Refused` 且什么都没变 |
 | **OW2-attack** | 无签名的高 generation 记录**夺不走**板子 | 同上 | 扫描器看得见那条记录，但 `getpubkey` 仍返回原主人 |
@@ -186,18 +188,18 @@ N5 的第二半判据同样重要：**上限要是限速器，不能是保险丝
 ⚠️ **OW3 的判据必须包含"能重新认领"。** 只验"回落内置根"是不够的：链规则曾经会拒绝 cleared 之后的新认领记录，那样恢复出厂等于**把板子永久钉死在公开根上**，比不做恢复出厂更糟。
 
 ```powershell
-.\tools\run-takeown.ps1 -ExpectRefused          # 认领负向，不需要人
-.\tools\run-takeown.ps1                         # 认领正向，需要有人按住 BOOT0
-.\tools\run-setowner.ps1 -CurrentKey a.pem      # 换 owner，不需要人
-.\tools\run-setowner.ps1 -CurrentKey a.pem -BadSignature
-.\tools\inject-owner-record.ps1 -Key <hex> -AlsoUnsigned 9   # 夺取攻击
+python tools/run_takeown.py --expect-refused          # 认领负向，不需要人
+python tools/run_takeown.py                         # 认领正向，需要有人按住 BOOT0
+python tools/run_setowner.py --current-key a.pem      # 换 owner，不需要人
+python tools/run_setowner.py --current-key a.pem --bad-signature
+python tools/inject_owner_record.py --key <hex> --also-unsigned 9   # 夺取攻击
 ```
 
 ⚠️ **换 owner 不需要 BOOT0**，这是设计不是疏漏：现任签名本身就是授权，远程交接要支持。物理门只管**没有签名可验**的操作（首次认领、恢复出厂）。
 
 ⚠️ **OW2-attack 是这一组真正的判据。** 只验"正确签名能换、坏签名不能换"是不够的 —— 真正的洞是"按 generation 最大的赢"：那样任何能追加记录的人写一条更高 generation 的**无签名**记录就能夺走一块已认领的板子。判据必须是**板子仍然认原主人**。
 
-⚠️ **认领是刻意做成不好撤销的。** 第 6 步的恢复出厂还没实现，现在唯一的退路是 **ST-Link 重烧 bootloader** —— owner 记录和 bootloader 同扇区，擦掉重写就一起没了（`.\tools\flash-bootloader.ps1`）。
+⚠️ **认领是刻意做成不好撤销的。** 第 6 步的恢复出厂还没实现，现在唯一的退路是 **ST-Link 重烧 bootloader** —— owner 记录和 bootloader 同扇区，擦掉重写就一起没了（`python tools/flash_bootloader.py`）。
 
 ⚠️ **判据必须包含"旧密钥签的固件被拒"。** 2026-08-18 首次跑就抓到：认领改了 `getpubkey` 的回答和告警文字，却没改实际验签用的密钥（`fw_verify_signature()` 写死了 `fw_public_key`）——**板子一边说"只认新主人"，一边照跑任何人签的固件**。只看日志的判据会给出干净的通过。
 
@@ -210,15 +212,15 @@ N5 的第二半判据同样重要：**上限要是限速器，不能是保险丝
 板子没有硬件随机数，nonce 是 `计数器(4B) ‖ UID字0(4B) ‖ tick(4B) ‖ 0(4B)`（`IAPServer/iap_auth.c`）。**撑住重放保护的是唯一性，不是不可预测性** —— 攻击者真正需要的是 HMAC 密钥，那个从观察 nonce 得不到。唯一性完全依赖那个计数器活在 VBAT 供电的 RTC 备份寄存器里。
 
 ```powershell
-.\tools\run-au1.ps1                 # 编排两个阶段，中间提示你拔电
-.\tools\run-au1.ps1 -Resume         # 阶段 1 已经跑过了，直接等断电
+python tools/run_au1.py                 # 编排两个阶段，中间提示你拔电
+python tools/run_au1.py --resume         # 阶段 1 已经跑过了，直接等断电
 ```
 
 ⚠️ **必须真断电，不能按复位。** 复位根本不碰备份域，所以只做复位的话，**一块 VBAT 已经没电的板子照样能通过** —— 而那正是这个用例要抓的板子。脚本靠板子自己的 UDP 发现应答判断断电是否真的发生（连续三次无应答才算），不靠人按回车。
 
 ⚠️ **`nonce counter = N` 那行只在 bootloader 停下来时才打。** 板上有有效 app 的话，上电那次直接交权给 app，走不到那句 —— 它会出现在随后 `enter-bootloader` 的日志里。交叉核对要两份日志一起翻。
 
-⚠️ **`enter-bootloader.ps1` 的输出用 `6>&1` 抓，不是 `2>&1`。** 它全部走 `Write-Host`，那是信息流不是成功流；用 `2>&1` 抓到的是空字符串，而文字照样出现在控制台上。
+⚠️ **`enter_bootloader.py` 的输出用 `6>&1` 抓，不是 `2>&1`。** 它全部走 `Write-Host`，那是信息流不是成功流；用 `2>&1` 抓到的是空字符串，而文字照样出现在控制台上。
 
 **IAPTool 按设计做不出这个用例** —— 它的 `getpubkey` 预检会在传输前就拦掉板子不会接受的镜像。所以 S1 直接驱动协议，但**加密部分 import 出货代码里的 `IAPTool/iapcrypto`**，不是另写一份：只有*签名*是故意错的（64 个零字节），认证 HMAC、CRC、分块framing 全部和 IAPTool 发的一模一样。
 
@@ -233,7 +235,7 @@ S1 还会把镜像改掉一个字节，使它和板子上已存的 metadata 不�
 
 T1–T4 和 S1 都要求设备处于 bootloader 且以太网已起。三种办法：
 
-1. **`tools\enter-bootloader.ps1`** —— 全自动，不需要碰板子。**推荐**
+1. **`python tools/enter_bootloader.py`** —— 全自动，不需要碰板子。**推荐**
 2. **按住 BOOT0 复位** —— 日志出现 `** UPLOAD Mod ... (BOOT0 held)`
 3. 让 app 收到认证过的 UDP reboot（`IAPTool ether` 的第一步就是这个），但它随后会真的上传
 
@@ -247,17 +249,17 @@ T1–T4 和 S1 都要求设备处于 bootloader 且以太网已起。三种办�
 
 跑得快、随时能跑，**改完代码先过这一层再上板**。
 
-**这一层每个脚本都有 PowerShell 和 Python 两个版本**（M7 第 3 步，2026-08-22）。两版在 Windows 上**输出逐字节相同**，判据由 `tools/m7-compare.ps1` 保证（10/10）。新写自动化用 Python 那一版；`.ps1` 留着当对照基准，到 M7 第 6 步才删。
+**这一层全部是 Python。** 归档前留了两份基线，证明当时两版**11 对输出逐字节相同**、**7 个注入故障走同一路径**：`archive/ps1/M7-BASELINE-compare.txt` 和 `M7-BASELINE-faults.txt`。
 
 | 目录 | 怎么跑 | 覆盖什么 |
 |---|---|---|
 | `host/iapcrypto/` | 在 `IAPTranfer_Tool/` 下 `go test ./TestCase/...` | HMAC 原语对 RFC 4231 向量；派生公式 `HMAC-SHA256(password, machineID)`；同 UID 稳定、异 UID 必不同；一次完整挑战应答双方独立算出同一个 HMAC |
-| `host/bootloader_unit/` | `python build.py`（或 `.\build.ps1` / `./build.sh`），需要 gcc/clang | 用 stub 在主机上编译**真实的** `sha256.c` / `iap_keyderive.c` / `iap_auth.c` 并跑断言 |
-| `host/fakeboard/` | `python run_cases.py`（或 `.\run-cases.ps1`） | **K1–K6** IAPTool 在传输开始前的密钥匹配决策，六种情况。**每种在真板子上都要换一把 bootloader 密钥才能构造** |
-| `host/fakeboard/` | `python run_downgrade.py`（或 `.\run-downgrade.ps1`） | **DG1** 降级拦截，五种情况。每条都额外断言**板子有没有真的收到 `flash` 命令** —— 只看工具打了什么，挡不住"打印了拒绝然后照样上传"。⚠️ **只覆盖工具侧**：bootloader 把版本号解析出来却从不比较（`IAPServer/IAP_server.c:332-357`），设备侧那半是 DG2 |
-| `host/crypto_ref/` | `python run_checks.py [--rounds N]`（或 `.\run-checks.ps1 -Rounds N`） | SHA-256 构造对 hashlib（309 向量）；IAPTool 真实签名交给一份独立的纯算术 P-256 验证器 |
-| `host/variant_check/` | `python build.py`（或 `.\build.ps1`），需要 arduino-cli | **P4** Arduino 变体头的编译期断言。目前一个：FMC 保留脚表（39 个）自洽。**编不过就是变体头坏了，不是 sketch 坏了** |
-| `host/examples_build/` | `python build.py [--only LIB]`（或 `.\build.ps1 -Only LIB`），需要 arduino-cli | **P5** 编译 core 自有库的**每一个 example**。⚠️ **约十分钟，故意不进 selfcheck** —— 见下 |
+| `host/bootloader_unit/` | `python build.py`（或 `./build.sh`），需要 gcc/clang | 用 stub 在主机上编译**真实的** `sha256.c` / `iap_keyderive.c` / `iap_auth.c` 并跑断言 |
+| `host/fakeboard/` | `python run_cases.py` | **K1–K6** IAPTool 在传输开始前的密钥匹配决策，六种情况。**每种在真板子上都要换一把 bootloader 密钥才能构造** |
+| `host/fakeboard/` | `python run_downgrade.py` | **DG1** 降级拦截，五种情况。每条都额外断言**板子有没有真的收到 `flash` 命令** —— 只看工具打了什么，挡不住"打印了拒绝然后照样上传"。⚠️ **只覆盖工具侧**：bootloader 把版本号解析出来却从不比较（`IAPServer/IAP_server.c:332-357`），设备侧那半是 DG2 |
+| `host/crypto_ref/` | `python run_checks.py [--rounds N]` | SHA-256 构造对 hashlib（309 向量）；IAPTool 真实签名交给一份独立的纯算术 P-256 验证器 |
+| `host/variant_check/` | `python build.py`，需要 arduino-cli | **P4** Arduino 变体头的编译期断言。目前一个：FMC 保留脚表（39 个）自洽。**编不过就是变体头坏了，不是 sketch 坏了** |
+| `host/examples_build/` | `python build.py [--only LIB]`，需要 arduino-cli | **P5** 编译 core 自有库的**每一个 example**。⚠️ **约十分钟，故意不进 selfcheck** —— 见下 |
 
 ⚠️ **两个 fakeboard 脚本一次只能有一个在跑。** 它们都在同一个端口起假板子，而 `fake_board.py` 的 TCP socket 设了 `SO_REUSEADDR` —— 两个同时跑不会报错，只会有两个进程同时监听、谁接到连接是未定义的，表现为莫名其妙的 FAIL。
 
@@ -278,7 +280,7 @@ python host/examples_build/build.py              # 全部
 python host/examples_build/build.py --only SDRAM  # 只挑一个库
 ```
 
-⚠️ **`m7-compare.ps1` 只比对 `--only SDRAM` 的子集。** 全量跑两遍要二十分钟，而对脚本逻辑不增加任何覆盖 —— 一个库的例子已经走完除「例子更多」以外的每个分支。**全量仍然要手工跑**，时机就是上面那句。
+⚠️ **归档前那次基线只比对了 `--only SDRAM` 的子集。** 全量跑两遍要二十分钟，而对脚本逻辑不增加任何覆盖 —— 一个库的例子已经走完除「例子更多」以外的每个分支。**全量仍然要手工跑**，时机就是上面那句。
 
 **为什么值得有**：example 是新用户编译的第一个东西，也是最后一个有人回头看的东西。API 改了名，example 还引用旧名，**除非有人正好去打开它，否则永远没人知道** —— 别的检查一条都盖不到，因为 example 不属于任何应用的构建。
 
@@ -288,7 +290,7 @@ python host/examples_build/build.py --only SDRAM  # 只挑一个库
 
 每个目录有自己那份说明（`HOST-C-TESTS.md` / `KEY-MATCH-AND-DOWNGRADE.md` / `CROSS-CHECK.md`），写清"为什么这条不能在板子上测"。**文件名要说出内容 —— 不要再叫 `README.md`。**
 
-`tools/` 下还有四个纯静态检查，不碰任何代码执行：`check-version-sync.ps1`（版本号三处一致）、`check-mirror-sync.ps1`（跨仓镜像 9 个锚点 + RTC 备份寄存器占用）、`check-core-sync.ps1`（core live 与 git 仓库）、`check-public-root.ps1`（**P6**）。前三个对应发版检查单的 B1 / B2 / B3，以前是人工核对。
+`tools/` 下还有四个纯静态检查，不碰任何代码执行：`check_version_sync.py`（版本号三处一致）、`check_mirror_sync.py`（跨仓镜像 9 个锚点 + RTC 备份寄存器占用）、`check_core_sync.py`（core live 与 git 仓库）、`check_public_root.py`（**P6**）。前三个对应发版检查单的 B1 / B2 / B3，以前是人工核对。
 
 ### P6 · "信任公开根"的告警不能失灵
 
@@ -303,7 +305,7 @@ bootloader 每次启动会在**当前生效的根就是随项目发布的那把�
 ### P1 · 版本号三处一致
 
 ```
-python tools/check_version_sync.py       # 或 .\tools\check-version-sync.ps1
+python tools/check_version_sync.py       # 或 python tools/check_version_sync.py
 ```
 
 比对 bootloader（`Core/Inc/IAP_config.h` 的 `OPENPLC_FW_VERSION`）、Arduino core（`boards.txt` 的 `build.fw_version`）、`RELEASE-NOTES.md` 最新的版本标题——三处本来毫无关联，各改各的。曾经真漂过：bootloader 停在 0.1.2、core 已经是 0.1.3，同一块板子报出两个版本号，像一次失败的升级。对应发版检查单 **CHK-B1**。退出码：0 三处一致，1 有分叉，2 缺文件。
@@ -311,7 +313,7 @@ python tools/check_version_sync.py       # 或 .\tools\check-version-sync.ps1
 ### P2 · 跨仓镜像没分叉
 
 ```
-python tools/check_mirror_sync.py        # 或 .\tools\check-mirror-sync.ps1
+python tools/check_mirror_sync.py        # 或 python tools/check_mirror_sync.py
 ```
 
 `open_plc_cube_ide/docs/design/ARCHITECTURE.md` 列出的跨仓镜像代码，三个仓库没有共享构建系统，一侧改了另一侧不会报错，只会在运行时表现成不相关的症状。比的不是整份文件（C++ 侧有 `extern "C"`，两边 API 也不一样），是**每一项一个语义锚点**——只要求锚点一致。**没被检查覆盖的锚点会在输出末尾点名列出**，全绿不代表全覆盖。对应 **CHK-B2**。退出码：0 全部锚点一致，1 至少一处分叉，2 缺文件。
@@ -319,7 +321,7 @@ python tools/check_mirror_sync.py        # 或 .\tools\check-mirror-sync.ps1
 ### P3 · core live 与 git 仓库一致
 
 ```
-python tools/check_core_sync.py          # 或 .\tools\check-core-sync.ps1
+python tools/check_core_sync.py          # 或 python tools/check_core_sync.py
 ```
 
 比对 Arduino IDE **真正加载**的那份（`$CORE_LIVE`）和本仓库 git 版（`$CORE_REPO`）。方向天生单向：改动在 `$CORE_LIVE` 里做、验证、再拷回仓库提交——`$CORE_LIVE` 不进版本控制，验证过忘了拷回来，那段代码就只活在这台机器上，重装一次 IDE 就没了。六类刻意排除在比对之外：IDE 自己的安装元数据、Go 构建产物、编辑器备份、`.claude/`、`.vscode/`（这两个是编辑器往任何打开的目录里写的，2026-08-21 就因为 CMake 插件写了一条本机绝对路径而误报过一次）。对应 **CHK-B3**。退出码：0 一致，1 有差异，2 仓库路径不对。
@@ -360,25 +362,20 @@ python tools/check_allow_hygiene.py --fail-over 400   # 超过这个数才算失
 
 **这条不是发版门禁**——`settings.local.json` 本机专属、不进 git，不同机器天然不同，没法当"必须全绿"的检查。默认只打印、退出码 0；只有 `--fail-over` 指定阈值且真的超了才返回 1。**判据只看"像不像一次性"**（是否带绝对路径、是否带 `-First N` 这种烤进去的输出切片），会把一些合理的本机安装路径也点出来（比如某个工具链装在哪，本来就该按机器记）——这是故意的宽松，宁可多提醒，不做成"哭喊 150 次"的那种检查。
 
-### M7 · PowerShell 版和 Python 版必须给出同一个结论
+### M7 · PowerShell → Python 迁移（已完成，2026-09-01）
 
-**只在 M7 改写期间存在**（见 `open_plc_cube_ide/docs/work/M7-python-scripts.md`）。两个脚本，都不碰板子，随时可跑：
+**测试脚本一律用 Python。** 27 个 `.ps1` 已全部归档到 `archive/ps1/`，保留原目录结构，**不再运行也不再维护** —— 对照表和取用说明在 `archive/ps1/README.md`。
 
-```powershell
-.\tools\m7-compare.ps1            # 两版都当子进程跑，输出逐字节比对
-.\tools\m7-compare-faults.ps1     # 逐个注入故障，每次再比一遍
-```
+归档前跑了两份基线，存在同一个目录下：
 
-| | 判据 |
+| 基线 | 结果 |
 |---|---|
-| `m7-compare.ps1` | 每一对的 **stdout 完全相同**，退出码相同。目前 4 对：version / mirror / core / public-root |
-| `m7-compare-faults.ps1` | 7 个故障用例，每个都要两版**同样红**；跑完 `$BOOT_REPO` 和 `$CORE_REPO` 的 `git status` 必须干净 |
+| `archive/ps1/M7-BASELINE-compare.txt` | **11 对全部逐字节相同**：version / mirror / core / public-root / hostunit / variant / cryptoref / fakeboard / downgrade / examples / selfcheck |
+| `archive/ps1/M7-BASELINE-faults.txt` | **7 个注入故障，两版走同一条路径**；跑完 `$BOOT_REPO` 的 `git status` 与跑之前逐字节一致，故障全部还原 |
 
-⚠️ **`m7-compare.ps1` 单独跑不算验收。** 一个什么都不检查、只打印同样文字的 Python 脚本能轻松通过它 —— 这就是 M5 那次"用例在未修的代码上跑出干净通过"的同一个形态。**故障注入那份才是判据**，它逼出的是 DIFF（单值和多段两种格式）、SKIP、ONLY-LIVE、ONLY-REPO 这些只有真在读文件才会走到的分支。
+为什么当初要有故障注入那一份：**只比对正常路径不算验收**。一个什么都不检查、只打印同样文字的 Python 脚本能轻松通过正常路径比对 —— 这就是 M5 那次"用例在未修的代码上跑出干净通过"的同一个形态。故障注入逼出的是 DIFF、SKIP、ONLY-LIVE、ONLY-REPO 这些**只有真在读文件才会走到**的分支。
 
-⚠️ `m7-compare-faults.ps1` **会临时改 `$BOOT_REPO` 里的真实文件**（`RELEASE-NOTES.md`、`owner_slot.c`、`udp_server.c`、`fmc.c`），在 `finally` 里还原，最后自检两个仓库是否干净。**跑之前先把手头改动提交或 stash** —— 否则最后那一步分不清脏的是你的改动还是没还原干净。中途被打断时，`git -C $BOOT_REPO status` 就是恢复的起点。
-
-⚠️ `Known` 列表里的每一条"允许不同"都必须写清理由，且命中时会打印出来。**不要用放宽比对来消差异** —— 现在只有一条：`-Print` / `--print`，因为两边开关名字确实不同。
+⚠️ **这两份基线覆盖不到板级脚本。** 比对的前提是两版能对跑，而 `run_*.py` 要烧写、读串口、动 owner 槽 —— 跑两遍就是两次真实操作，结果本来就不该相同。**板级 Python 版的等价性只能靠真板子跑一遍确认**，进度见本文件各用例条目。
 
 > **`host/iapcrypto/` 之前是独立 Go module，待在 `Hardware/TestCase/` 下，靠 `replace IAPTool => ../../../IAPTranfer_Tool` 相对路径挂过来。**
 > 结果是 `go test ./...` 永远扫不到它 —— 2026-08-16 并入本 module 时才发现它**早就编译不过**（`iapcrypto.FixedPassword` 在密码改成运行时加载后就没了）。
@@ -389,8 +386,8 @@ python tools/check_allow_hygiene.py --fail-over 400   # 超过这个数才算失
 | 目录 | 是什么 | 怎么用 |
 |---|---|---|
 | `rs232/SerialPort/` | UART + USB-CDC 回显 sketch | 用 Arduino IDE/CLI 编译上传，往端子 C05/C06 发字符看回显 |
-| `rs232/M5_SerialConflict/` | **M5**：`Serial4.begin()` 之后 `Serial_Test` 还能不能收 | `tools\run-m5.ps1`（自己编译、烧写、发字节、验回显） |
-| `sdram/SDRAM_Acceptance/` | **SD1**：`OpenPLC_SDRAM` 封装的 19 条断言 + 清零速率测量 | `tools\run-sdram.ps1` |
+| `rs232/M5_SerialConflict/` | **M5**：`Serial4.begin()` 之后 `Serial_Test` 还能不能收 | `python tools/run_m5.py`（自己编译、烧写、发字节、验回显） |
+| `sdram/SDRAM_Acceptance/` | **SD1**：`OpenPLC_SDRAM` 封装的 19 条断言 + 清零速率测量 | `python tools/run_sdram.py` |
 
 ### SD1 · SDRAM 封装（需求 E5）
 
@@ -429,7 +426,7 @@ STM32_Programmer_CLI -c port=SWD mode=UR -e 1   # 擦掉 app 扇区，bootloader
 | ID | 内容 | 为什么还没做 |
 |---|---|---|
 | M3 | 两块板子的 MAC 不同 | ⛔ 手上只有一块板 |
-| S4a/S4b | 掉电中断，拆成传输中 / 擦写中两半 | 要人工断电。**脚本已就绪：`tools/run_s4.py`**。⛔ **2026-08-21 起被硬件阻塞** —— SDRAM 的 D1 线开路，任何上传都停在 checksum，见 `open_plc_cube_ide/docs/work/ISSUES.md` 的 B4 |
+| S4a/S4b | 掉电中断，拆成传输中 / 擦写中两半 | 要人工断电。**脚本已就绪：`tools/run_s4.py`**，没有别的东西挡着 |
 
 ### `tools/run_s4.py` —— S4a / S4b 怎么跑
 
@@ -443,7 +440,7 @@ python3 tools/run_s4.py --case b --bin <app.bin> --retry 3
 | **判据 S4a** | 传输窗口内断电 → 重新上电后**旧 app 照常启动**（日志出现 `APP Mod`，且**没有** `App signature invalid or absent`）|
 | **判据 S4b** | 擦写窗口内断电 → 上电报 `App signature invalid or absent`，**且重传一次能恢复** |
 | **窗口锚点** | `Staging in SDRAM` 之后 / `Erasing application region` 之前 = S4a；`Erasing application region` 之后 = S4b。字符串对齐 `open_plc_cube_ide/IAPServer/IAP_server.c` |
-| **不按回车** | 照 `run-au1.ps1` 的先例：脚本读板子自己的日志判断在哪个窗口，**用 ST-Link 实测目标电压证明电真的掉了** —— 串口静默和 UDP 不应答在"正忙着擦除"时也会发生，只有电压不会骗人 |
+| **不按回车** | 照 `run_au1.py` 的先例：脚本读板子自己的日志判断在哪个窗口，**用 ST-Link 实测目标电压证明电真的掉了** —— 串口静默和 UDP 不应答在"正忙着擦除"时也会发生，只有电压不会骗人 |
 | **⚠️ ST-Link 可能在供电** | STLINK-V3 能输出 3.3V。如果它在供电，拔板子的电等于没拔，两条用例都是空测。脚本发现电压没掉会**拒绝记成通过** |
 | **为什么要 `--pad-to`** | 真实 app 只有 83 KB，以太网传输不到一秒，S4a 的窗口手动追不上。补零到 ~1.2 MB 让窗口有几秒。尾部补零不影响启动（向量表和代码在头部），所以万一窗口没追上、镜像真被写进去，板子拿到的仍是能跑的 app |
 | **窗口没追上** | 脚本自己认得出（看到了本该在断电后才出现的下一条日志），报 `missed` 并可 `--retry`，**不会把落在别处的断电记成通过** |
@@ -456,7 +453,7 @@ python3 tools/run_s4.py --case b --bin <app.bin> --retry 3
 
 判断升级真的完成，**要等板子自己说** `Checksum and signature OK. Rebooting...`。
 
-2026-08-17 就是这么踩到的：`run-s3.ps1` 在 IAPTool 退出后立刻 ST-Link 复位，正好落在擦写中间，把 app 毁了，然后报"恢复镜像起不来" —— 排查方向差点跑偏到固件上。
+2026-08-17 就是这么踩到的：`run_s3.py` 在 IAPTool 退出后立刻 ST-Link 复位，正好落在擦写中间，把 app 毁了，然后报"恢复镜像起不来" —— 排查方向差点跑偏到固件上。
 
 **顺带**：这也说明 **S4b 的窗口比想象中好命中**，等 IAPTool 一退出就动手即可，不用掐秒表。
 
@@ -473,7 +470,7 @@ S1 和 S2（密钥不匹配）必须分开测：两者现象都是"拒绝启动"
 | S1 跑完 | 板子拒绝启动 app，必须重烧才能恢复 → 标了 `destructive` | **app 区没被碰过，旧 app 照常启动** → ✅ `destructive` 已改为 `false` |
 | 原来那个 S4 | 写到 49152 字节时拔电 | 那个时刻 flash 压根没被碰过，**用例失去意义**。✅ 已拆成 **S4a**（传输中拔电 → 旧 app 照常启动）和 **S4b**（擦写阶段拔电 → 报无效且可重传），骨架在 `open_plc_cube_ide/docs/test/CASE-DESIGNS.md`，跑法 `tools/run_s4.py` |
 
-**G1 的实测记录**（`tools/run-case.ps1 -Case S1 -ThenReset`）：
+**G1 的实测记录**（`python tools/run_case.py --case S1 --then-reset`）：
 
 ```
 Transfer complete, verifying the staged image...
@@ -485,5 +482,5 @@ Signature verification FAILED - firmware not trusted. Application region untouch
 
 还没做的：
 
-1. **G1 收进 TestCase** —— 现在靠 `tools/run-case.ps1 -ThenReset` 跑，判据是复位后出现 `APP Mod`。要变成正式用例得让 TestCase 自己能复位板子（现在复位是 ST-Link 做的）
+1. **G1 收进 TestCase** —— 现在靠 `python tools/run_case.py --then-reset` 跑，判据是复位后出现 `APP Mod`。要变成正式用例得让 TestCase 自己能复位板子（现在复位是 ST-Link 做的）
 2. **S4 拆两半** —— 传输中拔电（旧 app 应照常启动）／擦写阶段拔电（应报 app 无效且可重传）。后者窗口只剩几秒，不好命中，**都要人工断电配合**

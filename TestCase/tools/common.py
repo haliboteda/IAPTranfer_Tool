@@ -2,10 +2,13 @@
 
     from common import cfg, Section, Ok, Warn, Fail, get_go_bin, ...
 
-This is the Python side of M7 (see open_plc_cube_ide/docs/work/
-M7-python-scripts.md). It is a translation of tools/_common.ps1 and must behave
-identically to it -- the PowerShell version stays until every case has been
-shown to reach the same verdict through both.
+Every test script under tools/ and host/ is Python (user, 2026-09-01). Anything
+more than one script needs lives here rather than being copied -- config loading,
+toolchain discovery, serial ports, the hands-on prompt, running a child while
+draining the ports.
+
+The PowerShell originals are in archive/ps1/, kept only for reference; see the
+README there.
 
 Run it directly to see what this machine resolves to:
 
@@ -64,7 +67,7 @@ cfg = _load_machine()
 
 
 # ---------------------------------------------------------------- output
-# ANSI colours, matching the PowerShell version's Cyan/Green/Yellow/Red. Windows
+# ANSI colours: cyan section, green ok, yellow warn, red fail. Windows
 # consoles only understand them once virtual terminal processing is on, which
 # python does not enable for us; NO_COLOR turns them off everywhere.
 def _colour_ok():
@@ -83,6 +86,17 @@ def _colour_ok():
 
 
 _COLOUR = _colour_ok()
+
+
+# One place, so every script that imports this gets it: a Windows console on a
+# legacy codepage (GBK here) cannot encode the warning signs these docstrings are
+# full of, and argparse writes --help straight to stdout without a guard. Without
+# this, `--help` dies with UnicodeEncodeError on scripts that are otherwise fine.
+try:
+    sys.stdout.reconfigure(errors="replace")
+    sys.stderr.reconfigure(errors="replace")
+except (AttributeError, ValueError):
+    pass
 
 
 def _paint(text, code):
@@ -115,13 +129,11 @@ def Fail(t):    _emit(_paint(t, "31"))
 
 # ---------------------------------------------------------------- files
 def read_text(path):
-    """The equivalent of PowerShell's `Get-Content -Raw`.
+    """Read a whole file, raw.
 
-    Two details matter for M7's output comparison. newline="" keeps CRLF intact,
-    because Get-Content -Raw does and a regex capturing to end-of-line would
-    otherwise pick up a trailing \\r on one side only. And a UTF-8 BOM is
-    stripped, because PowerShell consumes it rather than handing it to the
-    caller -- left in, it would break a pattern anchored at the first character.
+    newline="" keeps CRLF intact, so a regex capturing to end-of-line does not
+    pick up a trailing \\r. A UTF-8 BOM is stripped: left in, it would break a
+    pattern anchored at the first character.
     """
     with open(str(path), "r", encoding="utf-8", errors="replace", newline="") as fh:
         text = fh.read()
@@ -168,8 +180,8 @@ def prod_docs():
 def get_scratch_dir():
     """Scratch files (redirected stdout, oversized test images, phase-1 state).
 
-    tempfile honours TMPDIR/TEMP/TMP and falls back to /tmp, so unlike the
-    PowerShell version there is no platform test to get wrong here.
+    tempfile honours TMPDIR/TEMP/TMP and falls back to /tmp, so there is no
+    platform test here to get wrong.
     """
     return Path(tempfile.gettempdir())
 
@@ -241,7 +253,7 @@ def get_cube_ide_exe():
 
 # ---------------------------------------------------------------- processes
 def have_cmd(name):
-    """PowerShell's `Get-Command <name> -ErrorAction SilentlyContinue`, as a bool.
+    """Is this command on PATH?
 
     Only for names expected on PATH. Settings that deliberately are NOT on PATH
     (HOST_CC) hold an absolute path instead, so test those with Path.exists().
@@ -253,10 +265,9 @@ def have_cmd(name):
 def python_exe():
     """This interpreter, for launching sibling scripts.
 
-    The PowerShell twins spell "python", which is wrong on any machine where
-    only python3 exists. sys.executable is both correct and guaranteed to be the
-    same interpreter that is already running -- neither of which changes a single
-    byte of output, so the M7 comparison is unaffected.
+    Never the literal "python": that is wrong on any machine where only python3
+    exists. sys.executable is correct and is guaranteed to be the interpreter
+    already running.
     """
     return sys.executable
 
@@ -264,14 +275,11 @@ def python_exe():
 def run_capture(argv, cwd=None, empty_stdin=False):
     """Run a program and return (merged stdout+stderr, exit code).
 
-    The equivalent of `& prog @args 2>&1 | Out-String -Width 4096`: one string,
-    never wrapped at a console width. -Width exists in the PowerShell versions
-    because the default wraps at the terminal size and splits the very lines the
-    assertions match on; Python has no such trap, but the callers still expect
-    one string.
+    One string, never wrapped at a console width -- the callers match assertions
+    against whole lines.
 
-    empty_stdin gives the child an immediately-empty PIPE on stdin, which is what
-    PowerShell's `"" | & prog` does. It must be a pipe and not DEVNULL: on Windows
+    empty_stdin gives the child an immediately-empty PIPE on stdin. It must be a
+    pipe and not DEVNULL: on Windows
     DEVNULL is NUL, NUL *is* a character device, and Go's os.Stdin.Stat() reports
     ModeCharDevice for it -- so a tool checking "am I attached to a terminal"
     decides yes, prints its prompt, reads EOF and takes the "operator declined"
@@ -292,16 +300,15 @@ def run_capture(argv, cwd=None, empty_stdin=False):
 def run_emit(argv, cwd=None):
     """Run a program, pass its output straight through, return its exit code.
 
-    For children whose output belongs in this script's own output, where the
-    PowerShell twin simply lets the console inherit the stream.
+    For children whose output belongs in this script's own output.
 
-    Two things have to be right for the M7 comparison. Ordering: print() is
+    Two things have to be right. Ordering: print() is
     block-buffered when stdout is a pipe, so an inherited child would overtake
     lines printed before it -- hence capture-then-write under this script's
     control, with a flush first. And bytes, not text: a MinGW binary printing
     "\\r\\n" to a text-mode stdout emits "\\r\\r\\n", and universal-newline
-    translation would turn that stray "\\r" into an extra blank line that the
-    PowerShell version does not produce.
+    translation would turn that stray "\\r" into an extra blank line the child
+    never wrote.
     """
     proc = subprocess.run([str(a) for a in argv],
                           cwd=None if cwd is None else str(cwd),
@@ -392,19 +399,14 @@ def open_log_ports(ports):
 
 
 def decode_serial(data):
-    """Bytes off a serial port, as text, the same way the PowerShell side sees it.
+    """Bytes off a serial port, as text.
 
-    ⚠️ ASCII with '?' for anything above 0x7F, and both halves of that matter.
+    ⚠️ ASCII with '?' for anything above 0x7F.
 
-    The PowerShell version reads through .NET SerialPort.ReadExisting(), whose
-    Encoding defaults to ASCIIEncoding -- which turns every byte over 0x7F into
-    '?'. Decoding as UTF-8 with errors="replace" instead produces U+FFFD, and
-    that is wrong in two separate ways:
+    Decoding as UTF-8 with errors="replace" instead produces U+FFFD, which is
+    wrong here:
 
-      1. The two versions then render the SAME bytes as different characters, so
-         a board case's captured log differs between them for a reason that has
-         nothing to do with the case. M7 step 5 compares exactly that.
-      2. U+FFFD cannot be encoded by a GBK console, so printing a capture raised
+      1. U+FFFD cannot be encoded by a GBK console, so printing a capture raised
          UnicodeEncodeError and took the whole script down. This is not a corner
          case: the app's boot emits a stray byte before its "[BOOT]" banner
          (docs/work/ISSUES.md ISS-A2), so it happens on essentially every board run.
@@ -479,7 +481,7 @@ def assert_target_reachable(cli):
     m = re.search(r"Voltage\s*:\s*(.+)$", probe, re.M)
     volt = m.group(1).strip() if m else "unknown"
     print("target voltage: %s" % volt)
-    # PowerShell's -match is case-insensitive; matching case-sensitively here
+    # Case-insensitive on purpose; matching case-sensitively here
     # would let a differently-cased message through as "target reachable".
     if re.search("No STM32 target found", probe, re.I):
         Fail("SWD cannot reach the MCU.")
@@ -552,9 +554,8 @@ def probe(verbose=True):
         from shutil import which
         found = which(cmd)
         # which() returns the extension cased as PATHEXT spells it, which is
-        # upper case by default -- so this would print go.EXE where the
-        # PowerShell version prints go.exe. M7 verifies by diffing the two
-        # outputs; a cosmetic difference teaches people to ignore diffs.
+        # upper case by default -- so this would print go.EXE rather than
+        # go.exe, a cosmetic difference in every captured output.
         if found and IS_WIN:
             p = Path(found)
             found = str(p.with_suffix(p.suffix.lower()))
@@ -621,6 +622,102 @@ def probe(verbose=True):
         else:
             Ok("  everything config points at exists")
     return missing
+
+
+# ---------------------------------------------------------------- board scripts
+
+def banner(lines):
+    """The hands-on prompt. Same shape every time, because the operator scans for
+    the icon rather than reading the paragraph. Reasons go OUTSIDE the box; the
+    box holds the action and nothing else.
+
+    Goes through _emit: the pineapple is not encodable on a GBK console, and a
+    hands-on prompt that dies with UnicodeEncodeError leaves the operator with a
+    traceback instead of the instruction.
+    """
+    _emit("")
+    _emit("=" * 68)
+    for i, line in enumerate(lines):
+        _emit(("  🍍 " if i == 0 else "     ") + line)
+    _emit("=" * 68)
+    _emit("")
+    # Flush: stdout is block-buffered whenever it is not a terminal, and a
+    # hands-on prompt sitting in a buffer is a prompt nobody acts on. Found
+    # 2026-09-01 running AU1 with the output piped -- the unplug banner never
+    # appeared while the script sat waiting for the unplug.
+    sys.stdout.flush()
+
+
+def tcp_command(ip, port, cmd, timeout=8.0):
+    """One request, one reply, then close.
+
+    The board serves a single client, so each exchange opens and closes its own
+    connection rather than holding the port. Returns the reply text, or a
+    "<<no reply: ...>>" marker the caller can print and fail on.
+    """
+    import socket
+    try:
+        with socket.create_connection((ip, int(port)), timeout=timeout) as sk:
+            sk.sendall((cmd + "\n").encode("ascii"))
+            time.sleep(0.4)
+            sk.settimeout(timeout)
+            try:
+                data = sk.recv(4096)
+            except Exception:
+                data = b""
+        return data.decode("ascii", errors="replace").strip()
+    except Exception as e:
+        return "<<no reply: %s>>" % e
+
+
+def run_while_draining(argv, open_ports, out_path, err_path, tail_seconds=0.0):
+    """Run a child to completion while emptying the serial ports as it goes.
+
+    Without the draining the driver's buffer overruns on a long upload and the
+    interesting lines are exactly the ones lost. `tail_seconds` keeps listening
+    after the child exits, which is what catches the board rebooting into the
+    application once an upload is accepted.
+
+    Returns (exit_code, {port: text}). The ports are left open for the caller.
+    """
+    buf = {k: "" for k in open_ports}
+
+    def sip():
+        for k, h in open_ports.items():
+            try:
+                n = h.in_waiting
+                if n:
+                    buf[k] += decode_serial(h.read(n))
+            except Exception:
+                pass
+
+    with open(out_path, "wb") as fo, open(err_path, "wb") as fe:
+        proc = subprocess.Popen([str(a) for a in argv], stdout=fo, stderr=fe)
+        while proc.poll() is None:
+            sip()
+            time.sleep(0.06)
+    deadline = time.monotonic() + tail_seconds
+    while time.monotonic() < deadline:
+        sip()
+        time.sleep(0.06)
+    sip()
+    return proc.returncode, buf
+
+
+def close_ports(open_ports):
+    for h in open_ports.values():
+        try:
+            h.close()
+        except Exception:
+            pass
+
+
+def emit_file(path):
+    """Print a captured child's output file, if it has anything in it."""
+    try:
+        sys.stdout.write(Path(path).read_text(encoding="utf-8", errors="replace"))
+    except OSError:
+        pass
 
 
 if __name__ == "__main__":

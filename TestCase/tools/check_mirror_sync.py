@@ -13,9 +13,8 @@ check needs is missing.
 Anchors that are NOT checked here are listed at the bottom of the output, so
 "all green" never reads as "everything is covered".
 
-M7 step 2: a translation of check-mirror-sync.ps1.
 
-Two PowerShell behaviours are load-bearing here and are reproduced explicitly:
+Two behaviours are load-bearing here and are spelled out explicitly:
 the -replace and -match operators are case-INsensitive while [regex]::Match is
 case-sensitive, and Select-Object -Unique compares case-insensitively. Getting
 either wrong changes verdicts rather than formatting.
@@ -312,7 +311,7 @@ Section("not covered by this script -- still manual")
 print("  - iap_keyderive HMAC formula across the two C copies and iapcrypto.go")
 print("      (covered instead by host/iapcrypto/ and host/bootloader_unit/)")
 print("  - fw_pubkey.inc: bootloader-only by design, nothing to compare")
-print("  - $CORE_LIVE vs $CORE_REPO: use tools/check-core-sync.ps1")
+print("  - $CORE_LIVE vs $CORE_REPO: use tools/check_core_sync.py")
 
 Section("result")
 if failed > 0:

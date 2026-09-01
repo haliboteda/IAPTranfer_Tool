@@ -27,7 +27,6 @@ by definition the published one.
 
 Exit 0 = they agree, 1 = drifted, 2 = could not read one of the files.
 
-M7 step 2: a translation of check-public-root.ps1.
 """
 
 import hashlib
@@ -107,7 +106,7 @@ Section("result")
 if len(have) != 64:
     Fail("the compiled constant parsed to %d hex chars, expected 64" % len(have))
     sys.exit(2)
-# PowerShell's -ne on strings is case-insensitive. These are hex digests, so an
+# Compared case-insensitively. These are hex digests, so an
 # owner_slot.c written with upper-case bytes would pass there and fail here --
 # a verdict change, not a cosmetic one.
 if have.lower() != want.lower():

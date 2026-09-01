@@ -15,9 +15,6 @@ compiling those would report failures nobody intends to fix.
 
 ⚠️ Takes about ten minutes, which is why selfcheck deliberately does not run it.
 
-The Python side of M7 step 3, and a drop-in for build.ps1 (whose switches are
-spelled -Only and -KeepBuildDirs).
-
 Exit 0 = every example compiled, 1 = at least one did not, 2 = prerequisites
 missing.
 """
@@ -109,7 +106,7 @@ def main():
                                "--build-path", build_path, s["path"]])
         lines = re.split(r"\r?\n", out)
         # A captured stream ends with a newline, which split() turns into a
-        # trailing empty element. PowerShell's `2>&1` line array has no such
+        # trailing empty element, which the assertions below must not see. No
         # element, and it would shift the "last 10 lines" dump by one.
         if lines and lines[-1] == "":
             lines.pop()

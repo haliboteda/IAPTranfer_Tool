@@ -7,7 +7,6 @@ A failure here is a broken variant header, not a broken sketch.
 Needs the Arduino IDE's bundled arduino-cli and the OpenPLC core installed;
 ARDUINO_CLI and ARDUINO_CLI_CONFIG in config/machine.py point at them.
 
-The Python side of M7 step 3, and a drop-in for build.ps1.
 
 Exit 0 = every sketch compiled, 1 = at least one did not, 2 = prerequisites
 missing.
@@ -65,7 +64,7 @@ def main():
             Fail("FAIL - a static_assert fired, or the sketch does not compile:")
             # static_assert messages are the payload here, so show the error
             # lines rather than the usual last-N-lines summary. Case-insensitive
-            # to match PowerShell's -match.
+            # deliberately case-insensitive.
             for line in re.split(r"\r?\n", out):
                 if re.search(r"error|static_assert|assertion", line, re.I):
                     print("    %s" % line)

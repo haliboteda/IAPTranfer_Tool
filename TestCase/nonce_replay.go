@@ -22,7 +22,7 @@
 // touches the backup domain, so a reset-only version of this case would pass on
 // a board with a dead VBAT cell, which is exactly the board it exists to catch.
 // Since the network drops with the power, the case runs in two phases with the
-// nonces from phase 1 kept in a state file. tools/run-au1.ps1 drives both.
+// nonces from phase 1 kept in a state file. tools/run_au1.py drives both.
 package main
 
 import (

@@ -5,8 +5,8 @@ against it, both covering decisions the tool makes *before* any firmware moves:
 
 | Suite | Case | Covers | What it checks |
 |---|---|---|---|
-| `run-cases.ps1` | K1–K6 | C8 | which signing key this board will accept |
-| `run-downgrade.ps1` | **DG1** | **C6** | whether an older image is refused |
+| `run_cases.py` | K1–K6 | C8 | which signing key this board will accept |
+| `run_downgrade.py` | **DG1** | **C6** | whether an older image is refused |
 
 ---
 
@@ -41,8 +41,8 @@ is case S1, against real hardware.
 ## Running
 
 ```powershell
-.\run-cases.ps1              # all six
-.\run-cases.ps1 -Keep        # keep the scratch directory to inspect logs
+python run_cases.py              # all six
+python run_cases.py --keep       # keep the scratch directory to inspect logs
 ```
 
 Needs `python` and `go` on PATH. Builds `IAPTool.exe` if it is missing.
@@ -57,7 +57,7 @@ key" cases cannot be produced by simply omitting `--key` — the tool falls back
 to the `signing_key` in the repo's config and signs anyway. The first version of
 this script did exactly that and reported three passes that tested nothing.
 
-**The scratch `local_config.json` is written without a BOM.** PowerShell 5.1's
+**The scratch `local_config.json` is written without a BOM.** A BOM-writing editor's
 `Set-Content -Encoding utf8` adds one, Go's `json.Unmarshal` rejects it, and
 IAPTool exits before doing anything — which reads as a broken tool rather than a
 broken config.
@@ -126,8 +126,8 @@ device side of "a rejected upload does not damage the installed app" is case
 ## Running
 
 ```powershell
-.\run-downgrade.ps1              # all five
-.\run-downgrade.ps1 -Keep        # keep the scratch directory to inspect logs
+python run_downgrade.py              # all five
+python run_downgrade.py --keep       # keep the scratch directory to inspect logs
 ```
 
 Also run as step DG1 of `tools/selfcheck.py`.

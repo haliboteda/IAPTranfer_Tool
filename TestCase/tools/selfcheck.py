@@ -23,31 +23,12 @@ from the old numbers is in open_plc_cube_ide/docs/ID-MAP.md.
 Each step announces what requirement it covers, because "A12 passed" told you
 nothing about what is now known to work.
 
-M7 step 4. The acceptance criterion for this one is NOT byte-identical output, it
-is "the same verdict for each of the 12 items" -- which is what M7 wrote, and it
-is the only criterion that can be met. Why:
+Everything prints in the order things actually happen: a child's output belongs
+before the banner that judges it, not after.
 
-  PowerShell has two output channels. Write-Host goes straight to the console as
-  it happens; a native command's stdout goes into the pipeline, which Step
-  collects into $out and prints -- indented two spaces -- only after the whole
-  step has finished. So in selfcheck.ps1's A11, the output of sha256_ref.py and
-  ecdsa_verify.py appears AFTER the step's own "===== result" banner, which reads
-  as though the verification ran after the conclusion.
-
-  Reproducing that ordering here would mean making run_checks.py withhold its
-  children's output, and run_checks.py is already proven byte-identical to
-  run-checks.ps1. Breaking a passing pair to imitate an artefact is the wrong
-  trade, so this version prints in the order things happen.
-
-Two more deliberate differences, both of which make a machine MORE usable and
-neither of which can change a verdict on a machine that has the tools:
-
-  * the platform line names Python instead of PowerShell (the M7 step 1
-    deviation, already recorded);
-  * K1-K6 / X1-X2 / DG1 do not gate on finding "python" on PATH. This interpreter
-    is what runs them, so there is nothing to look up -- and the PowerShell
-    version's literal "python" is what makes those three SKIP on a python3-only
-    machine.
+K1-K6 / X1-X2 / DG1 do not gate on finding "python" on PATH. This interpreter is
+what runs them, so there is nothing to look up -- gating on the literal "python"
+is what would make those three SKIP on a python3-only machine.
 """
 
 import argparse
@@ -118,9 +99,8 @@ def run_step(step_id, name, argv, needs=None, cwd=None, indent=0):
     needs is a command name or an absolute path -- a tool installed for one check
     only (HOST_CC) has no business being on PATH.
 
-    indent shifts the child's output, matching what selfcheck.ps1 does to a
-    native command's piped stdout. The Python suites format their own output and
-    are left alone, exactly as their PowerShell twins are.
+    indent shifts a child's output so it reads as belonging to the step. The
+    Python suites format their own output and are left alone.
     """
     if step_id not in COVERS:
         raise KeyError("step %r is not in CATALOG -- add it there too" % step_id)

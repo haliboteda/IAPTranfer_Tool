@@ -1,8 +1,7 @@
 """Shared by run_cases.py and run_downgrade.py -- the two suites that drive the
 real IAPTool against fake_board.py.
 
-The PowerShell versions each carry their own copy of everything below, with
-comments saying "same as run-cases.ps1". That is exactly the shape this project
+Everything below used to be copied into each script by hand. That is the shape
 treats as a defect: two copies drift, and the port is the moment to stop
 carrying them. Anything here that only one suite needs does not belong here.
 
@@ -101,7 +100,7 @@ def stage_iap_tool(scratch, iap_tool, port):
     is how the first version of run-cases silently tested nothing. It also keeps
     the run from depending on whatever the checked-out config happens to say.
 
-    The config is written without a BOM: PowerShell 5.1's Set-Content -Encoding
+    The config is written without a BOM: a BOM-writing editor's UTF-8
     utf8 emits one and Go's json.Unmarshal rejects it, so IAPTool would exit
     before doing anything -- which reads as a broken tool rather than a broken
     config file.
@@ -158,7 +157,7 @@ def start_fake_board(scratch, case_id, argv_tail):
 def stop_fake_board(proc, handles, log=None):
     """Stop the stand-in board and make sure it is really gone.
 
-    ⚠️ kill() alone is not enough, and the PowerShell versions' Stop-Process has
+    ⚠️ kill() alone is not enough, and the same trap has
     the same hole -- it just loses the race less often because it is slower.
 
     Two races, both of which produced a FAIL whose stated reason had nothing to

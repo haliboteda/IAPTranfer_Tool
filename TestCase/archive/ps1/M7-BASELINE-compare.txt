@@ -1,0 +1,44 @@
+
+===== M7 compare: version
+identical, 9 line(s), exit 0
+
+===== M7 compare: mirror
+identical, 28 line(s), exit 0
+
+===== M7 compare: core
+identical, 8 line(s), exit 0
+
+===== M7 compare: public-root
+identical, 10 line(s), exit 0
+
+===== M7 compare: hostunit
+identical, 16 line(s), exit 0
+
+===== M7 compare: variant
+identical, 7 line(s), exit 0
+
+===== M7 compare: cryptoref
+identical, 60 line(s), exit 0
+
+===== M7 compare: fakeboard
+  masked on both sides: /(?m)^(scratch|kept): .*$/
+    a fresh random temp directory per run, printed for a human who wants to look inside; no verdict depends on it
+identical, 23 line(s), exit 0
+
+===== M7 compare: downgrade
+  masked on both sides: /(?m)^(scratch|kept): .*$/
+    same as the fakeboard pair
+identical, 21 line(s), exit 0
+
+===== M7 compare: examples
+  note: one library only (-Only/--only SDRAM); the full ten-minute run is not compared
+identical, 11 line(s), exit 0
+
+===== M7 compare: selfcheck
+  note: -Quick/--quick, and only the summary table is compared -- see the comment above
+  narrowed: comparing only from '===== summary' onwards
+    whole-output equality is not achievable for this pair; the verdict table is the criterion
+identical, 14 line(s), exit 1
+
+===== result
+all 11 pair(s) produce identical output

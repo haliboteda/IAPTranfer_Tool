@@ -15,7 +15,6 @@ the SRAM4 handoff record over SWD.
 The alternative is holding BOOT0 through the startup window, which needs hands on
 the board.
 
-M7 step 5, and a drop-in for enter-bootloader.ps1.
 """
 
 import argparse

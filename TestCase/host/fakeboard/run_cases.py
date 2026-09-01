@@ -14,17 +14,13 @@ device-side verification is covered by S1 against real hardware.
     python run_cases.py              run all six
     python run_cases.py --keep       keep the scratch directory for inspection
 
-The Python side of M7 step 3, and a drop-in for run-cases.ps1 (whose switch is
-spelled -Keep). Three deliberate differences, none of which changes a byte of
-output:
+Two things worth knowing:
 
   * "python is not on PATH" is not checked. This interpreter is what launches
-    fake_board.py, so there is nothing to look up -- and the PowerShell version's
-    literal "python" is the thing that stops the suite on a python3-only machine.
-  * the IAPTool copy keeps the platform's executable suffix; the PowerShell
-    version hardcodes ".exe".
-  * the helpers shared with run_downgrade.py live in _common.py instead of being
-    copied into both files.
+    fake_board.py, so there is nothing to look up -- gating on the literal
+    "python" is what would stop the suite on a python3-only machine.
+  * the IAPTool copy keeps the platform's executable suffix rather than
+    hardcoding ".exe".
 
 Exit 0 = all six matched, 1 = at least one did not, 2 = prerequisites missing.
 """
@@ -145,7 +141,7 @@ def main():
         # same port -- see stop_fake_board().
         stop_fake_board(board, handles, log=board_log)
 
-        # PowerShell's -match is case-insensitive, so this comparison is too.
+        # Deliberately case-insensitive.
         if c["expect"].lower() in out.lower():
             Ok("PASS")
         else:

@@ -18,8 +18,6 @@ CC=clang ./build.sh      # force a specific compiler
 ```
 
 ```powershell
-./build.ps1              # PowerShell
-$env:CC = "clang"; ./build.ps1
 ```
 
 Both compile `test_main.c` + the stubs + the three real `IAPServer` sources
