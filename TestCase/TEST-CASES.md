@@ -320,8 +320,6 @@ sketch 打 `RESULT <名字> PASS|FAIL` 和 `MEASURE <名字> <数>`，脚本按�
 | R2 | 适配器上每 **3 s** 收到一帧 `RS485 HELLO <n>` | ❌ 要适配器 |
 | R4 | 主机发一串探针，板子原样发回；同时在日志口打出 **ASCII + hex** 两列 | ❌ 要适配器 |
 
-**2026-09-03 实测**（`rs485_echo.py` 退出码 0）：R1 PASS；R2 帧间隔连续四帧都是 `3.000 s`；R4 发 `PING-FROM-HOST-0123456789` 原样回来，另发一串夹了 `0x00 0x01 0xFE 0xFF` 的 12 字节，日志打出 `got 12 bytes: "HEX....-TEST"  hex: 48 45 58 00 01 FE FF 2D 54 45 53 54`。
-
 ## S4a / S4b · 掉电中断，怎么跑
 
 ```bash
