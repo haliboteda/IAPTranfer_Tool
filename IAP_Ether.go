@@ -371,8 +371,10 @@ func RunEther_TCP(filePath, serverIP string, deviceKey []byte) {
 	logf(err, "Failed to prepare signature for %s", filePath)
 
 	if !etherPreflight(serverIP, auth) {
-		logf("Downgrade declined by operator. Aborting.")
-		return
+		// Exit non-zero. The IDE decides "upload succeeded" from the exit code,
+		// and telling somebody their sketch is on the board when it is not is
+		// worse than the refusal itself.
+		logf(true, "Downgrade refused. Nothing was uploaded.")
 	}
 
 	logf("Trying to connect to TCP server at %s...", serverIP)

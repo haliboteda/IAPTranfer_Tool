@@ -153,8 +153,8 @@ func runCDCAttempt(portName, filePath, uidHex string) {
 		if verErr != nil {
 			logf("Could not query installed version (older bootloader?): %v -- skipping downgrade check", verErr)
 		} else if !confirmDowngradeIfNeeded(localVersion, remoteVer) {
-			logf("Downgrade declined by operator. Aborting.")
-			return
+			// Exit non-zero, for the same reason as the ethernet path.
+			logf(true, "Downgrade refused. Nothing was uploaded.")
 		}
 	}
 

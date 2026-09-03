@@ -96,19 +96,19 @@ def main():
     #  branch deterministically, instead of depending on how this was launched.
     cases = [
         {"id": "refuse-older", "ver": v_older, "mode": "refuse", "no_console": False,
-         "flash": False, "expect": "Downgrade refused by --downgrade=refuse."},
+         "flash": False, "exit0": False, "expect": "Downgrade refused by --downgrade=refuse."},
         {"id": "allow-older", "ver": v_older, "mode": "allow", "no_console": False,
-         "flash": True, "expect": "Downgrade allowed by --downgrade=allow."},
+         "flash": True, "exit0": True, "expect": "Downgrade allowed by --downgrade=allow."},
         {"id": "ask-no-console", "ver": v_older, "mode": "ask", "no_console": True,
-         "flash": False, "expect": "Cannot ask: no interactive terminal"},
+         "flash": False, "exit0": False, "expect": "Cannot ask: no interactive terminal"},
         # The two reverse cases. "refuse" must not block anything that is not a
         # downgrade -- and same-version is the boundary the >= comparison turns
         # on, so an off-by-one there would lock out every re-flash of the same
         # build.
         {"id": "same-version", "ver": v_same, "mode": "refuse", "no_console": False,
-         "flash": True, "expect": "File transfer complete."},
+         "flash": True, "exit0": True, "expect": "File transfer complete."},
         {"id": "newer", "ver": v_newer, "mode": "refuse", "no_console": False,
-         "flash": True, "expect": "File transfer complete."},
+         "flash": True, "exit0": True, "expect": "File transfer complete."},
     ]
 
     failed = 0
@@ -130,7 +130,7 @@ def main():
 
         argv = [iap_run, "ether", bin_path, "127.0.0.1", "--key=%s" % good_key,
                 "--version=%s" % c["ver"], "--downgrade=%s" % c["mode"]]
-        out, _ = run_capture(argv, empty_stdin=c["no_console"])
+        out, rc = run_capture(argv, empty_stdin=c["no_console"])
 
         # Settle the log before reading it, and be sure the process is gone
         # before the next case binds the same port -- see stop_fake_board().
@@ -143,6 +143,13 @@ def main():
         # Deliberately case-insensitive.
         if c["expect"].lower() not in out.lower():
             why.append("IAPTool never said: %s" % c["expect"])
+        # The exit code is what the IDE turns into "upload succeeded". A refusal
+        # that exits 0 tells somebody their sketch is on the board when it is not
+        # -- which is exactly what happened until 2026-09-03.
+        if c["exit0"] and rc != 0:
+            why.append("IAPTool exited %d, but this upload should have succeeded" % rc)
+        if not c["exit0"] and rc == 0:
+            why.append("IAPTool exited 0 after refusing - the IDE would report success")
         if flashed != c["flash"]:
             if c["flash"]:
                 why.append("board was never sent a flash command, but this "
