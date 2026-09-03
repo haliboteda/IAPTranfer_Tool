@@ -58,6 +58,7 @@ CATALOG = [
     ("P1",      "D7",          "firmware version agrees in all three places"),
     ("P2",      "D8 A6 A7 C7 E1 E6", "cross-repo mirrored code has not diverged"),
     ("P3",      "D9",          "Arduino core: live matches the git repo"),
+    ("P11",     "F1",          "the packaged IAPTool is not behind the repository"),
     ("P6",      "C10",         "the published-root warning still recognises the published root"),
     ("P7",      "-",           "STATUS.md and TEST-CASES.md name the same set of cases"),
     ("P8",      "-",           "no claim is written out in more than one document"),
@@ -176,6 +177,9 @@ def main():
 
     run_step("P3", "Arduino core: live matches the git repo",
              [python_exe(), HERE / "check_core_sync.py"], cwd=tool_repo)
+
+    run_step("P11", "the packaged IAPTool is not behind the repository",
+             [python_exe(), HERE / "check_tool_sync.py"], cwd=tool_repo)
 
     run_step("P6", "the published-root warning still recognises the published root",
              [python_exe(), HERE / "check_public_root.py"], cwd=tool_repo)
