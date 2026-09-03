@@ -101,7 +101,7 @@ python tools/selfcheck.py --list   # 先看它会跑哪几步、各证明哪条�
 
 **`IAPTool` 只管上传烧写，不加任何测试专用功能。** 为验证设备行为而存在的东西一律放 `TestCase/`。
 
-四条原则，**完整版和每条背后踩过的坑在 `open_plc_cube_ide/docs/test/CASE-DESIGNS.md`**：
+四条原则：
 
 1. 测真实代码路径
 2. 加密逻辑 import，不重写

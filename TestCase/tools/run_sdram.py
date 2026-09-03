@@ -10,11 +10,6 @@ stopped early -- a hang or a fault), and on zero results collected.
 The one that matters most is alloc_is_zeroed: the whole reason the wrapper
 exists is to take "memset it yourself" away from the caller.
 
-⚠ Running this leaves the board unreachable over UDP discovery (ISS-B5 in
-open_plc_cube_ide/docs/work/ISSUES.md), so it must be the last network-dependent
-case in any sequence. Flash onboard/rs232/SerialPort afterwards to get the
-network back.
-
 Exit 0 = every check passed, 1 = something failed, 2 = setup problem.
 """
 

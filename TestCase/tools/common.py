@@ -407,9 +407,8 @@ def decode_serial(data):
     wrong here:
 
       1. U+FFFD cannot be encoded by a GBK console, so printing a capture raised
-         UnicodeEncodeError and took the whole script down. This is not a corner
-         case: the app's boot emits a stray byte before its "[BOOT]" banner
-         (docs/work/ISSUES.md ISS-A2), so it happens on essentially every board run.
+         UnicodeEncodeError and took the whole script down. Board captures
+         routinely carry bytes above 0x7F, so this is not a corner case.
 
     Found 2026-08-22 by running the serial half for the first time -- nothing had
     ever imported it, and all thirteen board scripts are about to.

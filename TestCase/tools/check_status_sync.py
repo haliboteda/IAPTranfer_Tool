@@ -1,6 +1,6 @@
 """Case ids in STATUS.md and TEST-CASES.md have to name the same set of cases.
 
-Case P7. Added 2026-08-22, for the gap that docs/test/COVERAGE-GAPS.md had been
+Case P7. Added 2026-08-22, for the gap that the documents had been
 admitting for days: "nothing checks whether a conclusion in the docs has gone
 stale". This does not close that gap -- it closes the structural half of it.
 
@@ -40,9 +40,9 @@ TESTTOOL = HERE.parent
 NOT_A_STATUS_ROW = {
     "OW1-neg":    "a negative assertion inside OW1",
     "OW2-attack": "a negative assertion inside OW2",
-    "DG2":        "referenced but never defined -- a hole in the matrix, tracked in COVERAGE-GAPS.md",
-    "P5":         "covers the F group as a whole, not one requirement -- tracked in COVERAGE-GAPS.md",
-    "H3":         "go vet is hygiene, not evidence for a requirement -- tracked in COVERAGE-GAPS.md",
+    "DG2":        "referenced but never defined -- a hole in the matrix",
+    "P5":         "covers the F group as a whole, not one requirement",
+    "H3":         "go vet is hygiene, not evidence for a requirement",
     "P7":         "this check itself; it guards the table rather than the product",
     "P8":         "the one-fact-one-file check; also guards documents, not firmware",
     "P9":         "the documented-path check; also guards documents, not firmware",
