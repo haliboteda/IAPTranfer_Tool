@@ -271,6 +271,8 @@ python tools/check_doc_paths.py          # 加 --list 打印它 resolve 出的�
 python tools/check_tool_sync.py           # 加 --list 连两份 usage 一起打
 ```
 
+修法一条命令：`python tools/install_tool.py`（`compile_tool.sh` 末尾会自动跑它，所以正常情况下不用手动敲）。
+
 **IDE 的 Upload 按钮跑的不是我们构建的那份 IAPTool**，而是板卡包里的副本（`$A15/packages/OpenPLC_Alpha/tools/STM32Tools/<版本>/<平台>/IAPTool`，`keys/` 也在它旁边）。所以客户手上那个二进制可以比这里所有用例测的那个落后几周，而没有任何东西会说话。比的不是哈希（同一份源码两次构建逐字节都不同，一个哭喊的检查等于没有检查），是**两个二进制自己报出来的子命令集合**：仓库有、包里没有的动词就是缺陷 —— 菜单到不了那个功能。退出码：0 包里能做到仓库能做的全部，1 落后了，2 有一份二进制不存在。
 
 ### P10 · allow 列表不许攒字面命令
