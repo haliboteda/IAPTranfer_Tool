@@ -1,7 +1,18 @@
 """OW2 -- hand a claimed board to a new owner (requirement C10, M1 step 5).
 
     python3 tools/run_setowner.py --current-key <owner.pem>                 new key generated
+    python3 tools/run_setowner.py --current-key <owner.pem> --new-key <next.pem>
     python3 tools/run_setowner.py --current-key <owner.pem> --bad-signature must be refused
+
+The handover is driven through the shipping tool -- `IAPTool setowner` -- so
+what gets tested is the path a customer has. The state afterwards is read from
+the board over TCP, not from the tool.
+
+⚠️ `--bad-signature` is the one branch that stays hand-rolled. A correct tool
+cannot produce a wrong signature, and that case is about the BOARD's behaviour:
+a well-formed record whose signature is off by one bit has to be refused for the
+same reason a missing one is. It builds the record and signs it here, then
+corrupts the signature.
 
 Unlike takeown this needs NOBODY at the board: the current owner's signature is
 the authorisation, and handing a board over remotely is a supported case.
@@ -41,12 +52,21 @@ def signed_prefix(generation, new_key_hex):
             + bytes.fromhex(new_key_hex))         # root_pubkey, 64 B
 
 
+def genkey(iap, label):
+    """Run IAPTool genkey in a fresh directory. Returns (pem path, pubkey hex)."""
+    scratch = Path(tempfile.gettempdir()) / (label + "-" + uuid.uuid4().hex[:8])
+    scratch.mkdir(parents=True, exist_ok=True)
+    out, _ = run_capture([iap, "genkey", "new_owner"], cwd=scratch)
+    pub = "".join(re.findall(r"0x([0-9a-fA-F]{2})", out)).lower()
+    return scratch / "new_owner.pem", pub
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--current-key", required=True)
     ap.add_argument("--ip", default="")
     ap.add_argument("--port", default="56865")
-    ap.add_argument("--new-key", default="")
+    ap.add_argument("--new-key", default="", help="the incoming owner's private key (PEM)")
     ap.add_argument("--bad-signature", action="store_true")
     args = ap.parse_args()
 
@@ -77,40 +97,53 @@ def main():
         return 2
     nxt = int(gen) + 1
 
-    new_key = args.new_key
-    if not new_key:
-        Section("generating the incoming owner's key")
-        scratch = Path(tempfile.gettempdir()) / ("setowner-" + uuid.uuid4().hex[:8])
-        scratch.mkdir(parents=True, exist_ok=True)
-        out, _ = run_capture([iap, "genkey", "new_owner"], cwd=scratch)
-        new_key = "".join(re.findall(r"0x([0-9a-fA-F]{2})", out)).lower()
-        if len(new_key) != 128:
-            Fail("genkey produced %d hex chars" % len(new_key))
+    new_pem, new_pub = "", ""
+    if args.new_key:
+        new_pem = Path(args.new_key)
+        if not new_pem.exists():
+            Fail("no such key: %s" % new_pem)
             return 2
-        print("  private key: %s" % (scratch / "new_owner.pem"))
-
-    Section("signed prefix")
-    prefix_hex = signed_prefix(nxt, new_key).hex()
-    print("  generation %d, 76 bytes" % nxt)
-
-    sig, _ = run_capture([iap, "signraw", prefix_hex, str(current)])
-    sig = sig.strip()
-    if len(sig) != 128:
-        Fail("signraw returned %d chars: %s" % (len(sig), sig))
-        return 2
+    else:
+        Section("generating the incoming owner's key")
+        new_pem, new_pub = genkey(iap, "setowner")
+        if len(new_pub) != 128:
+            Fail("genkey produced %d hex chars" % len(new_pub))
+            return 2
+        print("  private key: %s" % new_pem)
 
     if args.bad_signature:
+        # A correct tool cannot produce this, so the record is built and signed
+        # here and then broken on purpose. What is under test is the board.
+        if not new_pub:
+            Fail("--bad-signature generates its own key; do not pass --new-key")
+            return 2
+        Section("signed prefix, then corrupted")
+        prefix_hex = signed_prefix(nxt, new_pub).hex()
+        sig, _ = run_capture([iap, "signraw", prefix_hex, str(current)])
+        sig = sig.strip()
+        if len(sig) != 128:
+            Fail("signraw returned %d chars: %s" % (len(sig), sig))
+            return 2
         # Flip one bit of a signature that is otherwise perfectly formed. A wrong
         # signature has to be rejected for the same reason a missing one is --
         # and this is the case a "does it write the record" test would sail past.
         sig = "%02x" % (int(sig[:2], 16) ^ 0x01) + sig[2:]
         Warn("  signature deliberately corrupted")
+        reply = tcp_command(ip, args.port, "setowner %d %s %s" % (nxt, new_pub, sig))
+        print("  reply: %s" % reply)
+        rc = 0 if "OK" in reply else 1
+        out = reply
+    else:
+        Section("setowner  (through IAPTool, the way a customer does it)")
+        out, rc = run_capture([iap, "setowner", ip,
+                               "--current-key=%s" % current,
+                               "--new-key=%s" % new_pem])
+        print(out.strip())
+        m = re.search(r"new key:\s*([0-9a-fA-F]{128})", out)
+        if m:
+            new_pub = m.group(1).lower()
 
-    Section("setowner")
-    reply = tcp_command(ip, args.port, "setowner %d %s %s" % (nxt, new_key, sig))
-    print("  reply: %s" % reply)
-
-    Section("after")
+    Section("after  (asked of the board, not of the tool)")
     now_gen = tcp_command(ip, args.port, "getowner")
     now = tcp_command(ip, args.port, "getpubkey")
     print("  generation: %s" % now_gen)
@@ -118,8 +151,8 @@ def main():
 
     Section("result")
     if args.bad_signature:
-        if "Refused" not in reply:
-            Fail("expected a refusal, got: %s" % reply)
+        if rc == 0:
+            Fail("expected a refusal, got: %s" % out)
             return 1
         if now != was:
             Fail("refused, but the root changed anyway!")
@@ -130,11 +163,16 @@ def main():
         Ok("refused, and nothing changed")
         return 0
 
-    if "OK" not in reply:
-        Fail("setowner did not succeed: %s" % reply)
+    if rc != 0:
+        Fail("setowner did not succeed:\n%s" % out.strip())
         return 1
-    if now != new_key:
+    if not new_pub:
+        Fail("could not tell from IAPTool's output which key it handed over to")
+        return 1
+    if now.lower() != new_pub:
         Fail("the board reports a different root than the one handed over")
+        Fail("  handed to %s" % new_pub)
+        Fail("  reports   %s" % now)
         return 1
     if now_gen != str(nxt):
         Fail("generation is %s, expected %d" % (now_gen, nxt))

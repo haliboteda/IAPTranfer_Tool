@@ -150,6 +150,8 @@ python tools/run_s3.py --bin <app.bin>       # 破坏 + 判定 + 自动恢复
 
 ### 所有权（`python tools/run_takeown.py`，需求 C10）
 
+OW1 / OW2 的动作走出货工具（`IAPTool takeown` / `setowner`），判据向板子要（原始 TCP `getowner` / `getpubkey`）—— 工具不能自己证明自己。`--bad-signature` 是例外：出货工具做不出坏签名，那条验的是板子的行为，所以在用例里手工拼记录。
+
 | ID | 验证什么 | 前置条件 | 判据 |
 |---|---|---|---|
 | **OW1** | 认领把板子绑到一把新密钥上 | 板子停在 bootloader，**且这次启动按住过 BOOT0** | `takeown` 回 `OK`；`getpubkey` 返回新密钥；复位后仍然认得，公开根告警消失 |

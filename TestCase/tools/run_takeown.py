@@ -1,8 +1,12 @@
 """OW1 -- claim a board for a signing key, and check it took (requirement C10).
 
-    python3 tools/run_takeown.py                   claim with a freshly generated key
-    python3 tools/run_takeown.py --key <128hex>    claim with a specific key
-    python3 tools/run_takeown.py --expect-refused  the board should say no (negative case)
+    python3 tools/run_takeown.py                    claim with a freshly generated key
+    python3 tools/run_takeown.py --key owner.pem    claim with a specific key
+    python3 tools/run_takeown.py --expect-refused   the board should say no (negative case)
+
+The claim is driven through the shipping tool -- `IAPTool takeown` -- because
+that is the path a customer has. The check afterwards is NOT: it asks the board
+directly over TCP, so the tool cannot be the one confirming its own work.
 
 ⚠️ THIS NEEDS SOMEBODY AT THE BOARD, and that is the whole point. takeown is
 gated on BOOT0 having been held through the startup window: the first claim
@@ -12,10 +16,11 @@ is the only gate there can be. See docs/design/OWNERSHIP.md.
 Before running: press RESET, then hold BOOT0 until the relays finish clicking
 and let go. The board should be sitting in "UPLOAD Mod ... (BOOT0 held)".
 
-⚠️ RECOVERY: claiming is meant to be hard to undo. Factory reset (M1 step 6) is
-not implemented yet, so the only way back is to reflash the bootloader over
-ST-Link -- the owner records live in the bootloader's own sector, so erasing it
-to write the bootloader takes them with it:
+⚠️ RECOVERY: claiming is meant to be hard to undo. The only way back is to
+reflash the bootloader over ST-Link -- the owner records live in the
+bootloader's own sector, so erasing it to write the bootloader takes them with
+it, and the application that was rejected while the board was claimed starts
+again by itself:
 
     python3 tools/flash_bootloader.py
 
@@ -35,25 +40,29 @@ from common import (cfg, Section, Ok, Fail, banner,  # noqa: E402
 
 
 def genkey(iap):
-    """Run IAPTool genkey in a fresh directory and return (hexkey, directory)."""
+    """Run IAPTool genkey in a fresh directory and return the .pem path."""
     scratch = Path(tempfile.gettempdir()) / ("takeown-" + uuid.uuid4().hex[:8])
     scratch.mkdir(parents=True, exist_ok=True)
-    out, _ = run_capture([iap, "genkey", "owner_key"], cwd=scratch)
-    key = "".join(re.findall(r"0x([0-9a-fA-F]{2})", out)).lower()
-    return key, scratch
+    run_capture([iap, "genkey", "owner_key"], cwd=scratch)
+    return scratch / "owner_key.pem"
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--ip", default="")
     ap.add_argument("--port", default="56865")
-    ap.add_argument("--key", default="")
+    ap.add_argument("--key", default="", help="the owner's private key (PEM)")
     ap.add_argument("--expect-refused", action="store_true")
     args = ap.parse_args()
 
     ip = args.ip or getattr(cfg, "BOARD_IP", "")
     if not ip:
         Fail("need --ip (or set BOARD_IP in config/machine.py)")
+        return 2
+
+    iap = get_go_bin("IAPTool")
+    if not iap.exists():
+        Fail("IAPTool not built")
         return 2
 
     # Said at run time, not only in the docstring at the top of this file: the
@@ -76,57 +85,69 @@ def main():
         Fail("the board did not answer getpubkey with a key -- is it in the bootloader?")
         return 2
 
-    key = args.key
-    if not key:
+    key = Path(args.key) if args.key else None
+    if key is None:
         Section("generating a key to claim with")
-        iap = get_go_bin("IAPTool")
-        if not iap.exists():
-            Fail("IAPTool not built")
-            return 2
-        key, scratch = genkey(iap)
-        if len(key) != 128:
-            Fail("genkey produced %d hex chars" % len(key))
-            return 2
-        print("  private key kept at: %s" % (scratch / "owner_key.pem"))
+        key = genkey(iap)
         # Plain ASCII: the console codepage mangles anything else, and a warning
         # that renders as mojibake is a warning nobody reads.
+        print("  private key kept at: %s" % key)
         print("  NOTE: from now on that key is the only one that can sign firmware")
         print("        this board will run. It is in a temp directory - move it.")
-    print("  claiming with: %s..." % key[:32])
+    if not key.exists():
+        Fail("no such key: %s" % key)
+        return 2
 
-    Section("takeown")
-    reply = tcp_command(ip, args.port, "takeown " + key)
-    print("  reply: %s" % reply)
+    Section("takeown  (through IAPTool, the way a customer does it)")
+    out, rc = run_capture([iap, "takeown", ip, "--key=%s" % key])
+    print(out.strip())
 
-    Section("after")
+    claimed = ""
+    m = re.search(r"^\s*([0-9a-fA-F]{128})\s*$", out, re.M)
+    if m:
+        claimed = m.group(1).lower()
+
+    Section("after  (asked of the board, not of the tool)")
     now = tcp_command(ip, args.port, "getpubkey")
+    gen = tcp_command(ip, args.port, "getowner")
     print("  getpubkey: %s" % now)
+    print("  getowner:  %s" % gen)
 
     Section("result")
     if args.expect_refused:
-        if "Refused" in reply:
-            Ok("refused, as expected")
-            if now != was:
-                Fail("  but the trusted key changed anyway!")
-                return 1
-            Ok("  and the trusted key is unchanged")
-            return 0
-        Fail("expected a refusal, got: %s" % reply)
-        return 1
+        if rc == 0:
+            Fail("expected a refusal, but IAPTool reported success")
+            return 1
+        if "refused" not in out.lower():
+            Fail("IAPTool failed for some other reason:\n%s" % out.strip())
+            return 1
+        Ok("refused, as expected")
+        if now != was:
+            Fail("  but the trusted key changed anyway!")
+            return 1
+        Ok("  and the trusted key is unchanged")
+        return 0
 
-    if "OK" not in reply:
-        Fail("takeown did not succeed: %s" % reply)
+    if rc != 0:
+        Fail("takeown did not succeed:\n%s" % out.strip())
         Fail("(BOOT0 must have been held through the startup window of THIS boot)")
         return 1
-    if now != key:
+    if not claimed:
+        Fail("could not tell from IAPTool's output which key it claimed with")
+        return 1
+    if now.lower() != claimed:
         Fail("the board reports a different key than the one claimed")
-        Fail("  claimed  %s" % key)
+        Fail("  claimed  %s" % claimed)
         Fail("  reports  %s" % now)
         return 1
-    Ok("claimed: the board now reports the new key as its root")
+    if gen != "1":
+        Fail("the board reports generation %s, expected 1" % gen)
+        return 1
+    Ok("claimed: the board now reports the new key as its root, at generation 1")
     print()
-    print("Next: reset the board. The published-root warning should be gone and the")
-    print("boot log should say 'claimed at generation 1'.")
+    print("Next: reset the board. The published-root warning should be gone, the boot")
+    print("log should say 'claimed at generation 1', and an application signed by the")
+    print("OLD key must now be refused - that is what proves the new key is in use.")
     print("To undo: python3 tools/flash_bootloader.py  (erases the sector the records live in)")
     return 0
 
