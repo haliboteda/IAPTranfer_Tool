@@ -63,8 +63,7 @@ def main():
     out_file = get_scratch_file("eb.out")
     err_file = get_scratch_file("eb.err")
     with open(str(out_file), "wb") as so, open(str(err_file), "wb") as se:
-        proc = subprocess.Popen([str(get_iap_tool()), "ether", str(big), ip,
-                                 "--downgrade=allow"], stdout=so, stderr=se)
+        proc = subprocess.Popen([str(get_iap_tool()), "ether", str(big), ip], stdout=so, stderr=se)
 
         # Drain while IAPTool runs: the driver's buffer overruns on a long
         # transfer and the interesting lines are the ones lost.

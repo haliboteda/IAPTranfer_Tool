@@ -1,5 +1,4 @@
-"""Shared by run_cases.py and run_downgrade.py -- the two suites that drive the
-real IAPTool against fake_board.py.
+"""Shared by the suites that drive the real IAPTool against fake_board.py.
 
 Everything below used to be copied into each script by hand. That is the shape
 treats as a defect: two copies drift, and the port is the moment to stop
@@ -124,19 +123,6 @@ def fixed_bytes(n, step, offset):
     return bytes((i * step + offset) % 256 for i in range(n))
 
 
-def encode_version(iap_run, semver):
-    """Encode a semver through IAPTool itself, or None with the reason printed.
-
-    Hardcoding the packed bytes here would be a second copy of encodeSemver, and
-    a packed-byte layout is exactly the kind of thing that gets changed once and
-    forgotten in one place.
-    """
-    out, _ = run_capture([iap_run, "version", semver])
-    m = re.search(r"(\d+)\s*$", out.strip())
-    if not m:
-        Fail("cannot encode version %s via IAPTool: %s" % (semver, out.strip()))
-        return None
-    return m.group(1)
 
 
 def start_fake_board(scratch, case_id, argv_tail):
@@ -144,7 +130,7 @@ def start_fake_board(scratch, case_id, argv_tail):
 
     Returns (process, log path, open file handles). fake_board.py prints with
     flush=True, which is what makes killing it safe: a block-buffered child would
-    lose the very lines the downgrade case asserts on.
+    lose the very lines a case asserts on.
     """
     log = scratch / ("board_%s.log" % case_id)
     out_fh = open(str(log), "wb")

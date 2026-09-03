@@ -31,7 +31,7 @@ from common import (cfg, Section, Ok, Warn, Fail,  # noqa: E402
                     run_while_draining)
 
 FQBN = ("OpenPLC_Alpha:stm32:OPEN-PLC:pnum=PLC_H743,usb=CDCgen,xusb=FS,"
-        "upload_method=cdcMethod,knxrole=dual_device,downgrade=refuse")
+        "upload_method=cdcMethod,knxrole=dual_device")
 LETTERS = ["A", "B", "C", "D", "E"]
 
 
@@ -70,7 +70,7 @@ def build_and_flash(sketch, ip, port):
     # verifying, erasing and writing from SDRAM. Resetting or testing here lands
     # mid-write and destroys the application. Wait for the board to say so.
     open_ports = open_log_ports([port])
-    _, buf = run_while_draining([iap, "ether", str(binary), ip, "--downgrade=allow"],
+    _, buf = run_while_draining([iap, "ether", str(binary), ip],
                                 open_ports,
                                 get_scratch_file("m5_flash.out"),
                                 get_scratch_file("m5_flash.err"))

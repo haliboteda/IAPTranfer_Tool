@@ -1,14 +1,12 @@
 package main
 
 import (
-	"bufio"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"IAPTool/iapcrypto"
@@ -43,8 +41,6 @@ func computeAuthHMAC(deviceKey []byte, nonceHex string, msg string) (string, err
 // up front that the device will actually accept that signature.
 type imageAuth struct {
 	sigHex      string
-	version     uint32
-	haveVersion bool
 	localPubHex string   // public key of the signing key used; empty when the .sig came from elsewhere
 	imageHash   [32]byte // SHA-256 of the image, what the signature covers
 }
@@ -52,25 +48,9 @@ type imageAuth struct {
 // resolveImageAuth signs the image in memory when a signing key is available
 // (--key, local_config.json, or <exe dir>/keys/fw_signing_key.pem), and
 // otherwise falls back to a sibling .sig signed earlier or on another
-// machine. The version comes from --version when given, else from a sibling
-// .version file.
+// machine.
 func resolveImageAuth(binPath string) (imageAuth, error) {
-	auth := imageAuth{version: g_signing.version, haveVersion: g_signing.haveVersion}
-
-	if !auth.haveVersion {
-		version, ok, err := loadVersion(binPath)
-		if err != nil {
-			return auth, err
-		}
-		auth.version, auth.haveVersion = version, ok
-	}
-	if !auth.haveVersion {
-		// Say it out loud. Without a version there is nothing to compare the
-		// device against, so the downgrade check does not run at all -- and a
-		// protection that silently does not run is worse than none.
-		logf("WARNING: no version for this image (no --version and no sibling .version file). " +
-			"The downgrade check will NOT run.")
-	}
+	var auth imageAuth
 
 	image, err := os.ReadFile(binPath)
 	if err != nil {
@@ -175,110 +155,4 @@ func loadSignature(binPath string) (string, error) {
 		return "", fmt.Errorf("signature file %s has %d bytes, expected 64", sigPath, len(data))
 	}
 	return hex.EncodeToString(data), nil
-}
-
-// loadVersion reads an optional sibling <name>.version file (decimal ASCII,
-// written by "IAPTool sign --version=N") next to the .bin. Returns
-// ok=false with no error if the file simply doesn't exist -- version
-// tracking is opt-in; an image signed without one still flashes exactly as
-// before this feature existed, just with no downgrade comparison possible.
-func loadVersion(binPath string) (version uint32, ok bool, err error) {
-	verPath := strings.TrimSuffix(binPath, ".bin") + ".version"
-	data, readErr := os.ReadFile(verPath)
-	if readErr != nil {
-		if os.IsNotExist(readErr) {
-			return 0, false, nil
-		}
-		return 0, false, fmt.Errorf("failed to read version file %s: %w", verPath, readErr)
-	}
-	v, parseErr := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 32)
-	if parseErr != nil {
-		return 0, false, fmt.Errorf("invalid version in %s: %w", verPath, parseErr)
-	}
-	return uint32(v), true, nil
-}
-
-// encodeSemver turns a dotted version ("0.1.3", "0.1.3.2") into the uint32 the
-// device compares, one byte per field, most significant first. Any trailing
-// non-numeric text is ignored, so "0.1.3-pre" encodes exactly like "0.1.3": use
-// the fourth field when a pre-release has to sort below its release.
-func encodeSemver(s string) (uint32, error) {
-	fields := strings.SplitN(strings.TrimSpace(s), ".", 4)
-	var encoded uint32
-
-	for i := 0; i < 4; i++ {
-		var digits string
-		if i < len(fields) {
-			digits = strings.TrimLeft(fields[i], " ")
-			cut := strings.IndexFunc(digits, func(r rune) bool { return r < '0' || r > '9' })
-			if cut >= 0 {
-				digits = digits[:cut]
-			}
-		}
-		if digits == "" {
-			if i == 0 {
-				return 0, fmt.Errorf("version %q does not start with a number", s)
-			}
-			digits = "0"
-		}
-		value, err := strconv.ParseUint(digits, 10, 32)
-		if err != nil || value > 255 {
-			return 0, fmt.Errorf("version %q: field %d must be 0-255", s, i+1)
-		}
-		encoded |= uint32(value) << uint(8*(3-i))
-	}
-
-	return encoded, nil
-}
-
-// confirmDowngradeIfNeeded compares the version about to be flashed against
-// what the device reports installed (via "getversion"), and if it's a
-// downgrade, warns and requires an explicit "yes" in this console before
-// proceeding. The device itself never blocks a downgrade -- this operator
-// confirmation is the only gate, and it's skipped entirely (proceeds) if
-// either side has no version to compare: no local .version file, or a
-// device reply that doesn't parse as a number (older bootloader without
-// "getversion" support replies "Unknown command", for example).
-func confirmDowngradeIfNeeded(localVersion uint32, remoteVerStr string) bool {
-	remoteVersion, err := strconv.ParseUint(strings.TrimSpace(remoteVerStr), 10, 32)
-	if err != nil {
-		logf("Could not parse device-reported version %q, skipping downgrade check", remoteVerStr)
-		return true
-	}
-	if localVersion >= uint32(remoteVersion) {
-		return true
-	}
-
-	logf("WARNING: device currently has version %d installed; this image is version %d (older).",
-		remoteVersion, localVersion)
-
-	switch g_signing.downgrade {
-	case DowngradeAllow:
-		logf("Downgrade allowed by --downgrade=allow.")
-		return true
-	case DowngradeRefuse:
-		logf("Downgrade refused by --downgrade=refuse.")
-		return false
-	}
-
-	// "ask" needs somebody to ask. Started from an IDE there is no console to
-	// type into, and reading stdin there returns EOF straight away -- which used
-	// to be reported as "declined by operator" even though nobody was asked.
-	if !stdinIsInteractive() {
-		logf("Cannot ask: no interactive terminal (started from an IDE?). Refusing the downgrade. " +
-			"Choose the downgrade option in the board menu, or pass --downgrade=allow.")
-		return false
-	}
-
-	fmt.Print("Proceed with this downgrade? [y/N]: ")
-	answer, _ := bufio.NewReader(os.Stdin).ReadString('\n')
-	answer = strings.ToLower(strings.TrimSpace(answer))
-	return answer == "y" || answer == "yes"
-}
-
-// stdinIsInteractive reports whether stdin is a console the operator can type
-// into, as opposed to a pipe handed over by a build tool.
-func stdinIsInteractive() bool {
-	info, err := os.Stdin.Stat()
-	return err == nil && (info.Mode()&os.ModeCharDevice) != 0
 }

@@ -133,9 +133,8 @@ func signRawHex(dataHex, keyPath string) (string, error) {
 }
 
 // signBinFile writes the sibling .sha256, .size and .sig files next to the
-// image (plus .version when one is given), the same set that
-// an earlier "IAPTool sign" run produces.
-func signBinFile(binPath, keyPath, outPrefix string, version uint32, haveVersion bool) error {
+// image, the same set that an earlier "IAPTool sign" run produces.
+func signBinFile(binPath, keyPath, outPrefix string) error {
 	key, err := loadSigningKey(keyPath)
 	if err != nil {
 		return err
@@ -164,16 +163,6 @@ func signBinFile(binPath, keyPath, outPrefix string, version uint32, haveVersion
 	}
 	if err := os.WriteFile(outPrefix+".sig", sig, 0644); err != nil {
 		return fmt.Errorf("failed to write %s.sig: %w", outPrefix, err)
-	}
-
-	if haveVersion {
-		if err := os.WriteFile(outPrefix+".version", []byte(strconv.FormatUint(uint64(version), 10)+"\n"), 0644); err != nil {
-			return fmt.Errorf("failed to write %s.version: %w", outPrefix, err)
-		}
-		written = append(written, outPrefix+".version")
-		logf("Wrote %s for %s", strings.Join(written, " "), binPath)
-		logf("sha256=%s size=%d version=%d", hex.EncodeToString(hash[:]), len(image), version)
-		return nil
 	}
 
 	logf("Wrote %s for %s", strings.Join(written, " "), binPath)

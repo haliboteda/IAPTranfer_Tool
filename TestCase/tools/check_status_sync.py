@@ -40,7 +40,6 @@ TESTTOOL = HERE.parent
 NOT_A_STATUS_ROW = {
     "OW1-neg":    "a negative assertion inside OW1",
     "OW2-attack": "a negative assertion inside OW2",
-    "DG2":        "referenced but never defined -- a hole in the matrix",
     "P5":         "covers the F group as a whole, not one requirement",
     "H3":         "go vet is hygiene, not evidence for a requirement",
     "P7":         "this check itself; it guards the table rather than the product",

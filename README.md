@@ -4,9 +4,9 @@ For OpenPLC transfer bin file
 ## Usage
 
 ```
-IAPTool cdc    <file.bin> <port>       [--key=<key.pem>] [--version=N]
-IAPTool ether  <file.bin> <ip>         [--key=<key.pem>] [--version=N]
-IAPTool sign   <file.bin> [<key.pem>]  [--key=<key.pem>] [--version=N] [--out=<prefix>]
+IAPTool cdc    <file.bin> <port>       [--key=<key.pem>]
+IAPTool ether  <file.bin> <ip>         [--key=<key.pem>]
+IAPTool sign   <file.bin> [<key.pem>]  [--key=<key.pem>] [--out=<prefix>]
 IAPTool genkey [<name>]
 
 IAPTool getowner <ip>
@@ -26,22 +26,21 @@ Two ways to do it:
 ```sh
 # Sign at flash time. Nothing is written to disk; the image is signed in
 # memory and sent straight to the device.
-IAPTool cdc app.bin COM5 --key=fw_signing_key.pem --version=7
+IAPTool cdc app.bin COM5 --key=fw_signing_key.pem
 
 # Or sign separately, e.g. on an offline release machine, then hand the
 # .bin + .sig to whoever flashes it.
-IAPTool sign app.bin fw_signing_key.pem --version=7
+IAPTool sign app.bin fw_signing_key.pem
 IAPTool cdc app.bin COM5
 ```
 
-`sign` writes `<name>.sha256`, `<name>.size`, `<name>.sig` (raw 64-byte
-r||s), and `<name>.version` when `--version` is given. Without `--key`, the
-`cdc`/`ether` modes read those sibling files, so an image signed earlier or
-on another machine still works unchanged.
+`sign` writes `<name>.sha256`, `<name>.size` and `<name>.sig` (raw 64-byte
+r||s). Without `--key`, the `cdc`/`ether` modes read those sibling files, so
+an image signed earlier or on another machine still works unchanged.
 
-`--version` is optional. It only drives the operator downgrade warning: the
-tool asks the device for its installed version and prompts before pushing an
-older one. Without it, no comparison is possible and the flash proceeds.
+The tool does not track firmware versions and does not compare them. An image
+that verifies against the key the board trusts is flashed, whatever it
+contains -- versioning an application is the author's business.
 
 ### Where the key comes from
 

@@ -4,7 +4,6 @@ judge it against what SDRAM staging is supposed to do.
     python3 tools/upload_and_watch.py --bin <file.bin>              over ethernet, IP from config
     python3 tools/upload_and_watch.py --bin <file.bin> --ip 1.2.3.4
     python3 tools/upload_and_watch.py --bin <file.bin> --cdc COM6   over USB CDC
-    python3 tools/upload_and_watch.py --bin <file.bin> --downgrade allow
 
 The upload is driven by the shipping IAPTool, not by a reimplementation here:
 what gets exercised has to be the code path customers use.
@@ -57,7 +56,6 @@ def main():
     ap.add_argument("--bin", required=True)
     ap.add_argument("--ip", default="")
     ap.add_argument("--cdc", default="")
-    ap.add_argument("--downgrade", default="allow")
     ap.add_argument("--tail-seconds", type=int, default=TAIL_S)
     ap.add_argument("--ports", nargs="*", default=None)
     args = ap.parse_args()
@@ -86,7 +84,6 @@ def main():
 
     Section("Upload")
     argv = ["cdc", str(image), args.cdc] if args.cdc else ["ether", str(image), ip]
-    argv.append("--downgrade=%s" % args.downgrade)
     print("IAPTool %s" % " ".join(argv))
 
     # The board reboots into the application after a good upload, so keep

@@ -283,7 +283,7 @@ def run_capture(argv, cwd=None, empty_stdin=False):
     DEVNULL is NUL, NUL *is* a character device, and Go's os.Stdin.Stat() reports
     ModeCharDevice for it -- so a tool checking "am I attached to a terminal"
     decides yes, prints its prompt, reads EOF and takes the "operator declined"
-    branch instead of the "no terminal" branch. DG1's ask-no-console case asserts
+    branch instead of the "no terminal" branch. A case that needs it asserts
     the latter, and DEVNULL made it fail for a reason that had nothing to do with
     what the case is about.
     """
@@ -571,7 +571,7 @@ def probe(verbose=True):
     show("TOOL_REPO", cfg.TOOL_REPO, "this repo; set it in config/machine.py")
     show("CORE_LIVE", cfg.CORE_LIVE, "install the board package in the Arduino IDE first")
     show_cmd("go", "go", "H1/H3 and every IAPTool build need it")
-    show_cmd("python", "python3" if not IS_WIN else "python", "K1-K6 / X1-X2 / DG1 need it")
+    show_cmd("python", "python3" if not IS_WIN else "python", "K1-K6 / X1-X2 need it")
     show("arduino-cli", cfg.ARDUINO_CLI, "P4 and command-line app builds need it")
     show("CubeIDE", cfg.CUBEIDE, "needed to build and flash the bootloader, not for the checks below")
 

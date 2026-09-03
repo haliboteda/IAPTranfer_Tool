@@ -35,7 +35,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from _common import (Fail, Ok, Section, boot_key_paths, build_iap_tool,  # noqa: E402
-                     encode_version, fixed_bytes, have_cmd, nonblank_lines,
+                     fixed_bytes, have_cmd, nonblank_lines,
                      parse_hex_bytes, read_text, resolve_port, run_capture,
                      stage_iap_tool, start_fake_board, stop_fake_board,
                      trusted_pubkey_hex, wait_for_listener)
@@ -78,12 +78,6 @@ def main():
     bin_path = scratch / "app.bin"
     bin_path.write_bytes(fixed_bytes(2048, 31, 7))
 
-    # The board answers getversion with "3", so an unversioned upload would stop
-    # to ask about a downgrade and hang with no console to answer on.
-    ver_num = encode_version(iap_run, "9.9.9")
-    if ver_num is None:
-        return 2
-
     # id, board's pubkey, --key to pass (or ""), whether a .sig should exist,
     # expected line
     cases = [
@@ -113,7 +107,7 @@ def main():
         if sig_path.exists():
             sig_path.unlink()
         if c["sig"]:
-            run_capture([iap_run, "sign", bin_path, good_key, "--version=%s" % ver_num])
+            run_capture([iap_run, "sign", bin_path, good_key])
             if not sig_path.exists():
                 Fail("could not produce a .sig")
                 failed += 1
@@ -131,8 +125,7 @@ def main():
             failed += 1
             continue
 
-        argv = [iap_run, "ether", bin_path, "127.0.0.1",
-                "--version=%s" % ver_num, "--downgrade=allow"]
+        argv = [iap_run, "ether", bin_path, "127.0.0.1"]
         if c["key"]:
             argv.append("--key=%s" % c["key"])
         out, _ = run_capture(argv)

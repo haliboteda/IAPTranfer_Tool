@@ -1,12 +1,12 @@
 # fakeboard — IAPTool's pre-transfer decisions, without a board
 
-`fake_board.py` is the stand-in device. Two suites drive the real `IAPTool.exe`
-against it, both covering decisions the tool makes *before* any firmware moves:
+`fake_board.py` is the stand-in device. `run_cases.py` drives the real
+`IAPTool.exe` against it, covering the decision the tool makes *before* any
+firmware moves:
 
 | Suite | Case | Covers | What it checks |
 |---|---|---|---|
 | `run_cases.py` | K1–K6 | C8 | which signing key this board will accept |
-| `run_downgrade.py` | **DG1** | **C6** | whether an older image is refused |
 
 ---
 
@@ -70,64 +70,3 @@ copy here. The "bad" key is generated per run by `IAPTool genkey`, so nothing
 needs committing and openssl is not required.
 
 ---
-
-# DG1 · the downgrade guard
-
-## What this covers
-
-Requirement **C6**: an image older than what the device runs is refused, and
-refusing it leaves the installed app alone. Five cases:
-
-| Case | Image version | `--downgrade` | Expected |
-|---|---|---|---|
-| `refuse-older` | older | `refuse` | refuses, **no `flash` sent** |
-| `allow-older` | older | `allow` | proceeds, image lands |
-| `ask-no-console` | older | `ask` | refuses (no terminal to ask at), **no `flash` sent** |
-| `same-version` | equal | `refuse` | proceeds — not a downgrade |
-| `newer` | newer | `refuse` | proceeds |
-
-The board's reported version comes from `fake_board.py --fwver N`; the three
-image versions are encoded at run time by `IAPTool version`, so the packed-byte
-layout is never copied into this suite.
-
-## Two assertions per case, and the second one is the point
-
-Each case checks **what IAPTool printed** *and* **whether the board was ever
-sent a `flash` command**. A tool that printed `Downgrade refused` and then
-uploaded anyway would pass a log-only check — and C6's real claim is that the
-installed app is untouched, which only the board's own log can show. The
-positive cases additionally require `IMAGE FULLY RECEIVED`: `flash` being sent
-proves the guard let go, not that the transfer survived.
-
-Both outcomes of that assertion occur in every run (three cases require the
-`flash` command, two require its absence), so a predicate that had degenerated
-into always-true or always-false could not pass the suite.
-
-## Two cases that are easy to get wrong
-
-**`same-version` is the boundary.** The comparison is `local >= remote`; an
-off-by-one there would lock out re-flashing the same build, which is the most
-common thing anybody does.
-
-**`ask-no-console` gets a piped stdin on purpose.** `--downgrade=ask` behaves
-differently depending on whether stdin is a console, and that branch exists
-because reading stdin from an IDE returns EOF immediately and used to be
-reported as "declined by operator" when nobody had been asked. Forcing the pipe
-makes the case deterministic instead of dependent on how the script was started.
-
-## Why it is not a hardware test
-
-Every branch under test is in IAPTool (`auth.go`, `confirmDowngradeIfNeeded`).
-The device contributes exactly one thing: its answer to `getversion`. Setting
-those cases up on hardware would mean flashing a real older app first. The
-device side of "a rejected upload does not damage the installed app" is case
-**G1**, against real hardware.
-
-## Running
-
-```powershell
-python run_downgrade.py              # all five
-python run_downgrade.py --keep       # keep the scratch directory to inspect logs
-```
-
-Also run as step DG1 of `tools/selfcheck.py`.

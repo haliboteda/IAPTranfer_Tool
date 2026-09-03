@@ -81,7 +81,7 @@ def flash_and_boot(what, iap, image_path, ip, ports):
     err_path = get_scratch_file("s3_flash.err")
     open_ports = open_log_ports(ports)
 
-    _, buf = run_while_draining([iap, "ether", str(image_path), ip, "--downgrade=allow"],
+    _, buf = run_while_draining([iap, "ether", str(image_path), ip],
                                 open_ports, out_path, err_path)
     # The board is still working here. Keep listening until it has written the
     # image and come back up.

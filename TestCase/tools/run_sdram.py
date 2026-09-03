@@ -27,7 +27,7 @@ from common import (cfg, Section, Ok, Warn, Fail, get_go_bin,  # noqa: E402
                     decode_serial, run_capture)
 
 FQBN = ("OpenPLC_Alpha:stm32:OPEN-PLC:pnum=PLC_H743,usb=CDCgen,xusb=FS,"
-        "upload_method=cdcMethod,knxrole=dual_device,downgrade=refuse")
+        "upload_method=cdcMethod,knxrole=dual_device")
 
 ACCEPTED = "Checksum and signature OK"
 MIB = 1024.0 * 1024.0
@@ -85,8 +85,7 @@ def flash_and_collect(bin_path, ip, port, collect_seconds):
     log = ""
     with open(get_scratch_file("sdram_flash.out"), "w") as so, \
             open(get_scratch_file("sdram_flash.err"), "w") as se:
-        proc = subprocess.Popen([str(iap), "ether", str(bin_path), ip,
-                                 "--downgrade=allow"], stdout=so, stderr=se)
+        proc = subprocess.Popen([str(iap), "ether", str(bin_path), ip], stdout=so, stderr=se)
         while proc.poll() is None:
             for h in open_ports.values():
                 try:

@@ -27,7 +27,7 @@ from common import Fail, Ok, Section, cfg, run_capture  # noqa: E402
 # header is selected by pnum, and a wrong FQBN would compile a different variant
 # and prove nothing about this one.
 FQBN = ("OpenPLC_Alpha:stm32:OPEN-PLC:pnum=PLC_H743,usb=CDCgen,xusb=FS,"
-        "upload_method=cdcMethod,knxrole=dual_device,downgrade=refuse")
+        "upload_method=cdcMethod,knxrole=dual_device")
 
 
 def main():

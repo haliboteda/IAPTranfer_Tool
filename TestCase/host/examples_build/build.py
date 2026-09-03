@@ -35,7 +35,7 @@ from common import Fail, Ok, Section, Warn, cfg, run_capture  # noqa: E402
 OWN_LIBRARIES = ("OpenPLC_SDRAM", "OpenPLC_IAP", "OpenPLC_Net", "OpenPLC_KNX")
 
 FQBN = ("OpenPLC_Alpha:stm32:OPEN-PLC:pnum=PLC_H743,usb=CDCgen,xusb=FS,"
-        "upload_method=cdcMethod,knxrole=dual_device,downgrade=refuse")
+        "upload_method=cdcMethod,knxrole=dual_device")
 
 
 SKIP_DIRS = {"__pycache__", ".vscode", "build"}

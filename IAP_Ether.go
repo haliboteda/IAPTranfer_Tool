@@ -370,12 +370,7 @@ func RunEther_TCP(filePath, serverIP string, deviceKey []byte) {
 	auth, err := resolveImageAuth(filePath)
 	logf(err, "Failed to prepare signature for %s", filePath)
 
-	if !etherPreflight(serverIP, auth) {
-		// Exit non-zero. The IDE decides "upload succeeded" from the exit code,
-		// and telling somebody their sketch is on the board when it is not is
-		// worse than the refusal itself.
-		logf(true, "Downgrade refused. Nothing was uploaded.")
-	}
+	etherPreflight(serverIP, auth)
 
 	logf("Trying to connect to TCP server at %s...", serverIP)
 
@@ -394,22 +389,9 @@ func RunEther_TCP(filePath, serverIP string, deviceKey []byte) {
 	}
 }
 
-// etherPreflight runs the checks that can pause for an operator answer, and
-// does so on a connection of its own. The board drops an idle session, so a
-// human must never be asked a question while the upload connection is open.
-// Returns false only when the operator declines a downgrade.
-func etherPreflight(serverIP string, auth imageAuth) bool {
-	remoteVer := etherQueryInstalledVersion(serverIP, auth)
-	if remoteVer == "" {
-		return true
-	}
-	return confirmDowngradeIfNeeded(auth.version, remoteVer)
-}
-
-// etherQueryInstalledVersion opens a short connection, confirms the board
-// verifies against this signing key, reads the installed version and closes.
-// Returns "" when there is no version to compare.
-func etherQueryInstalledVersion(serverIP string, auth imageAuth) string {
+// etherPreflight confirms, on a connection of its own, that the board verifies
+// against this signing key before the upload connection is opened.
+func etherPreflight(serverIP string, auth imageAuth) {
 	conn, err := net.DialTimeout("tcp", serverIP+":"+getPort(), Timeout)
 	if err != nil {
 		logf(true, "Failed to connect to server: %v", err)
@@ -425,17 +407,6 @@ func etherQueryInstalledVersion(serverIP string, auth imageAuth) string {
 	}); err != nil {
 		logf(true, "Signing key check failed: %v", err)
 	}
-
-	if !auth.haveVersion {
-		return ""
-	}
-
-	remoteVer, verErr := sendAndReadResponse(conn, []byte(CM_GetVersion+"\n"))
-	if verErr != nil {
-		logf("Could not query installed version (older bootloader?): %v -- skipping downgrade check", verErr)
-		return ""
-	}
-	return remoteVer
 }
 
 // getPort returns the configured server port (shared by the TCP flash
@@ -484,13 +455,9 @@ func sendFile(conn net.Conn, filePath string, deviceKey []byte, auth imageAuth) 
 	defer file.(io.Closer).Close()
 	logf("CRC Checksum: %x", checksum)
 
-	sigHex, localVersion, haveVersion := auth.sigHex, auth.version, auth.haveVersion
+	sigHex := auth.sigHex
 
-	base := fmt.Sprintf("%s %d %x %s", CM_Flash, fileSize, checksum, sigHex)
-	authMsg := base
-	if haveVersion {
-		authMsg = fmt.Sprintf("%s %d", base, localVersion)
-	}
+	authMsg := fmt.Sprintf("%s %d %x %s", CM_Flash, fileSize, checksum, sigHex)
 
 	nonceResp, err := sendAndReadResponse(conn, []byte(CM_AuthChallenge+"\n"))
 	if err != nil {
@@ -502,10 +469,7 @@ func sendFile(conn net.Conn, filePath string, deviceKey []byte, auth imageAuth) 
 	}
 
 	// Send flash command
-	flashCmd := fmt.Sprintf("%s %s", base, hmacHex)
-	if haveVersion {
-		flashCmd = fmt.Sprintf("%s %s %d", base, hmacHex, localVersion)
-	}
+	flashCmd := fmt.Sprintf("%s %s", authMsg, hmacHex)
 	if err := sendAndWaitOK(conn, []byte(flashCmd+"\n")); err != nil {
 		return fmt.Errorf("failed to send FLASH: %v", err)
 	}

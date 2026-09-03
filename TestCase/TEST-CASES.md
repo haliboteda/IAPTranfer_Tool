@@ -197,7 +197,6 @@ T1–T4 和 S1 都要求设备处于 bootloader 且以太网已起。三种办�
 | `host/iapcrypto/` | 在 `IAPTranfer_Tool/` 下 `go test ./TestCase/...` | HMAC 原语对 RFC 4231 向量；派生公式 `HMAC-SHA256(password, machineID)`；同 UID 稳定、异 UID 必不同；一次完整挑战应答双方独立算出同一个 HMAC |
 | `host/bootloader_unit/` | `python build.py`（或 `./build.sh`），需要 gcc/clang | 用 stub 在主机上编译**真实的** `sha256.c` / `iap_keyderive.c` / `iap_auth.c` 并跑断言 |
 | `host/fakeboard/` | `python run_cases.py` | **K1–K6** IAPTool 在传输开始前的密钥匹配决策，六种情况。**每种在真板子上都要换一把 bootloader 密钥才能构造** |
-| `host/fakeboard/` | `python run_downgrade.py` | **DG1** 降级拦截，五种情况。每条都额外断言**板子有没有真的收到 `flash` 命令**、以及**退出码**（IDE 拿退出码判定"上传成功"，拒绝后退 0 等于骗客户） —— 只看工具打了什么，挡不住"打印了拒绝然后照样上传"。⚠️ **只覆盖工具侧**：bootloader 把版本号解析出来却从不比较（`IAPServer/IAP_server.c:332-357`），设备侧那半是 DG2 |
 | `host/crypto_ref/` | `python run_checks.py [--rounds N]` | SHA-256 构造对 hashlib（309 向量）；IAPTool 真实签名交给一份独立的纯算术 P-256 验证器 |
 | `host/variant_check/` | `python build.py`，需要 arduino-cli | **P4** Arduino 变体头的编译期断言。目前一个：FMC 保留脚表（39 个）自洽。**编不过就是变体头坏了，不是 sketch 坏了** |
 | `host/examples_build/` | `python build.py [--only LIB]`，需要 arduino-cli | **P5** 编译 core 自有库的**每一个 example**。⚠️ **约十分钟，故意不进 selfcheck** —— 见下 |
@@ -295,7 +294,7 @@ python tools/check_allow_hygiene.py --fail-over 400   # 超过这个数才算失
 
 | 基线 | 结果 |
 |---|---|
-| `archive/ps1/M7-BASELINE-compare.txt` | **11 对全部逐字节相同**：version / mirror / core / public-root / hostunit / variant / cryptoref / fakeboard / downgrade / examples / selfcheck |
+| `archive/ps1/M7-BASELINE-compare.txt` | **11 对全部逐字节相同**：version / mirror / core / public-root / hostunit / variant / cryptoref / fakeboard / examples / selfcheck |
 | `archive/ps1/M7-BASELINE-faults.txt` | **7 个注入故障，两版走同一条路径**；跑完 `$BOOT_REPO` 的 `git status` 与跑之前逐字节一致，故障全部还原 |
 
 ## 板上测试（`onboard/`）

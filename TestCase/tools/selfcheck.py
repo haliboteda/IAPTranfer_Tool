@@ -15,7 +15,7 @@ always names it, because a silently skipped check reads as a pass.
 
 Step ids ARE the case ids (2026-08-22). They used to be A0..A14, a numbering of
 their own -- and every one of those numbers was only ever an alias for a case that
-already had an id: A12 was DG1, A13 was P4, A2 was H2. Worse, A1/A2/A3/A7 collided
+already had an id: A13 was P4, A2 was H2. Worse, A1/A2/A3/A7 collided
 with requirement ids of the same name, so "A7 passed" had four possible meanings.
 Dropping the alias deletes a whole namespace and one of those collisions. The map
 from the old numbers is in open_plc_cube_ide/docs/ID-MAP.md.
@@ -26,7 +26,7 @@ nothing about what is now known to work.
 Everything prints in the order things actually happen: a child's output belongs
 before the banner that judges it, not after.
 
-K1-K6 / X1-X2 / DG1 do not gate on finding "python" on PATH. This interpreter is
+K1-K6 / X1-X2 do not gate on finding "python" on PATH. This interpreter is
 what runs them, so there is nothing to look up -- gating on the literal "python"
 is what would make those three SKIP on a python3-only machine.
 """
@@ -66,7 +66,6 @@ CATALOG = [
     ("H2",      "C5",          "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)"),
     ("K1-K6",   "C8",          "IAPTool key-match logic against a stand-in board"),
     ("X1-X2",   "C9",          "crypto cross-check against independent implementations"),
-    ("DG1",     "C6",          "downgrade guard: older image refused, and not uploaded"),
     ("P4",      "E6",          "Arduino variant assertions (the FMC reserved-pin table)"),
 ]
 COVERS = {cid: covers for cid, covers, _ in CATALOG}
@@ -86,7 +85,7 @@ def print_catalog():
     for cid, covers, name in CATALOG:
         print("  %-*s  covers %-*s  %s" % (width, cid, cov, covers, name))
     print("")
-    print("  %d steps. --quick skips H2 / K1-K6 / X1-X2 / DG1 / P4." % len(CATALOG))
+    print("  %d steps. --quick skips H2 / K1-K6 / X1-X2 / P4." % len(CATALOG))
     print("  P7, P8 and P9 check the documents, not the firmware.")
 
 
@@ -214,10 +213,6 @@ def main():
         run_step("X1-X2", "crypto cross-check against independent implementations",
                  [python_exe(), TESTTOOL / "host" / "crypto_ref" / "run_checks.py",
                   "--rounds", "8"], cwd=tool_repo)
-
-        run_step("DG1", "downgrade guard: older image refused, and not uploaded",
-                 [python_exe(), TESTTOOL / "host" / "fakeboard" / "run_downgrade.py"],
-                 cwd=tool_repo)
 
         run_step("P4", "Arduino variant assertions (the FMC reserved-pin table)",
                  [python_exe(), TESTTOOL / "host" / "variant_check" / "build.py"],

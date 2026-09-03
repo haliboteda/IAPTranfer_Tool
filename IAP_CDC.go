@@ -146,23 +146,9 @@ func runCDCAttempt(portName, filePath, uidHex string) {
 		return
 	}
 
-	sigHex, localVersion, haveVersion := auth.sigHex, auth.version, auth.haveVersion
+	sigHex := auth.sigHex
 
-	if haveVersion {
-		remoteVer, verErr := SendCommandReadResponse(port, CM_GetVersion, CommandTimeout)
-		if verErr != nil {
-			logf("Could not query installed version (older bootloader?): %v -- skipping downgrade check", verErr)
-		} else if !confirmDowngradeIfNeeded(localVersion, remoteVer) {
-			// Exit non-zero, for the same reason as the ethernet path.
-			logf(true, "Downgrade refused. Nothing was uploaded.")
-		}
-	}
-
-	base := fmt.Sprintf("%s %d %x %s", CM_Flash, fileSize, checksum, sigHex)
-	authMsg := base
-	if haveVersion {
-		authMsg = fmt.Sprintf("%s %d", base, localVersion)
-	}
+	authMsg := fmt.Sprintf("%s %d %x %s", CM_Flash, fileSize, checksum, sigHex)
 
 	nonceResp, err := SendCommandReadResponse(port, CM_AuthChallenge, CommandTimeout)
 	if err != nil {
@@ -175,10 +161,7 @@ func runCDCAttempt(portName, filePath, uidHex string) {
 		return
 	}
 
-	flashCmd := fmt.Sprintf("%s %s", base, hmacHex)
-	if haveVersion {
-		flashCmd = fmt.Sprintf("%s %s %d", base, hmacHex, localVersion)
-	}
+	flashCmd := fmt.Sprintf("%s %s", authMsg, hmacHex)
 	if !SendCommandWaitForResponse(port, flashCmd, Rsp_OK, FlashAckTimeout) {
 		return
 	}

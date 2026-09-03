@@ -24,7 +24,6 @@ const (
 	CM_RebootChallenge = "openplc_server_reboot_challenge" // request a nonce before CM_Reboot
 	CM_Ping            = "ping"                            // Ping command
 	CM_AuthChallenge   = "authchallenge"                   // request a nonce before CM_Flash
-	CM_GetVersion      = "getversion"                      // ask device for its currently-installed firmware version
 	CM_GetUID          = "getuid"                          // ask device for its machine ID (STM32 UID hex), used to derive its device key
 	CM_GetPubKey       = "getpubkey"                       // ask device which firmware-signing public key it verifies against
 	Rsp_OK             = "OK"
