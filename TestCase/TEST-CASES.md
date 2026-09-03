@@ -16,7 +16,7 @@ TestCase/
 │   ├── init_machine.py   ← ★ 本机路径生成器。先探测，搜不到才问你。`CORE_LIVE` 每次发版要重跑
 │   ├── test_init_machine.py ← init_machine 提问逻辑的单元测试
 │   ├── common.py         ← ★ 共用件：读 config、找工具链、开串口、跑子进程时排空串口、动手提示。`--probe` = ENV
-│   ├── selfcheck.py      ← ★ 所有不需要板子的检查，一条命令（15 步）
+│   ├── selfcheck.py      ← ★ 所有不需要板子的检查，一条命令
 │   ├── check_version_sync.py  ← P1  版本号三处一致
 │   ├── check_mirror_sync.py   ← P2  跨仓镜像 9 锚点 + 备份寄存器占用
 │   ├── check_core_sync.py     ← P3  core live vs git 仓库
@@ -46,7 +46,7 @@ TestCase/
     └── checklist.md      ← 出厂 / 量产验收单
 ```
 
-> **需求、覆盖矩阵和最近结果在一张表里：[open_plc_cube_ide/docs/STATUS.md]($PROD/docs/STATUS.md)** —— 要做到什么、每条用例覆盖哪条需求、跑出什么结果、还欠哪些用例。（2026-08-22 之前那是分开的 REQUIREMENTS.md 和 TEST-PLAN.md，两份都已不存在。）
+> **需求、覆盖矩阵和最近结果在一张表里：[open_plc_cube_ide/docs/STATUS.md]($PROD/docs/STATUS.md)** —— 要做到什么、每条用例覆盖哪条需求、跑出什么结果、还欠哪些用例。
 > **本文件只管判据和运行方法**（贴着代码走，跨仓不搬）。
 
 ⚠️ **机器相关的路径只允许出现在 `config/machine.py`。** 脚本里写死绝对路径、或用 `..\..\..\` 数上去，换台电脑或挪个目录就废 —— 这两种都犯过。
@@ -150,7 +150,7 @@ python tools/run_s3.py --bin <app.bin>       # 破坏 + 判定 + 自动恢复
 
 ### 所有权（`python tools/run_takeown.py`，需求 C10）
 
-OW1 / OW2 的动作走出货工具（`IAPTool takeown` / `setowner`），判据向板子要（原始 TCP `getowner` / `getpubkey`）—— 工具不能自己证明自己。`--bad-signature` 是例外：出货工具做不出坏签名，那条验的是板子的行为，所以在用例里手工拼记录。
+OW1 / OW2 的动作走出货工具（`IAPTool takeown` / `setowner`），判据向板子要（原始 TCP `getowner` / `getpubkey`）。`--bad-signature` 是例外：出货工具做不出坏签名，那条验的是板子的行为，所以在用例里手工拼记录。
 
 | ID | 验证什么 | 前置条件 | 判据 |
 |---|---|---|---|

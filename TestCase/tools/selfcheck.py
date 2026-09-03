@@ -13,12 +13,8 @@ Exit 0 = all pass, 1 = at least one failed. A check whose prerequisite is absent
 (no gcc, no arduino-cli) reports SKIP and does not fail the run -- but the summary
 always names it, because a silently skipped check reads as a pass.
 
-Step ids ARE the case ids (2026-08-22). They used to be A0..A14, a numbering of
-their own -- and every one of those numbers was only ever an alias for a case that
-already had an id: A13 was P4, A2 was H2. Worse, A1/A2/A3/A7 collided
-with requirement ids of the same name, so "A7 passed" had four possible meanings.
-Dropping the alias deletes a whole namespace and one of those collisions. The map
-from the old numbers is in open_plc_cube_ide/docs/ID-MAP.md.
+Step ids ARE the case ids: a step number of its own would be an alias for a case
+that already has an id, and "A7 passed" would have several possible meanings.
 
 Each step announces what requirement it covers, because "A12 passed" told you
 nothing about what is now known to work.
