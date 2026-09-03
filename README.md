@@ -8,6 +8,10 @@ IAPTool cdc    <file.bin> <port>       [--key=<key.pem>] [--version=N]
 IAPTool ether  <file.bin> <ip>         [--key=<key.pem>] [--version=N]
 IAPTool sign   <file.bin> [<key.pem>]  [--key=<key.pem>] [--version=N] [--out=<prefix>]
 IAPTool genkey [<name>]
+
+IAPTool getowner <ip>
+IAPTool takeown  <ip> --key=<owner.pem>
+IAPTool setowner <ip> --current-key=<owner.pem> --new-key=<next.pem>
 ```
 
 ## Firmware signing
@@ -87,3 +91,27 @@ effect. Keep the private key offline; it never goes on a device.
 
 Keys are interchangeable with `openssl` in both directions -- `genkey` emits
 standard SEC1 PEM, and `sign` accepts SEC1 or PKCS#8.
+
+## Board ownership
+
+A board leaves the factory trusting the signing key published with this
+project, which means anyone can sign firmware it will run. Claiming it binds
+it to a key of your own, and from then on nothing else will start.
+
+```sh
+IAPTool genkey owner                 # writes owner.pem - keep it offline
+IAPTool getowner 192.168.0.30        # which key does this board trust?
+IAPTool takeown  192.168.0.30 --key=owner.pem
+IAPTool setowner 192.168.0.30 --current-key=owner.pem --new-key=next.pem
+```
+
+`takeown` is refused unless BOOT0 was held through the board's current boot.
+The first claim carries no signature -- there is no owner yet to produce one --
+so physical presence is the only gate there can be. It also refuses to fall
+back to the signing key in `local_config.json`: claiming a board with the wrong
+key can only be undone by reflashing the bootloader over ST-Link, because the
+owner records live in the bootloader's own flash sector.
+
+`setowner` needs no button. It is signed by the key the board trusts today, so
+a handover can be done over the network, and a stolen record cannot take a
+board over -- the board checks the signature, not the generation number.

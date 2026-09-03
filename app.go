@@ -41,6 +41,12 @@ type signingOptions struct {
 	version      uint32
 	haveVersion  bool
 	downgrade    string
+	currentKey   string
+	newKey       string
+	// keyExplicit says --key was actually typed. takeown must not fall back to
+	// the firmware signing key from local_config.json: claiming a customer's
+	// board with the project's own key is not recoverable without an ST-Link.
+	keyExplicit bool
 }
 
 var g_signing = signingOptions{downgrade: DowngradeAsk}
@@ -53,6 +59,14 @@ const usageText = `Usage:
   IAPTool signraw <hex> [<key.pem>]  raw r||s signature over SHA-256 of those
                    bytes, hex on stdout. For the bootloader's owner-record
                    chain (setowner), not for firmware images.
+  IAPTool getowner <ip>      which key this board trusts, and at which generation
+  IAPTool takeown  <ip> --key=<owner.pem>
+                   claims an unclaimed board for that key. BOOT0 must have been
+                   held through the board's current boot - the first claim carries
+                   no signature, so presence is the only gate. Hard to undo.
+  IAPTool setowner <ip> --current-key=<owner.pem> --new-key=<next.pem>
+                   hands a claimed board over to another key. The handover is
+                   signed by the current owner, so no button is needed.
   IAPTool genpw              prints a fresh keys/iap_fixed_password.txt on stdout
   IAPTool version <x.y.z> [--out=<file>]  encodes a dotted version as the uint32 the
                    device compares, one byte per field. Prints it, or writes it to
@@ -150,6 +164,28 @@ func main() {
 		logf(err, "Failed to sign")
 		fmt.Println(sig)
 
+	case "getowner":
+		if len(args) < 2 {
+			logf(true, usageText)
+		}
+		RunGetOwner(args[1])
+
+	case "takeown":
+		if len(args) < 2 {
+			logf(true, usageText)
+		}
+		takeownKey := ""
+		if g_signing.keyExplicit {
+			takeownKey = g_signing.keyPath
+		}
+		RunTakeOwn(args[1], takeownKey)
+
+	case "setowner":
+		if len(args) < 2 {
+			logf(true, usageText)
+		}
+		RunSetOwner(args[1], g_signing.currentKey, g_signing.newKey)
+
 	case "genpw":
 		content, err := generatePasswordFile()
 		logf(err, "Failed to generate password")
@@ -201,6 +237,7 @@ func parseSigningFlags(args []string) ([]string, error) {
 		switch name {
 		case "key":
 			g_signing.keyPath = value
+			g_signing.keyExplicit = true
 		case "password-file":
 			g_signing.passwordPath = value
 		case "out":
@@ -211,6 +248,10 @@ func parseSigningFlags(args []string) ([]string, error) {
 				return nil, fmt.Errorf("invalid --version %q: %w", value, err)
 			}
 			g_signing.version, g_signing.haveVersion = uint32(parsed), true
+		case "current-key":
+			g_signing.currentKey = value
+		case "new-key":
+			g_signing.newKey = value
 		case "downgrade":
 			switch strings.ToLower(strings.TrimSpace(value)) {
 			case DowngradeAsk, DowngradeAllow, DowngradeRefuse:
