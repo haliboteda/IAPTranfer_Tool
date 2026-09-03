@@ -10,7 +10,7 @@ It checks only the three shapes whose base directory is unambiguous:
 
   * markdown links            [text](../design/OWNERSHIP.md)     -- relative to the doc
   * repo-var paths            $BOOT/docs/work/M7-python-scripts.md
-  * backticked docs/ paths    `docs/test/MEASUREMENTS.md`        -- some repo root
+  * backticked docs/ paths    `docs/work/ISSUES.md`             -- some repo root
 
 $PROD names the product-level documents, which live in the AI-Skills checkout.
 It exists because a relative link from a product repo into AI-Skills is not

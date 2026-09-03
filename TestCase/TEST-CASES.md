@@ -46,7 +46,7 @@ TestCase/
     └── checklist.md      ← 出厂 / 量产验收单
 ```
 
-> **需求、覆盖矩阵和最近结果在一张表里：[open_plc_cube_ide/docs/STATUS.md]($PROD/docs/STATUS.md)** —— 要做到什么、每条用例覆盖哪条需求、跑出什么结果、还欠哪些用例。（2026-08-22 之前那是分开的 REQUIREMENTS.md 和 TEST-PLAN.md，两份都已不存在。）实测数字的唯一出处是 [MEASUREMENTS.md](../../open_plc_cube_ide/docs/test/MEASUREMENTS.md)。
+> **需求、覆盖矩阵和最近结果在一张表里：[open_plc_cube_ide/docs/STATUS.md]($PROD/docs/STATUS.md)** —— 要做到什么、每条用例覆盖哪条需求、跑出什么结果、还欠哪些用例。（2026-08-22 之前那是分开的 REQUIREMENTS.md 和 TEST-PLAN.md，两份都已不存在。）
 > **本文件只管判据和运行方法**（贴着代码走，跨仓不搬）。
 
 ⚠️ **机器相关的路径只允许出现在 `config/machine.py`。** 脚本里写死绝对路径、或用 `..\..\..\` 数上去，换台电脑或挪个目录就废 —— 这两种都犯过。
