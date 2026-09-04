@@ -181,6 +181,27 @@ python tools/run_au1.py                 # 编排两个阶段，中间提示你�
 python tools/run_au1.py --resume         # 阶段 1 已经跑过了，直接等断电
 ```
 
+### 委托证书怎么在真板子上复现
+
+K1–K7 用假板子覆盖了工具的判断，H2 用真实 bootloader 源码覆盖了板子的判断。**两者中间那段——真板子收下一张委托证书并据此执行固件——只能手工走一遍**，发版前值得跑：
+
+```
+# 管理员：用板子当前信任的那把根，给"同事"的公钥发一张证书
+IAPTool pubkey <同事>/keys/fw_signing_key.pem          # 128 hex
+IAPTool cert <那 128 hex> --key=<owner.pem> > <同事>/keys/fw_signing_key.pem.cert
+
+# 同事：什么参数都不用加
+IAPTool ether app.bin <ip>
+```
+
+判据三条，缺一不可：
+
+1. 工具打出 `Certificate was issued by this board's root (<根前16位>...)` —— 不是 `Signing key matches this board`，那是自签路径
+2. 上传成功，串口出现 `Checksum and signature OK`
+3. **复位后进 `** APP Mod`** —— 证明启动期拿存下来的那张证书重验也过了，不只是上传时过了
+
+反向：把证书换成另一把根签的，工具必须**在传输开始前**就拒，且报的是"这张证书不是这块板的根签的"。
+
 ## 怎么让设备停在 bootloader
 
 T1–T4 和 S1 都要求设备处于 bootloader 且以太网已起。三种办法：
