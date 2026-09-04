@@ -109,8 +109,6 @@ def stage_iap_tool(scratch, iap_tool, port):
     scratch_cfg = {
         "server_port": port,
         "signing_key": "",
-        "password_file": str(Path(cfg.BOOT_REPO) / "IAPServer" / "keys"
-                             / "iap_fixed_password.txt"),
     }
     (scratch / "local_config.json").write_text(json.dumps(scratch_cfg),
                                                encoding="utf-8")

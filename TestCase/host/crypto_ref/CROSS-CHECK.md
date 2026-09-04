@@ -5,7 +5,7 @@
 The same two primitives exist three times in this product, in three languages,
 with no shared code:
 
-| | SHA-256 / HMAC | ECDSA P-256 |
+| | SHA-256 | ECDSA P-256 |
 |---|---|---|
 | bootloader | `IAPServer/sha256.c` | micro-ecc, verify only |
 | Arduino core | `libraries/OpenPLC_IAP/src/sha256.c` | — |
@@ -26,7 +26,7 @@ These scripts are the third party. They share no code with either side.
 | `ecdsa_verify.py` | one signature, using plain modular arithmetic — no crypto library | python only |
 | `run_checks.py` | both, driving real `IAPTool sign` for the signatures | python, go |
 
-```powershell
+```
 python run_checks.py             # 12 signatures
 python run_checks.py --rounds 64  # after touching the signer or rotating keys
 ```

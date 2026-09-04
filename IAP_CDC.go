@@ -115,7 +115,9 @@ func triggerPortResetAndWait(portName string, wait time.Duration) {
 	logf("Reconnecting with default baud now.")
 }
 
-// uidHex comes from the identity reply, so no separate getuid round trip.
+// uidHex comes from the identity reply, kept for the message but no longer
+// needed for auth (certificate-based session auth does not derive anything
+// from the device's UID).
 func runCDCAttempt(portName, filePath, uidHex string) {
 	port, err := openPort(portName, l_config.BaudRate)
 	if err != nil {
@@ -123,10 +125,19 @@ func runCDCAttempt(portName, filePath, uidHex string) {
 	}
 	defer port.Close()
 
-	deviceKey, err := deriveDeviceKeyFromUIDHex(uidHex)
-	if err != nil {
-		logf(err, "Failed to derive device key")
+	// Session auth is certificate-based now: signing a fresh nonce needs a
+	// live private key, not just a pre-made .sig -- so, unlike image signing,
+	// there is no sibling-.sig fallback for this part.
+	keyPath := findSigningKey()
+	if keyPath == "" {
+		logf(true, "No signing key found at %s.\n"+
+			"  Session authentication needs the private key itself (to sign the challenge) --\n"+
+			"  a sibling .sig file is not enough for this step.", defaultKeyLocation())
 	}
+	leafKey, err := loadSigningKey(keyPath)
+	logf(err, "cannot use signing key %s", keyPath)
+	certHex, err := issueLeafCert(keyPath, "") // self-signed: leaf == root
+	logf(err, "cannot issue a certificate for %s", keyPath)
 
 	logf("Proceeding with file transfer.")
 	checksum, fileSize, file := CalculateCRC32(filePath)
@@ -155,13 +166,13 @@ func runCDCAttempt(portName, filePath, uidHex string) {
 		logf(err, "Auth challenge failed")
 		return
 	}
-	hmacHex, err := computeAuthHMAC(deviceKey, nonceResp, authMsg)
+	noncesigHex, err := computeNonceSig(leafKey, nonceResp, authMsg)
 	if err != nil {
-		logf(err, "Failed to compute auth HMAC")
+		logf(err, "Failed to sign auth challenge")
 		return
 	}
 
-	flashCmd := fmt.Sprintf("%s %s", authMsg, hmacHex)
+	flashCmd := fmt.Sprintf("%s %s %s", authMsg, certHex, noncesigHex)
 	if !SendCommandWaitForResponse(port, flashCmd, Rsp_OK, FlashAckTimeout) {
 		return
 	}

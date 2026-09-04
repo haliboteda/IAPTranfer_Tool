@@ -62,7 +62,7 @@ def main():
     ap.add_argument("--case", required=True)
     ap.add_argument("--ip", default="")
     ap.add_argument("--bin", default="")
-    ap.add_argument("--password-file", default="")
+    ap.add_argument("--key", default="", help="the key this board trusts; S1/S2 sign the challenge with it")
     ap.add_argument("--iaptool", default="")
     ap.add_argument("--then-reset", action="store_true")
     ap.add_argument("--reset-watch-seconds", type=int, default=RESET_WATCH_S)
@@ -76,8 +76,7 @@ def main():
         return 1
 
     iaptool = Path(args.iaptool) if args.iaptool else get_iap_tool()
-    pwfile = Path(args.password_file) if args.password_file else \
-        iaptool.parent / "keys" / "iap_fixed_password.txt"
+    keyfile = Path(args.key) if args.key else iaptool.parent / "keys" / "fw_signing_key.pem"
 
     tt = get_go_bin("TestCase")
     if not tt.exists():
@@ -87,8 +86,8 @@ def main():
     argv = [args.case, "--ip=%s" % ip, "--iaptool=%s" % iaptool]
     if args.bin:
         argv.append("--bin=%s" % args.bin)
-    if pwfile.exists():
-        argv.append("--password-file=%s" % pwfile)
+    if keyfile.exists():
+        argv.append("--key=%s" % keyfile)
 
     Section("Case %s" % args.case)
     open_ports = open_log_ports(ports)

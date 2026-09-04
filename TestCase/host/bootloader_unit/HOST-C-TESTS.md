@@ -1,48 +1,57 @@
 # IAP Bootloader Host Test
 
-Runs the *real* bootloader auth/crypto source
-(`open_plc_cube_ide/IAPServer/sha256.c`, `iap_keyderive.c`, `iap_auth.c`)
-natively on a PC, against a fake STM32 HAL (`stubs/`), instead of only being
+Case **H2**. Runs the *real* bootloader certificate and auth source
+(`open_plc_cube_ide/IAPServer/`: `sha256.c`, `iap_keyderive.c`, `iap_cert.c`,
+`fw_verify.c` + the vendored micro-ecc, `iap_auth.c`) natively on a PC against
+a fake STM32 HAL and a fake owner slot (`stubs/`), instead of only being
 testable by flashing real hardware.
 
-Out of scope on purpose: `IAP_server.c`'s command parser and the USB/TCP/
-Flash stack it needs. This harness only covers the auth/crypto core.
+Out of scope on purpose: `IAP_server.c`'s command parser and the USB/TCP/Flash
+stack it needs. This harness covers the certificate/auth core.
 
 ## Build & run
 
-Needs any C11 compiler (gcc or clang) on `PATH`.
+Needs any C11 compiler. Resolution order: `$CC`, then `HOST_CC` from
+`config/machine.py`, then `gcc` or `clang` on `PATH`.
 
 ```
-./build.sh              # bash / Git Bash / WSL
-CC=clang ./build.sh      # force a specific compiler
+python build.py
 ```
 
-```powershell
-```
-
-Both compile `test_main.c` + the stubs + the three real `IAPServer` sources
-into `iap_hosttest[.exe]` and run it. Exit code is `0` iff every check
-passes.
+Exit code is `0` iff every check passes.
 
 ## What's checked
 
-- `sha256_selftest()` - the crypto primitives against FIPS 180-4 / RFC 4231
-  vectors.
-- Device-key derivation is deterministic per UID and different for
-  different UIDs.
-- `getuid`/discovery hex format (`iap_keyderive_get_machine_id_hex`).
-- **Golden cross-language vector**: expected nonce, device key, and HMAC for
-  a fixed (UID, counter, tick, message) were computed independently in Go
-  using `IAPTranfer_Tool/iapcrypto`. The bootloader's C code reproducing
-  those exact values proves the two implementations are wire-compatible,
-  not just each internally self-consistent.
-- Replay protection (same nonce/hmac rejected the second time).
-- Nonce TTL expiry (correctly-signed but >30s-old nonce rejected).
-- An HMAC signed with a *different* device's key is rejected.
+- `sha256_selftest()` — the crypto primitives against FIPS 180-4 vectors.
+- Certificate layout: 132 bytes, `leaf_pubkey` at 0, `serial` at 64 as a
+  little-endian `uint32`, `root_sig` at 68, no padding.
+- `iap_cert_verify()` accepts a certificate its root signed — delegated and
+  self-signed alike — and rejects one signed by any other root.
+- Tampering with `leaf_pubkey`, `serial`, or `root_sig` breaks verification.
+- `iap_cert_verify_image()` needs **both** halves: an uncertified leaf is
+  rejected even when it really did sign the image, and a certified leaf does
+  not vouch for an image somebody else signed.
+- Changing the trusted root retroactively invalidates firmware certified by
+  the old one — the property that makes `setowner` mean anything.
+- A full challenge-response: nonce format (`counter||UIDW0||tick||0`),
+  acceptance, replay rejection, expiry past `IAP_AUTH_NONCE_TTL_MS`, an answer
+  with no challenge behind it, an uncertified signer, and a certified
+  certificate carrying somebody else's signature.
 
-## If this harness needs to change
+## The golden vectors
 
-If the wire format changes (nonce layout, HMAC construction, key
-derivation), regenerate the golden vector in Go against the *new*
-`iapcrypto` code and update the expected strings in
-`test_golden_cross_language_vector()` - don't hand-edit them.
+Every certificate and signature in `golden_vectors.h` was produced by the
+**shipping PC tool** (`IAPTool cert` / `signraw` / `genkey`), not by a second
+implementation written for the test. A passing H2 therefore means the
+bootloader's C code and the Go tool agree on the wire format, rather than each
+being internally consistent.
+
+Regenerate only when the wire format changes — the certificate layout, what
+the root signature covers, or the nonce construction:
+
+```
+python gen_vectors.py
+```
+
+Never hand-edit `golden_vectors.h`. The keys used to make it are temporary and
+are deleted with the run.

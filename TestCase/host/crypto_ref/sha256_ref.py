@@ -1,4 +1,4 @@
-"""Differential test of the bootloader's SHA-256 / HMAC-SHA-256 against hashlib.
+"""Differential test of the bootloader's SHA-256 against hashlib.
 
 This is a Python transcription of IAPServer/sha256.c, deliberately including
 its unusual bits rather than a clean reimplementation. The point is to catch a
@@ -19,7 +19,6 @@ runs anywhere Python does and needs no toolchain.
 Exit 0 = every vector matched, 1 = at least one mismatch.
 """
 import hashlib
-import hmac
 import random
 import sys
 
@@ -113,14 +112,6 @@ def my_sha256(data):
     return sha256_final(ctx)
 
 
-def my_hmac_sha256(key, msg):
-    key_block = my_sha256(key) if len(key) > 64 else key
-    key_block = key_block + b'\x00' * (64 - len(key_block))
-    o_key_pad = bytes(b ^ 0x5c for b in key_block)
-    i_key_pad = bytes(b ^ 0x36 for b in key_block)
-    return my_sha256(o_key_pad + my_sha256(i_key_pad + msg))
-
-
 def main():
     fail = 0
     random.seed(1234)   # fixed: a failing run must be reproducible
@@ -135,19 +126,7 @@ def main():
             print("SHA256 MISMATCH at len=%d: got=%s want=%s" % (n, got.hex(), want.hex()))
             fail += 1
 
-    # Key lengths straddle the 64-byte block: shorter is zero-padded, longer is
-    # hashed first, and the boundary itself is where implementations differ.
-    for klen in [0, 1, 20, 32, 63, 64, 65, 100, 128, 200]:
-        for mlen in [0, 1, 13, 55, 56, 57, 63, 64, 65, 200]:
-            key = bytes(random.randrange(256) for _ in range(klen))
-            msg = bytes(random.randrange(256) for _ in range(mlen))
-            got = my_hmac_sha256(key, msg)
-            want = hmac.new(key, msg, hashlib.sha256).digest()
-            if got != want:
-                print("HMAC MISMATCH klen=%d mlen=%d: got=%s want=%s" % (klen, mlen, got.hex(), want.hex()))
-                fail += 1
-
-    total = len(lengths) + 100
+    total = len(lengths)
     if fail:
         print("%d of %d vectors FAILED" % (fail, total))
         return 1

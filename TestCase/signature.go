@@ -2,23 +2,21 @@
 //
 // IAPTool cannot produce this case by design -- its getpubkey pre-check refuses
 // to transfer an image the board will not accept. So this drives the protocol
-// directly, using the shipping crypto package (IAPTool/iapcrypto) rather than a
-// reimplementation: only the *signature* is deliberately wrong, everything else
-// (auth HMAC, CRC, framing) is exactly what IAPTool would send.
+// directly, using the shipping crypto package (IAPTool/iapcert) rather than a
+// reimplementation: only the *image signature* is deliberately wrong, everything
+// else (certificate, challenge signature, CRC, framing) is exactly what IAPTool
+// would send.
 package main
 
 import (
-	"encoding/hex"
 	"fmt"
 	"hash/crc32"
 	"net"
 	"os"
-	"regexp"
-	"strconv"
 	"strings"
 	"time"
 
-	"IAPTool/iapcrypto"
+	"IAPTool/iapcert"
 )
 
 const (
@@ -47,41 +45,6 @@ func init() {
 		destructive: false, run: runS2})
 }
 
-var blockCommentRe = regexp.MustCompile(`(?s)/\*.*?\*/`)
-
-// The shared password file holds the password as a C string literal, because
-// the firmware #includes it directly.
-func loadFixedPassword(path string) error {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return err
-	}
-	text := blockCommentRe.ReplaceAllString(string(data), " ")
-	start := strings.IndexByte(text, '"')
-	if start < 0 {
-		return fmt.Errorf("no quoted password in %s", path)
-	}
-	end := start + 1
-	for end < len(text) && text[end] != '"' {
-		if text[end] == '\\' {
-			end++
-		}
-		end++
-	}
-	if end >= len(text) {
-		return fmt.Errorf("unterminated password literal in %s", path)
-	}
-	pw, err := strconv.Unquote(text[start : end+1])
-	if err != nil {
-		return fmt.Errorf("invalid password literal in %s: %w", path, err)
-	}
-	if pw == "" {
-		return fmt.Errorf("password in %s is empty", path)
-	}
-	iapcrypto.SetFixedPassword([]byte(pw))
-	return nil
-}
-
 // ask sends one text command and returns the reply.
 func ask(conn net.Conn, cmd string, timeout time.Duration) (string, error) {
 	if err := conn.SetDeadline(time.Now().Add(timeout)); err != nil {
@@ -98,17 +61,16 @@ func ask(conn net.Conn, cmd string, timeout time.Duration) (string, error) {
 	return strings.TrimSpace(string(buf[:n])), nil
 }
 
-// loadImage does the argument checking and password loading both signature
-// cases need, and returns the image bytes.
+// loadImage does the argument checking both signature cases need, and returns
+// the image bytes. The key is the one the board trusts: session auth is
+// certificate-based, so getting the command accepted at all means signing a
+// fresh challenge with a key this board's root vouches for.
 func loadImage(cfg config) ([]byte, result) {
 	if cfg.binPath == "" {
 		return nil, fail("needs --bin=<file.bin>")
 	}
-	if cfg.passwordFile == "" {
-		return nil, fail("needs --password-file=<iap_fixed_password.txt> (same password the board was built with)")
-	}
-	if err := loadFixedPassword(cfg.passwordFile); err != nil {
-		return nil, fail("could not load the password file: %v", err)
+	if cfg.keyPath == "" {
+		return nil, fail("needs --key=<owner.pem> (the key this board trusts, to authenticate the command)")
 	}
 	image, err := os.ReadFile(cfg.binPath)
 	if err != nil {
@@ -153,37 +115,29 @@ func uploadWithSignature(cfg config, image []byte, sigHex string) result {
 	if err != nil {
 		return fail("getuid failed: %v", err)
 	}
-	uid, err := hex.DecodeString(strings.TrimSpace(uidHex))
+	fmt.Printf("    target UID=%s\n", strings.TrimSpace(uidHex))
+
+	leafKey, err := iapcert.LoadKey(cfg.keyPath)
 	if err != nil {
-		return fail("board reported an unusable UID %q: %v", uidHex, err)
+		return fail("could not use %s: %v", cfg.keyPath, err)
 	}
-	deviceKey := iapcrypto.DeriveDeviceKey(uid)
-	fmt.Printf("    target UID=%s\n", uidHex)
+	certHex, _, err := iapcert.Issue(cfg.keyPath, "")
+	if err != nil {
+		return fail("could not issue a certificate with %s: %v", cfg.keyPath, err)
+	}
 
 	checksum := crc32.ChecksumIEEE(image)
-	base := fmt.Sprintf("flash %d %x %s", len(image), checksum, sigHex)
-
-	authMsg := base
-	flashCmd := ""
-	if version, ok := readVersionFile(cfg.binPath); ok {
-		authMsg = fmt.Sprintf("%s %d", base, version)
-	}
+	authMsg := fmt.Sprintf("flash %d %x %s", len(image), checksum, sigHex)
 
 	nonceHex, err := ask(conn, "authchallenge", dialTimeout)
 	if err != nil {
 		return fail("authchallenge failed: %v", err)
 	}
-	nonce, err := hex.DecodeString(strings.TrimSpace(nonceHex))
+	nonceSig, err := iapcert.NonceSig(leafKey, nonceHex, authMsg)
 	if err != nil {
-		return fail("board returned an unusable nonce %q: %v", nonceHex, err)
+		return fail("could not sign the challenge: %v", err)
 	}
-	mac := hex.EncodeToString(iapcrypto.HMACSHA256(deviceKey, append(append([]byte{}, nonce...), []byte(authMsg)...)))
-
-	if version, ok := readVersionFile(cfg.binPath); ok {
-		flashCmd = fmt.Sprintf("%s %s %d", base, mac, version)
-	} else {
-		flashCmd = fmt.Sprintf("%s %s", base, mac)
-	}
+	flashCmd := fmt.Sprintf("%s %s %s", authMsg, certHex, nonceSig)
 
 	// The command itself must authenticate: a rejected command would prove
 	// nothing about signature verification.
@@ -253,17 +207,4 @@ func judgeVerdict(verdict string) result {
 		return fail("board accepted an image it should have refused (replied %q). "+
 			"Signature verification is not gating the update", verdict)
 	}
-}
-
-func readVersionFile(binPath string) (uint32, bool) {
-	path := strings.TrimSuffix(binPath, ".bin") + ".version"
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return 0, false
-	}
-	v, err := strconv.ParseUint(strings.TrimSpace(string(data)), 10, 32)
-	if err != nil {
-		return 0, false
-	}
-	return uint32(v), true
 }

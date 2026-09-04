@@ -233,8 +233,6 @@ def run_once(case, args, cli, iaptool, image, ip):
     cmd = [str(iaptool), "ether", str(image), ip]
     if args.key:
         cmd.append("--key=%s" % args.key)
-    if args.password_file:
-        cmd.append("--password-file=%s" % args.password_file)
     print("  $ %s" % " ".join(cmd))
     out_file = get_scratch_file("s4_iaptool.out")
     with open(out_file, "w", encoding="utf-8") as fh:
@@ -384,7 +382,6 @@ def main():
     ap.add_argument("--ip", help="board address (default: BOARD_IP from config)")
     ap.add_argument("--ports", action="append", help="log port; repeatable")
     ap.add_argument("--key", help="passed to IAPTool as --key")
-    ap.add_argument("--password-file", help="passed to IAPTool as --password-file")
     ap.add_argument("--retry", type=int, default=1,
                     help="attempts allowed when the window is missed (default 1)")
     ap.add_argument("--window-timeout", type=int, default=180)

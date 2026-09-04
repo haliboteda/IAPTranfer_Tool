@@ -1,6 +1,6 @@
 """Cross-checks the product's crypto against independent implementations.
 
-  1. sha256_ref.py   the bootloader's SHA-256/HMAC construction vs hashlib
+  1. sha256_ref.py   the bootloader's SHA-256 construction vs hashlib
   2. ecdsa_verify.py signatures IAPTool actually produced, verified by hand-
                      rolled modular arithmetic that shares no code with Go
 
@@ -51,7 +51,7 @@ def main():
 
     bad = 0
 
-    Section("1. SHA-256 / HMAC-SHA-256 construction")
+    Section("1. SHA-256 construction")
     if run_emit([python_exe(), HERE / "sha256_ref.py"]) != 0:
         Fail("SHA-256 reference check failed")
         bad += 1

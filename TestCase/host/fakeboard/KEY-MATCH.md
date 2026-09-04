@@ -40,7 +40,7 @@ is case S1, against real hardware.
 
 ## Running
 
-```powershell
+```
 python run_cases.py              # all six
 python run_cases.py --keep       # keep the scratch directory to inspect logs
 ```

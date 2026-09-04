@@ -20,14 +20,12 @@ case-sensitive, and Select-Object -Unique compares case-insensitively. Getting
 either wrong changes verdicts rather than formatting.
 """
 
-import hashlib
 import re
 import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import (cfg, Section, Ok, Warn, Fail, read_text,        # noqa: E402
-                    get_iap_tool)
+from common import cfg, Section, Ok, Warn, Fail, read_text  # noqa: E402
 
 failed = 0
 skipped = 0
@@ -107,12 +105,12 @@ tool_lock = TOOL / "uploadlock.go"
 core_disc = LIVE / "tools/discovery/network_discovery.go"
 boot_fmc = BOOT / "Core/Src/fmc.c"
 core_variant = LIVE / "variants/STM32H7xx/H743/variant_PLC_H743.h"
-boot_pwd = BOOT / "IAPServer/keys/iap_fixed_password.txt"
-core_pwd = LIVE / "libraries/OpenPLC_IAP/src/keys/iap_fixed_password.txt"
-# Next to the shipped IAPTool, whose package version and platform directory both
-# move independently of the core -- so take the directory the tool was found in
-# rather than spelling either of them out.
-ship_pwd = get_iap_tool().parent / "keys/iap_fixed_password.txt"
+boot_cert = BOOT / "IAPServer/iap_cert.h"
+core_cert = LIVE / "libraries/OpenPLC_IAP/src/iap_cert.h"
+tool_cert = TOOL / "iapcert/iapcert.go"
+boot_owner = BOOT / "IAPServer/owner_slot.h"
+core_owner = LIVE / "libraries/OpenPLC_IAP/src/owner_root_ro.c"
+tool_owner = TOOL / "owner.go"
 
 Section("cross-repo mirrors")
 
@@ -258,20 +256,38 @@ compare_anchor("upload lock max age", {
 })
 
 
-# --- shared secret ----------------------------------------------------------
-# Three byte-identical copies. rotate_keys.sh updates the first two; the third
-# ships beside IAPTool.exe and is read at runtime, so a board reflashed after a
-# rotation stops answering a tool that still holds the old password.
-def get_file_hash_or_none(path):
-    if not Path(path).exists():
-        return None
-    return hashlib.sha256(Path(path).read_bytes()).hexdigest().upper()
+# --- certificate wire format ------------------------------------------------
+# The board parses a certificate as three fields at fixed offsets and the tool
+# writes it the same way. Nothing on the wire announces the layout, so a
+# divergence here does not fail loudly -- it verifies a signature over the
+# wrong bytes and rejects every legitimate upload.
+compare_anchor("certificate size (bytes)", {
+    "bootloader IAPServer/iap_cert.h": get_anchor(boot_cert, r'#define\s+IAP_CERT_SIZE\s+(\d+)U'),
+    "core OpenPLC_IAP/src/iap_cert.h": get_anchor(core_cert, r'#define\s+IAP_CERT_SIZE\s+(\d+)U'),
+    "IAPTool iapcert/iapcert.go": get_anchor(tool_cert, r'Size\s*=\s*(\d+)'),
+})
 
+compare_anchor("certificate signed prefix (bytes)", {
+    "bootloader IAPServer/iap_cert.h": get_anchor(boot_cert, r'#define\s+IAP_CERT_SIGNED_LEN\s+(\d+)U'),
+    "core OpenPLC_IAP/src/iap_cert.h": get_anchor(core_cert, r'#define\s+IAP_CERT_SIGNED_LEN\s+(\d+)U'),
+    "IAPTool iapcert/iapcert.go": get_anchor(tool_cert, r'SignedLen\s*=\s*(\d+)'),
+})
 
-compare_anchor("iap_fixed_password.txt (3 copies)", {
-    "bootloader IAPServer/keys/": get_file_hash_or_none(boot_pwd),
-    "core OpenPLC_IAP/src/keys/": get_file_hash_or_none(core_pwd),
-    "shipped STM32Tools/*/win/keys/": get_file_hash_or_none(ship_pwd),
+# --- owner record format ----------------------------------------------------
+# Three readers of the same 160 bytes in the bootloader's flash sector: the
+# bootloader writes and resolves them, the app resolves them read-only, and the
+# tool signs the prefix. A prefix length that disagrees signs the wrong bytes,
+# and the board rejects a handover that was perfectly legitimate.
+compare_anchor("owner record format version", {
+    "bootloader IAPServer/owner_slot.h": get_anchor(boot_owner, r'#define\s+OWNER_FORMAT_VER\s+(\d+)U'),
+    "core OpenPLC_IAP/src/owner_root_ro.c": get_anchor(core_owner, r'#define\s+OWNER_FORMAT_VER\s+(\d+)U'),
+    "IAPTool owner.go": get_anchor(tool_owner, r'ownerRecordFormatVer\s*=\s*(\d+)'),
+})
+
+compare_anchor("owner record signed prefix (bytes)", {
+    "bootloader IAPServer/owner_slot.h": get_anchor(boot_owner, r'#define\s+OWNER_SIGNED_PREFIX_LEN\s+(\d+)U'),
+    "core OpenPLC_IAP/src/owner_root_ro.c": get_anchor(core_owner, r'#define\s+OWNER_SIGNED_PREFIX_LEN\s+(\d+)U'),
+    "IAPTool owner.go": get_anchor(tool_owner, r'ownerSignedPrefixLen\s*=\s*(\d+)'),
 })
 
 # --- RTC backup registers ---------------------------------------------------

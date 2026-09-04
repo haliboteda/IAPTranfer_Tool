@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
@@ -9,31 +10,17 @@ import (
 	"path/filepath"
 	"strings"
 
-	"IAPTool/iapcrypto"
+	"IAPTool/iapcert"
 )
 
-// deriveDeviceKeyFromUIDHex decodes a device's UID (as reported by "getuid"
-// or the UDP discovery/ping reply) and derives that device's own auth key.
-func deriveDeviceKeyFromUIDHex(uidHex string) ([]byte, error) {
-	machineID, err := hex.DecodeString(strings.TrimSpace(uidHex))
-	if err != nil {
-		return nil, fmt.Errorf("invalid device UID hex %q: %w", uidHex, err)
-	}
-	return iapcrypto.DeriveDeviceKey(machineID), nil
-}
-
-// computeAuthHMAC returns hex(HMAC-SHA256(deviceKey, nonce || msg)), where
+// computeNonceSig returns hex(ECDSA-sign(leafKey, sha256(nonce || msg))). The
+// device verifies this against the leaf public key named by whatever
+// certificate accompanies the same command, so no shared secret is involved.
 // nonce is decoded from nonceHex (as returned by "authchallenge" /
-// "openplc_server_reboot_challenge"). msg must be the exact command string
-// being authorized -- the device recomputes the same construction using its
-// own copy of deviceKey (derived from its own UID).
-func computeAuthHMAC(deviceKey []byte, nonceHex string, msg string) (string, error) {
-	nonce, err := hex.DecodeString(strings.TrimSpace(nonceHex))
-	if err != nil {
-		return "", fmt.Errorf("invalid nonce hex %q: %w", nonceHex, err)
-	}
-	data := append(append([]byte{}, nonce...), []byte(msg)...)
-	return hex.EncodeToString(iapcrypto.HMACSHA256(deviceKey, data)), nil
+// "openplc_server_reboot_challenge"); msg must be the exact command string
+// being authorized.
+func computeNonceSig(leafKey *ecdsa.PrivateKey, nonceHex string, msg string) (string, error) {
+	return iapcert.NonceSig(leafKey, nonceHex, msg)
 }
 
 // imageAuth is what a "flash" command needs about the image itself: its

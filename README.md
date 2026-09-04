@@ -73,20 +73,19 @@ check is then skipped with a warning and the upload proceeds as before.
 
 ### Generating keys
 
-To replace both secrets at once, run `IAPServer/keys/rotate_keys.sh` -- it
-drives the two commands below, distributes every copy and takes a backup
-first. The pieces are also available on their own:
+To rotate the signing key, run `IAPServer/keys/rotate_keys.sh` -- it drives
+the command below, distributes every copy and takes a backup first. The piece
+is also available on its own:
 
 ```sh
 IAPTool genkey my_release_key > fw_pubkey.inc
-IAPTool genpw > iap_fixed_password.txt
 ```
 
 `genkey` writes `my_release_key.pem` (private, mode 0600) and prints the body
-of `IAPServer/keys/fw_pubkey.inc` on stdout; `genpw` prints a fresh
-`iap_fixed_password.txt`. Both files are `#include`d by the firmware, so the
-bootloader must be rebuilt and re-flashed over ST-Link before either takes
-effect. Keep the private key offline; it never goes on a device.
+of `IAPServer/keys/fw_pubkey.inc` on stdout. That file is `#include`d by the
+firmware, so the bootloader must be rebuilt and re-flashed over ST-Link before
+the new key takes effect. Keep the private key offline; it never goes on a
+device.
 
 Keys are interchangeable with `openssl` in both directions -- `genkey` emits
 standard SEC1 PEM, and `sign` accepts SEC1 or PKCS#8.

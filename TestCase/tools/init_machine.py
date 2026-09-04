@@ -33,9 +33,8 @@ naming:
     a pile of unrelated MISSING lines. (Debian, 2026-08-20.)
   - CORE_LIVE ends in the board-package version, so the template goes stale on
     every release. Here it is a glob, resolved at detection time.
-  - machine.py used to have a hand-maintained PowerShell twin, with nothing
-    keeping the two equal. The PowerShell scripts are gone (2026-09-01) and so
-    is the twin; this table is the only source.
+  - config/machine.py is the only generated file, and this table is its only
+    source.
 
 Values already in config/machine.py are KEPT when they still make sense on this
 platform and still exist on disk, so a deliberate choice survives a re-run. Use

@@ -7,9 +7,6 @@ more than one script needs lives here rather than being copied -- config loading
 toolchain discovery, serial ports, the hands-on prompt, running a child while
 draining the ports.
 
-The PowerShell originals are in archive/ps1/, kept only for reference; see the
-README there.
-
 Run it directly to see what this machine resolves to:
 
     python tools/common.py --probe

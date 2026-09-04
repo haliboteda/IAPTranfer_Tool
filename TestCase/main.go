@@ -28,16 +28,16 @@ type testCase struct {
 }
 
 type config struct {
-	ip           string
-	port         string
-	binPath      string
-	iapTool      string
-	passwordFile string
-	soak         time.Duration
-	interval     time.Duration
-	stateFile    string
-	phase        int
-	count        int
+	ip        string
+	port      string
+	binPath   string
+	iapTool   string
+	keyPath   string
+	soak      time.Duration
+	interval  time.Duration
+	stateFile string
+	phase     int
+	count     int
 }
 
 type result struct {
@@ -91,8 +91,8 @@ func main() {
 			cfg.binPath = arg[len("--bin="):]
 		case hasPrefix(arg, "--iaptool="):
 			cfg.iapTool = arg[len("--iaptool="):]
-		case hasPrefix(arg, "--password-file="):
-			cfg.passwordFile = arg[len("--password-file="):]
+		case hasPrefix(arg, "--key="):
+			cfg.keyPath = arg[len("--key="):]
 		case hasPrefix(arg, "--minutes="):
 			minutes, convErr := strconv.Atoi(arg[len("--minutes="):])
 			if convErr != nil || minutes <= 0 {

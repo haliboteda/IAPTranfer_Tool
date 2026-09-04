@@ -49,7 +49,7 @@ results = []
 # case is the evidence for. A case that covers nothing should not exist.
 CATALOG = [
     ("ENV",     "-",           "this machine has the toolchain"),
-    ("H1",      "C5",          "host Go tests (crypto primitives, key derivation, challenge/response)"),
+    ("H1",      "C5",          "host Go tests (certificate issuance, serial counter, challenge signing)"),
     ("H3",      "-",           "go vet over the whole module"),
     ("P1",      "D7",          "firmware version agrees in all three places"),
     ("P2",      "D8 A6 A7 C7 E1 E6", "cross-repo mirrored code has not diverged"),
@@ -158,7 +158,7 @@ def main():
 
     tool_repo = cfg.TOOL_REPO
 
-    run_step("H1", "host Go tests (crypto primitives, key derivation, challenge/response)",
+    run_step("H1", "host Go tests (certificate issuance, serial counter, challenge signing)",
              ["go", "test", "./TestCase/..."], needs="go", cwd=tool_repo, indent=2)
 
     run_step("H3", "go vet over the whole module",

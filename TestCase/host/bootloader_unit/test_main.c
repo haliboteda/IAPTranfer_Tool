@@ -1,20 +1,20 @@
 /*
- * Host-side security test harness for the IAP challenge-response protocol.
+ * Host-side security test harness for the IAP certificate chain and
+ * challenge-response protocol. Case H2.
  *
- * Compiles and runs the REAL bootloader source files (sha256.c,
- * iap_keyderive.c, iap_auth.c from open_plc_cube_ide/IAPServer) natively on
- * the PC, against a fake HAL (stubs/hal_stub.c) instead of real STM32
- * hardware. Scope is deliberately just the auth/crypto core -- not
- * IAP_server.c's command parser, which needs the full USB/TCP/Flash stack
- * and isn't security-critical in the same way.
+ * Compiles and runs the REAL bootloader source (sha256.c, iap_keyderive.c,
+ * iap_cert.c, fw_verify.c + micro-ecc, iap_auth.c from
+ * open_plc_cube_ide/IAPServer) natively on the PC, against a fake HAL
+ * (stubs/hal_stub.c) and a fake owner slot (stubs/owner_slot_stub.c).
+ * IAP_server.c's command parser is out of scope -- it needs the whole
+ * USB/TCP/Flash stack.
  *
- * Test 4 below is the important one: its expected values were computed
- * independently in Go, using the exact same construction the PC tool
- * (IAPTranfer_Tool/iapcrypto) uses. If this test passes, the bootloader's C
- * implementation and the PC tool's Go implementation are proven wire-
- * compatible for that input, not just "each internally consistent".
+ * Every certificate and signature checked here came out of the shipping PC
+ * tool (see gen_vectors.py / golden_vectors.h), so a pass means the two
+ * implementations agree on the wire format rather than each being internally
+ * consistent.
  *
- * Build & run: see build.sh (bash) or build.ps1 (PowerShell).
+ * Build & run: python build.py
  */
 
 #include <stdio.h>
@@ -23,10 +23,14 @@
 #include <stdint.h>
 
 #include "iap_auth.h"
+#include "iap_cert.h"
 #include "iap_keyderive.h"
+#include "fw_verify.h"
 #include "sha256.h"
 #include "hal_stub.h"
+#include "owner_slot_stub.h"
 #include "rtc.h"
+#include "golden_vectors.h"
 
 static int g_failures = 0;
 
@@ -35,31 +39,25 @@ static int g_failures = 0;
 	else { printf("[FAIL] %s\n", (desc)); g_failures++; } \
 } while (0)
 
-static void hex_encode(const uint8_t *bytes, uint32_t len, char *out)
+static const iap_cert_t *as_cert(const uint8_t *bytes)
 {
-	static const char digits[] = "0123456789abcdef";
-	uint32_t i;
-	for (i = 0; i < len; i++) {
-		out[i * 2U] = digits[bytes[i] >> 4];
-		out[i * 2U + 1U] = digits[bytes[i] & 0x0FU];
-	}
-	out[len * 2U] = '\0';
+	return (const iap_cert_t *)bytes;
 }
 
-static bool hex_decode(const char *hex, uint8_t *out, uint32_t out_len)
+/* The hash a firmware signature is actually made over. */
+static void golden_image_hash(uint8_t out[32])
 {
-	uint32_t i;
-	if (strlen(hex) != out_len * 2U) {
-		return false;
-	}
-	for (i = 0; i < out_len; i++) {
-		unsigned int byte;
-		if (sscanf(hex + i * 2U, "%2x", &byte) != 1) {
-			return false;
-		}
-		out[i] = (uint8_t)byte;
-	}
-	return true;
+	sha256(golden_image_blob, (uint32_t)sizeof(golden_image_blob), out);
+}
+
+/* Puts the fake board on the golden root, as the golden device, at the tick
+ * the golden nonce was computed for. */
+static void arrange_golden_board(void)
+{
+	test_hal_reset();
+	test_hal_set_uid(GOLDEN_UID0, GOLDEN_UID1, GOLDEN_UID2);
+	test_hal_set_tick(GOLDEN_TICK);
+	test_owner_set_root(golden_root_pub);
 }
 
 /* Test 1: the crypto primitives self-check against FIPS 180-4 / RFC 4231
@@ -69,25 +67,7 @@ static void test_crypto_selftest(void)
 	CHECK(sha256_selftest(), "sha256_selftest() passes known-answer vectors");
 }
 
-/* Test 2: same UID always derives the same key; a different UID (even by
- * one bit) must derive a different key -- the actual property the whole
- * per-device scheme depends on. */
-static void test_key_derivation_determinism_and_uniqueness(void)
-{
-	uint8_t k1[IAP_DEVICE_KEY_SIZE], k2[IAP_DEVICE_KEY_SIZE], k3[IAP_DEVICE_KEY_SIZE];
-
-	test_hal_reset();
-	test_hal_set_uid(0x11111111U, 0x22222222U, 0x33333333U);
-	iap_keyderive_get_device_key(k1);
-	iap_keyderive_get_device_key(k2);
-	CHECK(memcmp(k1, k2, sizeof(k1)) == 0, "device key is deterministic for a fixed UID");
-
-	test_hal_set_uid(0x11111111U, 0x22222222U, 0x33333334U); /* last nibble differs */
-	iap_keyderive_get_device_key(k3);
-	CHECK(memcmp(k1, k3, sizeof(k1)) != 0, "one-bit UID change derives a different device key");
-}
-
-/* Test 3: machine-ID hex format matches what discovery/getuid must report:
+/* Test 2: machine-ID hex format matches what discovery/getuid must report:
  * uppercase, UIDW2||UIDW1||UIDW0. */
 static void test_machine_id_hex_format(void)
 {
@@ -99,117 +79,191 @@ static void test_machine_id_hex_format(void)
 			"machine_id_hex is uppercase UIDW2||UIDW1||UIDW0");
 }
 
-/* Test 4: cross-language golden vector. Every expected value here was
- * computed independently with IAPTranfer_Tool/iapcrypto in Go (see the
- * conversation this harness came out of) for:
- *   uid0=0x01234567 uid1=0x89ABCDEF uid2=0xDEADBEEF, counter=1, tick=5000,
- *   msg="flash 1024 deadbeef abcd1234"
- * A match here means the bootloader's C auth code and the PC tool's Go
- * auth code agree byte-for-byte, not just "each passes its own tests". */
-static void test_golden_cross_language_vector(void)
+/* Test 3: the certificate is three fields at fixed offsets and nothing else.
+ * A compiler that pads it, or a field that moves, silently stops matching
+ * what the tool puts on the wire -- and every signature check would still
+ * "work", just over different bytes. */
+static void test_cert_layout(void)
 {
-	char nonce_hex[IAP_AUTH_NONCE_SIZE * 2U + 1U];
-	uint8_t device_key[IAP_DEVICE_KEY_SIZE];
-	char device_key_hex[IAP_DEVICE_KEY_SIZE * 2U + 1U];
-	uint8_t golden_hmac[IAP_AUTH_HMAC_SIZE];
-	const char *msg = "flash 1024 deadbeef abcd1234";
-	bool accepted, replayed;
+	const iap_cert_t *cert = as_cert(golden_cert_delegated);
 
-	test_hal_reset();
-	test_hal_set_uid(0x01234567U, 0x89ABCDEFU, 0xDEADBEEFU);
-	test_hal_set_tick(5000U);
-	/* RTC_BKP_DR1 starts at 0 (test_hal_reset), so next_counter() -> 1,
-	 * matching the golden vector's counter=1. */
-
-	iap_auth_issue_challenge(nonce_hex);
-	CHECK(strcmp(nonce_hex, "01000000674523018813000000000000") == 0,
-			"nonce matches Go-computed golden nonce (counter||uidW0||tick||0000)");
-
-	iap_keyderive_get_device_key(device_key);
-	hex_encode(device_key, sizeof(device_key), device_key_hex);
-	CHECK(strcmp(device_key_hex,
-			"0354b4d5084eaa033950487d999bdcd8354d2d2bf42387b8a6b0c6513a670b2f") == 0,
-			"device key matches Go-computed golden HMAC-SHA256(password, uid)");
-
-	hex_decode("f558f7de95a4ad3f519e74f9d4c05bb0efdf1aa121659154ebb23d82ebc3aac7",
-			golden_hmac, sizeof(golden_hmac));
-	accepted = iap_auth_verify_and_consume((const uint8_t *)msg, (uint32_t)strlen(msg), golden_hmac);
-	CHECK(accepted, "device accepts an HMAC computed independently by the Go PC tool");
-
-	replayed = iap_auth_verify_and_consume((const uint8_t *)msg, (uint32_t)strlen(msg), golden_hmac);
-	CHECK(!replayed, "replaying the same (nonce, hmac) a second time is rejected");
+	CHECK(sizeof(iap_cert_t) == IAP_CERT_SIZE, "iap_cert_t is exactly 132 bytes");
+	CHECK(IAP_CERT_SIGNED_LEN == 68U, "the root signature covers leaf_pubkey||serial");
+	CHECK(memcmp(cert->leaf_pubkey, golden_leaf_pub, 64) == 0,
+			"leaf_pubkey lands at offset 0 of the tool's certificate");
+	CHECK(cert->serial >= 1U, "serial decodes as a little-endian uint32");
+	CHECK(memcmp(golden_cert_delegated + 68, cert->root_sig, 64) == 0,
+			"root_sig lands at offset 68");
 }
 
-/* Test 5: a nonce older than IAP_AUTH_NONCE_TTL_MS must be rejected even
- * with a correctly-computed HMAC. */
+/* Test 4: a certificate is accepted exactly when the root this board trusts
+ * signed it -- delegated and self-signed alike, since there is no self-signed
+ * branch in the code. */
+static void test_cert_verify(void)
+{
+	CHECK(iap_cert_verify(as_cert(golden_cert_delegated), golden_root_pub),
+			"a delegated certificate verifies against its root");
+	CHECK(iap_cert_verify(as_cert(golden_cert_self), golden_root_pub),
+			"simple mode: a self-signed certificate takes the same path and verifies");
+	CHECK(!iap_cert_verify(as_cert(golden_cert_foreign), golden_root_pub),
+			"a certificate signed by another root is rejected");
+	CHECK(!iap_cert_verify(as_cert(golden_cert_delegated), golden_foreign_pub),
+			"the same certificate is rejected once the board trusts a different root");
+}
+
+/* Test 5: tampering anywhere in the signed prefix must break the root
+ * signature. Swapping the leaf key is the attack the signature exists to
+ * stop; the serial matters because C12 revocation will name certificates by
+ * it, and a serial that can be edited after issuance revokes nothing. */
+static void test_cert_tamper(void)
+{
+	iap_cert_t tampered;
+
+	memcpy(&tampered, golden_cert_delegated, IAP_CERT_SIZE);
+	memcpy(tampered.leaf_pubkey, golden_foreign_pub, 64);
+	CHECK(!iap_cert_verify(&tampered, golden_root_pub),
+			"substituting another leaf key breaks the root signature");
+
+	memcpy(&tampered, golden_cert_delegated, IAP_CERT_SIZE);
+	tampered.serial ^= 1U;
+	CHECK(!iap_cert_verify(&tampered, golden_root_pub),
+			"editing the serial breaks the root signature");
+
+	memcpy(&tampered, golden_cert_delegated, IAP_CERT_SIZE);
+	tampered.root_sig[0] ^= 0x01U;
+	CHECK(!iap_cert_verify(&tampered, golden_root_pub),
+			"a corrupted root signature is rejected");
+}
+
+/* Test 6: the two-step image check. Both halves must hold -- a valid
+ * certificate says nothing about who signed this image, and a valid image
+ * signature says nothing if the leaf was never certified. */
+static void test_cert_verify_image(void)
+{
+	uint8_t hash[32];
+
+	golden_image_hash(hash);
+
+	CHECK(iap_cert_verify_image(hash, golden_image_sig_leaf,
+			as_cert(golden_cert_delegated), golden_root_pub),
+			"certified leaf + its own signature over the image is accepted");
+	CHECK(iap_cert_verify_image(hash, golden_image_sig_root,
+			as_cert(golden_cert_self), golden_root_pub),
+			"simple mode: root's own signature under a self-signed certificate is accepted");
+	CHECK(!iap_cert_verify_image(hash, golden_image_sig_foreign,
+			as_cert(golden_cert_foreign), golden_root_pub),
+			"an uncertified leaf is rejected even though it did sign the image");
+	CHECK(!iap_cert_verify_image(hash, golden_image_sig_foreign,
+			as_cert(golden_cert_delegated), golden_root_pub),
+			"a certified leaf does not vouch for an image somebody else signed");
+
+	hash[0] ^= 0x01U;
+	CHECK(!iap_cert_verify_image(hash, golden_image_sig_leaf,
+			as_cert(golden_cert_delegated), golden_root_pub),
+			"the signature does not carry over to a different image hash");
+}
+
+/* Test 7: the handover the whole scheme rests on -- change the root and
+ * firmware certified by the old one stops verifying, with nothing else
+ * touched. This is what makes setowner retroactively invalidate an installed
+ * image. */
+static void test_root_change_invalidates(void)
+{
+	uint8_t hash[32];
+
+	golden_image_hash(hash);
+	CHECK(iap_cert_verify_image(hash, golden_image_sig_leaf,
+			as_cert(golden_cert_delegated), golden_root_pub),
+			"before the handover the installed image verifies");
+	CHECK(!iap_cert_verify_image(hash, golden_image_sig_leaf,
+			as_cert(golden_cert_delegated), golden_foreign_pub),
+			"after a handover to another root the same image no longer verifies");
+}
+
+/* Test 8: a full challenge-response, with the nonce signature produced by the
+ * PC tool. Also pins the nonce itself: counter||UIDW0||tick||0. */
+static void test_challenge_response(void)
+{
+	char nonce_hex[IAP_AUTH_NONCE_SIZE * 2U + 1U];
+	const char *msg = GOLDEN_AUTH_MSG;
+	bool accepted, replayed;
+
+	arrange_golden_board();
+	/* RTC_BKP_DR1 starts at 0 (test_hal_reset), so next_counter() -> 1,
+	 * which is the counter the golden nonce was signed for. */
+	iap_auth_issue_challenge(nonce_hex);
+	CHECK(strcmp(nonce_hex, "01000000674523018813000000000000") == 0,
+			"nonce is counter||UIDW0||tick||0000, little-endian");
+
+	accepted = iap_auth_verify_and_consume((const uint8_t *)msg, (uint32_t)strlen(msg),
+			as_cert(golden_cert_delegated), golden_auth_sig_leaf);
+	CHECK(accepted, "a challenge signed by a certified leaf is accepted");
+
+	replayed = iap_auth_verify_and_consume((const uint8_t *)msg, (uint32_t)strlen(msg),
+			as_cert(golden_cert_delegated), golden_auth_sig_leaf);
+	CHECK(!replayed, "replaying the same (nonce, certificate, signature) is rejected");
+}
+
+/* Test 9: holding a private key is not enough -- the certificate naming it
+ * has to come from this board's root. */
+static void test_uncertified_signer_rejected(void)
+{
+	char nonce_hex[IAP_AUTH_NONCE_SIZE * 2U + 1U];
+	const char *msg = GOLDEN_AUTH_MSG;
+
+	arrange_golden_board();
+	iap_auth_issue_challenge(nonce_hex);
+	CHECK(!iap_auth_verify_and_consume((const uint8_t *)msg, (uint32_t)strlen(msg),
+			as_cert(golden_cert_foreign), golden_auth_sig_foreign),
+			"a correctly signed challenge under an uncertified certificate is rejected");
+
+	arrange_golden_board();
+	iap_auth_issue_challenge(nonce_hex);
+	CHECK(!iap_auth_verify_and_consume((const uint8_t *)msg, (uint32_t)strlen(msg),
+			as_cert(golden_cert_delegated), golden_auth_sig_foreign),
+			"a certified certificate with somebody else's signature is rejected");
+}
+
+/* Test 10: a challenge answered after IAP_AUTH_NONCE_TTL_MS is refused even
+ * though the signature is perfect. */
 static void test_nonce_expiry(void)
 {
 	char nonce_hex[IAP_AUTH_NONCE_SIZE * 2U + 1U];
-	uint8_t nonce_bytes[IAP_AUTH_NONCE_SIZE];
-	uint8_t device_key[IAP_DEVICE_KEY_SIZE];
-	uint8_t buf[IAP_AUTH_NONCE_SIZE + 64U];
-	uint8_t hmac[IAP_AUTH_HMAC_SIZE];
-	const char *msg = "openplc_server_reboot";
-	bool accepted;
+	const char *msg = GOLDEN_AUTH_MSG;
 
-	test_hal_reset();
-	test_hal_set_uid(0x01234567U, 0x89ABCDEFU, 0xDEADBEEFU);
-	test_hal_set_tick(1000U);
-
+	arrange_golden_board();
 	iap_auth_issue_challenge(nonce_hex);
-	hex_decode(nonce_hex, nonce_bytes, sizeof(nonce_bytes));
+	test_hal_set_tick(GOLDEN_TICK + IAP_AUTH_NONCE_TTL_MS + 1U);
 
-	test_hal_set_tick(1000U + IAP_AUTH_NONCE_TTL_MS + 1U);
-
-	iap_keyderive_get_device_key(device_key);
-	memcpy(buf, nonce_bytes, sizeof(nonce_bytes));
-	memcpy(buf + sizeof(nonce_bytes), msg, strlen(msg));
-	hmac_sha256(device_key, sizeof(device_key), buf, (uint32_t)(sizeof(nonce_bytes) + strlen(msg)), hmac);
-
-	accepted = iap_auth_verify_and_consume((const uint8_t *)msg, (uint32_t)strlen(msg), hmac);
-	CHECK(!accepted, "a correctly-signed but expired nonce (>30s old) is rejected");
+	CHECK(!iap_auth_verify_and_consume((const uint8_t *)msg, (uint32_t)strlen(msg),
+			as_cert(golden_cert_delegated), golden_auth_sig_leaf),
+			"a correctly signed but expired nonce (>30s old) is rejected");
 }
 
-/* Test 6: an HMAC computed with a DIFFERENT device's key (i.e. an attacker
- * who only knows the fixed password and this device's public UID from
- * discovery, but is impersonating using another device's derivation) must
- * not authenticate against this device's nonce. */
-static void test_wrong_device_key_rejected(void)
+/* Test 11: an answer with no challenge behind it. */
+static void test_no_pending_nonce(void)
 {
-	char nonce_hex[IAP_AUTH_NONCE_SIZE * 2U + 1U];
-	uint8_t nonce_bytes[IAP_AUTH_NONCE_SIZE];
-	uint8_t wrong_key[IAP_DEVICE_KEY_SIZE];
-	uint8_t buf[IAP_AUTH_NONCE_SIZE + 64U];
-	uint8_t forged_hmac[IAP_AUTH_HMAC_SIZE];
-	const char *msg = "flash 10 00000000 00";
-	bool accepted;
+	const char *msg = GOLDEN_AUTH_MSG;
 
-	test_hal_reset();
-	test_hal_set_uid(0xAAAAAAAAU, 0xBBBBBBBBU, 0xCCCCCCCCU); /* the real device */
-	test_hal_set_tick(10U);
-	iap_auth_issue_challenge(nonce_hex);
-	hex_decode(nonce_hex, nonce_bytes, sizeof(nonce_bytes));
-
-	test_hal_set_uid(0x11111111U, 0x22222222U, 0x33333333U); /* a different device */
-	iap_keyderive_get_device_key(wrong_key);
-	test_hal_set_uid(0xAAAAAAAAU, 0xBBBBBBBBU, 0xCCCCCCCCU); /* restore for verify_and_consume */
-
-	memcpy(buf, nonce_bytes, sizeof(nonce_bytes));
-	memcpy(buf + sizeof(nonce_bytes), msg, strlen(msg));
-	hmac_sha256(wrong_key, sizeof(wrong_key), buf, (uint32_t)(sizeof(nonce_bytes) + strlen(msg)), forged_hmac);
-
-	accepted = iap_auth_verify_and_consume((const uint8_t *)msg, (uint32_t)strlen(msg), forged_hmac);
-	CHECK(!accepted, "an HMAC signed with a different device's key is rejected");
+	arrange_golden_board();
+	CHECK(!iap_auth_verify_and_consume((const uint8_t *)msg, (uint32_t)strlen(msg),
+			as_cert(golden_cert_delegated), golden_auth_sig_leaf),
+			"an answer arriving before any challenge was issued is rejected");
 }
 
 int main(void)
 {
 	test_crypto_selftest();
-	test_key_derivation_determinism_and_uniqueness();
 	test_machine_id_hex_format();
-	test_golden_cross_language_vector();
+	test_cert_layout();
+	test_cert_verify();
+	test_cert_tamper();
+	test_cert_verify_image();
+	test_root_change_invalidates();
+	test_challenge_response();
+	test_uncertified_signer_rejected();
 	test_nonce_expiry();
-	test_wrong_device_key_rejected();
+	test_no_pending_nonce();
 
 	printf("\n%s (%d failure(s))\n", g_failures == 0 ? "ALL PASS" : "FAILED", g_failures);
 	return g_failures == 0 ? 0 : 1;

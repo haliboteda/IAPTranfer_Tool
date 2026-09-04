@@ -14,6 +14,8 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+
+	"IAPTool/iapcert"
 )
 
 // Raw r||s signature length for P-256, as stored by the bootloader and fed
@@ -56,34 +58,7 @@ func defaultKeyLocation() string {
 // the SEC1 "EC PRIVATE KEY" form written by `openssl ecparam -genkey` and the
 // PKCS#8 "PRIVATE KEY" form.
 func loadSigningKey(path string) (*ecdsa.PrivateKey, error) {
-	data, err := os.ReadFile(path)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read signing key %s: %w", path, err)
-	}
-
-	block, _ := pem.Decode(data)
-	if block == nil {
-		return nil, fmt.Errorf("signing key %s is not PEM-encoded", path)
-	}
-
-	key, sec1Err := x509.ParseECPrivateKey(block.Bytes)
-	if sec1Err != nil {
-		parsed, pkcs8Err := x509.ParsePKCS8PrivateKey(block.Bytes)
-		if pkcs8Err != nil {
-			return nil, fmt.Errorf("failed to parse EC private key %s: %w", path, sec1Err)
-		}
-		ecKey, ok := parsed.(*ecdsa.PrivateKey)
-		if !ok {
-			return nil, fmt.Errorf("signing key %s is not an ECDSA key", path)
-		}
-		key = ecKey
-	}
-
-	if key.Curve != elliptic.P256() {
-		return nil, fmt.Errorf("signing key %s uses curve %s, the bootloader requires P-256",
-			path, key.Curve.Params().Name)
-	}
-	return key, nil
+	return iapcert.LoadKey(path)
 }
 
 // signImage returns SHA-256(image) and the raw 64-byte r||s signature over
@@ -202,10 +177,7 @@ func generateSigningKey(name string) error {
 // rawPublicKey returns the uncompressed point as X||Y, the form the
 // bootloader stores in fw_public_key[64].
 func rawPublicKey(pub *ecdsa.PublicKey) []byte {
-	raw := make([]byte, sigLen)
-	pub.X.FillBytes(raw[:sigLen/2])
-	pub.Y.FillBytes(raw[sigLen/2:])
-	return raw
+	return iapcert.RawPublicKey(pub)
 }
 
 // publicKeyHex is rawPublicKey hex-encoded, directly comparable with what

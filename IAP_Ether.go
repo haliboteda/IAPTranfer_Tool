@@ -48,24 +48,29 @@ func RunEtherUpgrade(filePath, ip string) {
 	targetUID := board.UID
 	logf("[PATH] target device UID=%s cached for this upgrade", targetUID)
 
-	deviceKey, err := deriveDeviceKeyFromUIDHex(targetUID)
-	if err != nil {
-		logf(true, "Cannot derive device key: %v", err)
+	// Session auth is certificate-based now: signing a fresh nonce (both for
+	// "flash" and for "openplc_server_reboot") needs a live private key, not
+	// just a pre-made image .sig.
+	keyPath := findSigningKey()
+	if keyPath == "" {
+		logf(true, "No signing key found at %s.\n"+
+			"  Session authentication needs the private key itself (to sign the challenge) --\n"+
+			"  a sibling .sig file is not enough for this step.", defaultKeyLocation())
 		return
 	}
 
 	switch strings.ToUpper(board.Role) {
 	case "BOOTLD-INVALID":
 		logf("[PATH] %s is bootloader with NO valid signed app installed (previous update failed, was rejected, or flash was tampered with) -> proceeding to flash a new image", ip)
-		RunEther_TCP(filePath, ip, deviceKey)
+		RunEther_TCP(filePath, ip, keyPath)
 
 	case "BOOTLD":
 		logf("[PATH] %s is bootloader -> tcp transfer", ip)
-		RunEther_TCP(filePath, ip, deviceKey)
+		RunEther_TCP(filePath, ip, keyPath)
 
 	case "CUSAPP":
 		logf("[PATH] %s is app -> reboot to bootloader", ip)
-		if err := authenticatedUDPReboot(ip, deviceKey); err != nil {
+		if err := authenticatedUDPReboot(ip, keyPath); err != nil {
 			logf(err, "Failed to send authenticated reboot command to %s", ip)
 		}
 
@@ -79,7 +84,7 @@ func RunEtherUpgrade(filePath, ip string) {
 			return
 		}
 		logf("[PATH] bootloader found at %s (uid=%s) -> tcp transfer", bootBoard.IP, bootBoard.UID)
-		RunEther_TCP(filePath, bootBoard.IP, deviceKey)
+		RunEther_TCP(filePath, bootBoard.IP, keyPath)
 
 	default:
 		logf(true, "Unexpected role %q from %s, exiting.", board.Role, ip)
@@ -290,20 +295,29 @@ func sendUDPWithResponseOnPort(serverAddr, port, msg string, timeout time.Durati
 }
 
 // authenticatedUDPReboot performs the challenge-response handshake before
-// sending CM_Reboot: request a nonce, prove possession of iapAuthKey by
-// HMAC-signing the exact reboot command, then send the authenticated form.
-// An unauthenticated "openplc_server_reboot" (no hmac) is now ignored by
-// the device.
-func authenticatedUDPReboot(ip string, deviceKey []byte) error {
+// sending CM_Reboot: request a nonce, issue a certificate for keyPath's key
+// (self-signed -- see issueLeafCert), sign the exact reboot command with that
+// same key, then send cert+signature. An unauthenticated
+// "openplc_server_reboot" is ignored by the device.
+func authenticatedUDPReboot(ip string, keyPath string) error {
+	leafKey, err := loadSigningKey(keyPath)
+	if err != nil {
+		return fmt.Errorf("cannot use signing key %s: %w", keyPath, err)
+	}
+	certHex, err := issueLeafCert(keyPath, "")
+	if err != nil {
+		return fmt.Errorf("cannot issue a certificate for %s: %w", keyPath, err)
+	}
+
 	nonceResp, _, err := sendUDPWithResponseOnPort(ip, getPort(), CM_RebootChallenge, Timeout)
 	if err != nil {
 		return fmt.Errorf("reboot challenge request failed: %w", err)
 	}
-	hmacHex, err := computeAuthHMAC(deviceKey, string(nonceResp), CM_Reboot)
+	noncesigHex, err := computeNonceSig(leafKey, string(nonceResp), CM_Reboot)
 	if err != nil {
 		return err
 	}
-	return sendUDPNoResponseOnPort(ip, getPort(), fmt.Sprintf("%s %s", CM_Reboot, hmacHex))
+	return sendUDPNoResponseOnPort(ip, getPort(), fmt.Sprintf("%s %s %s", CM_Reboot, certHex, noncesigHex))
 }
 
 // Send UDP message without waiting for a response.
@@ -366,7 +380,7 @@ func getDirectedBroadcastAddrs() ([]string, error) {
 }
 
 // TCP
-func RunEther_TCP(filePath, serverIP string, deviceKey []byte) {
+func RunEther_TCP(filePath, serverIP string, keyPath string) {
 	auth, err := resolveImageAuth(filePath)
 	logf(err, "Failed to prepare signature for %s", filePath)
 
@@ -384,7 +398,7 @@ func RunEther_TCP(filePath, serverIP string, deviceKey []byte) {
 		logf(true, "Ping failed: %v", err)
 	}
 
-	if err := sendFile(conn, filePath, deviceKey, auth); err != nil {
+	if err := sendFile(conn, filePath, keyPath, auth); err != nil {
 		logf(err, "File send failed")
 	}
 }
@@ -449,7 +463,16 @@ func ping(conn net.Conn) error {
 // 文件发送函数（按 buffer 分块发送，每块等 ok）
 // sendFile carries no interactive step: everything that could wait on an
 // operator already happened in etherPreflight, on a connection since closed.
-func sendFile(conn net.Conn, filePath string, deviceKey []byte, auth imageAuth) error {
+func sendFile(conn net.Conn, filePath string, keyPath string, auth imageAuth) error {
+	leafKey, err := loadSigningKey(keyPath)
+	if err != nil {
+		return fmt.Errorf("cannot use signing key %s: %w", keyPath, err)
+	}
+	certHex, err := issueLeafCert(keyPath, "")
+	if err != nil {
+		return fmt.Errorf("cannot issue a certificate for %s: %w", keyPath, err)
+	}
+
 	// Calculate checksum and file size
 	checksum, fileSize, file := CalculateCRC32(filePath)
 	defer file.(io.Closer).Close()
@@ -463,13 +486,13 @@ func sendFile(conn net.Conn, filePath string, deviceKey []byte, auth imageAuth) 
 	if err != nil {
 		return fmt.Errorf("auth challenge failed: %v", err)
 	}
-	hmacHex, err := computeAuthHMAC(deviceKey, nonceResp, authMsg)
+	noncesigHex, err := computeNonceSig(leafKey, nonceResp, authMsg)
 	if err != nil {
 		return err
 	}
 
 	// Send flash command
-	flashCmd := fmt.Sprintf("%s %s", authMsg, hmacHex)
+	flashCmd := fmt.Sprintf("%s %s %s", authMsg, certHex, noncesigHex)
 	if err := sendAndWaitOK(conn, []byte(flashCmd+"\n")); err != nil {
 		return fmt.Errorf("failed to send FLASH: %v", err)
 	}

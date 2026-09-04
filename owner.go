@@ -26,12 +26,18 @@ import (
 )
 
 // Mirrors owner_record_t in open_plc_cube_ide/IAPServer/owner_slot.h. Only
-// the first 76 bytes are signed, so only they are built here.
+// the first 88 bytes (type/slots/format_ver/generation/flags/root_pubkey/uid)
+// are signed, so only they are built here.
+//
+// 2026-09-04: format_ver 1 -> 2, ownerSignedPrefixLen 76 -> 88, for the uid
+// field (see ownerSignedPrefix). No v1 compatibility on the board side, so
+// none is needed here either.
 const (
 	ownerRecordType      = 'O'
 	ownerRecordSlots     = 5
-	ownerRecordFormatVer = 1
-	ownerSignedPrefixLen = 76
+	ownerRecordFormatVer = 2
+	ownerUIDLen          = 12
+	ownerSignedPrefixLen = 88
 )
 
 var pubKeyPattern = regexp.MustCompile(`^[0-9a-fA-F]{128}$`)
@@ -77,11 +83,20 @@ func ownerReadState(ip string) (uint32, string, error) {
 	return uint32(gen), strings.ToLower(key), nil
 }
 
-// ownerSignedPrefix builds the 76 bytes the next owner record is signed over.
-func ownerSignedPrefix(generation uint32, pubKeyHex string) ([]byte, error) {
+// ownerSignedPrefix builds the 88 bytes the next owner record is signed
+// over: type, slots, format_ver, generation, flags, the incoming public key,
+// and (v2) the target board's own uid -- the board fills uid into the record
+// itself from its own hardware UID when it writes it, so the signature has
+// to cover the exact bytes the board will end up with, or verification fails
+// the moment the board recomputes sha256 over its own copy.
+func ownerSignedPrefix(generation uint32, pubKeyHex string, uidHex string) ([]byte, error) {
 	pub, err := hex.DecodeString(pubKeyHex)
 	if err != nil || len(pub) != 64 {
 		return nil, fmt.Errorf("the new key must be 128 hex characters")
+	}
+	uid, err := hex.DecodeString(strings.TrimSpace(uidHex))
+	if err != nil || len(uid) != ownerUIDLen {
+		return nil, fmt.Errorf("the board's uid must be %d hex characters, got %q", ownerUIDLen*2, uidHex)
 	}
 	var b bytes.Buffer
 	b.WriteByte(ownerRecordType)
@@ -90,10 +105,25 @@ func ownerSignedPrefix(generation uint32, pubKeyHex string) ([]byte, error) {
 	binary.Write(&b, binary.LittleEndian, generation)
 	binary.Write(&b, binary.LittleEndian, uint32(0)) // flags
 	b.Write(pub)
+	b.Write(uid)
 	if b.Len() != ownerSignedPrefixLen {
 		return nil, fmt.Errorf("built a %d byte prefix, expected %d", b.Len(), ownerSignedPrefixLen)
 	}
 	return b.Bytes(), nil
+}
+
+// ownerGetUID asks the board for its own hardware UID ("getuid"), the same
+// value it will fill into a new owner record's uid field itself.
+func ownerGetUID(ip string) (string, error) {
+	reply, err := ownerCommand(ip, "getuid")
+	if err != nil {
+		return "", err
+	}
+	uidHex := strings.ToLower(strings.TrimSpace(reply))
+	if _, err := hex.DecodeString(uidHex); err != nil || len(uidHex) != ownerUIDLen*2 {
+		return "", fmt.Errorf("the board answered getuid with %q, expected %d hex characters", reply, ownerUIDLen*2)
+	}
+	return uidHex, nil
 }
 
 // RunGetOwner prints which key the board trusts and how it got there.
@@ -178,8 +208,11 @@ func RunSetOwner(ip, currentKeyPath, newKeyPath string) {
 			"Only the current owner can hand the board over.", currentKeyPath, trusted, currentPub)
 	}
 
+	uidHex, err := ownerGetUID(ip)
+	logf(err, "cannot read this board's UID")
+
 	next := gen + 1
-	prefix, err := ownerSignedPrefix(next, newPub)
+	prefix, err := ownerSignedPrefix(next, newPub, uidHex)
 	logf(err, "cannot build the owner record")
 
 	sig, err := signRawHex(hex.EncodeToString(prefix), currentKeyPath)

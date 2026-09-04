@@ -229,7 +229,6 @@ func LoadConfig() {
 		ServerPort:        defaultServerPort,
 		RebootWaitSeconds: defaultRebootWaitSeconds,
 		SigningKey:        "",
-		PasswordFile:      "",
 	}
 
 	jsonFile, err := os.ReadFile(GetLocalConfigPath())

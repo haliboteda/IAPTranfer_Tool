@@ -20,18 +20,16 @@ type LocalConfig struct {
 	ServerPort        string `json:"server_port"`
 	RebootWaitSeconds int    `json:"reboot_wait_seconds"`
 	SigningKey        string `json:"signing_key"`
-	PasswordFile      string `json:"password_file"`
 }
 
 var l_config LocalConfig
 
 // signingOptions holds the command-line signing overrides for this run.
 type signingOptions struct {
-	keyPath      string
-	passwordPath string
-	outPrefix    string
-	currentKey   string
-	newKey       string
+	keyPath    string
+	outPrefix  string
+	currentKey string
+	newKey     string
 	// keyExplicit says --key was actually typed. takeown must not fall back to
 	// the firmware signing key from local_config.json: claiming a customer's
 	// board with the project's own key is not recoverable without an ST-Link.
@@ -45,6 +43,11 @@ const usageText = `Usage:
   IAPTool ether  <file.bin> <ip>         [--key=<key.pem>]
   IAPTool sign   <file.bin> [<key.pem>]  [--key=<key.pem>] [--out=<prefix>]
   IAPTool genkey [<name>]    writes <name>.pem, prints keys/fw_pubkey.inc on stdout
+  IAPTool cert   [<leafPubHex>]
+                   issues a 132-byte leaf certificate signed by the signing key,
+                   hex on stdout. No argument = self-signed (simple mode: the key
+                   authorises itself); a 128-hex-char public key = delegated leaf.
+                   The serial comes from a counter file kept next to the key.
   IAPTool signraw <hex> [<key.pem>]  raw r||s signature over SHA-256 of those
                    bytes, hex on stdout. For the bootloader's owner-record
                    chain (setowner), not for firmware images.
@@ -56,20 +59,15 @@ const usageText = `Usage:
   IAPTool setowner <ip> --current-key=<owner.pem> --new-key=<next.pem>
                    hands a claimed board over to another key. The handover is
                    signed by the current owner, so no button is needed.
-  IAPTool genpw              prints a fresh keys/iap_fixed_password.txt on stdout
 
   --key            ECDSA P-256 private key (PEM). When omitted, falls back to
                    "signing_key" in local_config.json, then to keys/fw_signing_key.pem
                    next to this executable. The image is then signed in memory, so no
                    .sig file is needed. With no key anywhere, cdc/ether use the sibling
                    <file>.sig written by an earlier "sign" run.
-  --password-file  Shared IAP password file. When omitted, falls back to
-                   "password_file" in local_config.json, then to
-                   keys/iap_fixed_password.txt next to this executable. It must hold
-                   the same password compiled into the board's firmware.
   --out            Output prefix for "sign". Defaults to the .bin path without its extension.
 
-To rotate both secrets at once, run IAPServer/keys/rotate_keys.sh.`
+To rotate the signing key, run IAPServer/keys/rotate_keys.sh.`
 
 func main() {
 	// Load config from JSON file
@@ -114,6 +112,25 @@ func main() {
 		err := generateSigningKey(name)
 		logf(err, "Failed to generate signing key")
 
+	case "cert":
+		// cert [<leafPubHex>] -- issue a certificate with the signing key as
+		// root. With no argument it self-signs (simple mode: the root
+		// authorises its own key); with one it delegates to that leaf public
+		// key. Prints the 264-hex-char certificate on stdout, which is
+		// exactly what cdc/ether put on the wire.
+		keyPath := findSigningKey()
+		if keyPath == "" {
+			logf(true, "No signing key found. Pass --key=<key.pem>, put one at %s, "+
+				"or set \"signing_key\" in local_config.json", defaultKeyLocation())
+		}
+		leafPubHex := ""
+		if len(args) >= 2 {
+			leafPubHex = args[1]
+		}
+		certHex, err := issueLeafCert(keyPath, leafPubHex)
+		logf(err, "Failed to issue certificate")
+		fmt.Println(certHex)
+
 	case "signraw":
 		// signraw <hex> [<key.pem>] -- raw r||s signature over SHA-256(hex).
 		// For the bootloader's owner-record chain, where the thing being
@@ -154,16 +171,10 @@ func main() {
 		}
 		RunSetOwner(args[1], g_signing.currentKey, g_signing.newKey)
 
-	case "genpw":
-		content, err := generatePasswordFile()
-		logf(err, "Failed to generate password")
-		fmt.Print(content)
-
 	case ModeCDC:
 		if len(args) < 3 {
 			logf(true, usageText)
 		}
-		loadFixedPassword()
 		defer AcquireUploadLock()()
 		RunCDC(args[2], args[1])
 
@@ -171,12 +182,11 @@ func main() {
 		if len(args) < 3 {
 			logf(true, usageText)
 		}
-		loadFixedPassword()
 		defer AcquireUploadLock()()
 		RunEtherUpgrade(args[1], args[2])
 
 	default:
-		logf(true, "Invalid mode: %s. Use 'cdc', 'ether', 'sign', 'genkey' or 'genpw'", mode)
+		logf(true, "Invalid mode: %s. Use 'cdc', 'ether', 'sign' or 'genkey'", mode)
 	}
 }
 
@@ -206,8 +216,6 @@ func parseSigningFlags(args []string) ([]string, error) {
 		case "key":
 			g_signing.keyPath = value
 			g_signing.keyExplicit = true
-		case "password-file":
-			g_signing.passwordPath = value
 		case "out":
 			g_signing.outPrefix = value
 		case "current-key":

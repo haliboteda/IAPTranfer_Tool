@@ -18,7 +18,7 @@ TestCase/
 │   ├── common.py         ← ★ 共用件：读 config、找工具链、开串口、跑子进程时排空串口、动手提示。`--probe` = ENV
 │   ├── selfcheck.py      ← ★ 所有不需要板子的检查，一条命令
 │   ├── check_version_sync.py  ← P1  版本号三处一致
-│   ├── check_mirror_sync.py   ← P2  跨仓镜像 9 锚点 + 备份寄存器占用
+│   ├── check_mirror_sync.py   ← P2  跨仓镜像 12 锚点 + 备份寄存器占用
 │   ├── check_core_sync.py     ← P3  core live vs git 仓库
 │   ├── check_public_root.py   ← P6  公开根指纹没漂移
 │   ├── check_status_sync.py    ← P7  总表和用例名单不得漂
@@ -36,7 +36,7 @@ TestCase/
 │   ├── upload_and_watch.py     ← 走真实 IAPTool 上传并判 SDRAM 暂存行为
 │   └── can_send.py  can_watch.py  rs485_echo.py  ← 板级端口
 ├── host/                 ← 不需要板子，纯主机跑
-│   ├── iapcrypto/        ← H1  密钥派生与挑战应答的 Go 单元测试
+│   ├── iapcert/          ← H1  证书签发、serial 计数器、挑战签名的 Go 单元测试
 │   ├── bootloader_unit/  ← H2  用 stub 编译真实 bootloader 源码的 C 单元测试
 │   ├── fakeboard/        ← K1–K6  IAPTool 传输前的密钥匹配决策，六种情况
 │   └── crypto_ref/       ← X1/X2  SHA-256 与 ECDSA 的独立实现交叉验证
@@ -66,7 +66,7 @@ TestCase/
 
 ## 快速开始
 
-```powershell
+```
 # 手工的话：
 
 # 一次性：探测本机路径，生成 config/machine.py
@@ -85,7 +85,7 @@ python tools/flash_bootloader.py
 python tools/serial_watch.py
 ```
 
-⚠️ **测试脚本一律用 Python**（2026-09-01 定）。PowerShell 版已整体归档到 `archive/ps1/`，**不再运行也不再维护** —— 见那里的 `README.md` 和两份迁移基线。
+⚠️ **测试脚本一律用 Python**（2026-09-01 定）。
 
 缺什么会报 `SKIP` 并说清缺什么，**不会静默跳过** —— 一个被悄悄跳过的检查会被读成通过，那比没有这个检查更糟。
 
@@ -102,10 +102,11 @@ go build -o Output/windows/TestCase.exe ./TestCase
 
 ```sh
 TestCase <case-id|all> --ip=<addr> [--port=56865] [--bin=<file.bin>] [--iaptool=<path>]
+         [--key=<owner.pem>]
 ```
 
 - `--ip` 必填。设备 IP 从串口日志的 `[NET]` 行读，或用 `IAPTool ether` 的广播发现看。
-- `--bin` 只有 T3 需要。
+- `--bin` T3 / S1 / S2 需要；`--key` S1 / S2 需要，是板子当前信任的那把私钥。
 - `--iaptool` 默认找 `Output/windows/IAPTool.exe`。
 - 退出码：全过 0，有失败 1，参数错 2。
 
@@ -139,12 +140,12 @@ TestCase <case-id|all> --ip=<addr> [--port=56865] [--bin=<file.bin>] [--iaptool=
 
 | ID | 验证什么 | 前置条件 | 判据 |
 |---|---|---|---|
-| **S1** | 签名无效的镜像被拒绝 | 设备停在 bootloader，需 `--bin` 和 `--password-file` | 传完后设备回 `Signature Failed`（或 `No Signature`） |
+| **S1** | 签名无效的镜像被拒绝 | 设备停在 bootloader，需 `--bin` 和 `--key`（板子信任的那把，用来签挑战） | 传完后设备回 `Signature Failed`（或 `No Signature`） |
 | **S2** | 被**别的密钥**签过的镜像被拒绝 | 同 S1，另需 `--iaptool`（用它生成临时密钥并签名） | 同上。**外加**上传前 `getpubkey` 必须和临时密钥不同 |
 | **S3** | **已装好的** app 被改坏 → 启动期拒绝 | 板上有能启动的 app、ST-Link、**一个已签名的恢复镜像** | `metadata present` + `App signature invalid or absent`，且**没有** `** APP Mod` |
 | **G1** | 被拒绝的上传**不破坏已装好的 app** | 紧接 S1 之后复位 | 下次启动出现 `** APP Mod ...`，**不是** `no valid application`。用 `python tools/run_case.py --case S1 --then-reset` 跑 |
 
-```powershell
+```
 python tools/run_s3.py --bin <app.bin>       # 破坏 + 判定 + 自动恢复
 ```
 
@@ -161,7 +162,7 @@ OW1 / OW2 的动作走出货工具（`IAPTool takeown` / `setowner`），判据�
 | **OW2-attack** | 无签名的高 generation 记录**夺不走**板子 | 同上 | 扫描器看得见那条记录，但 `getpubkey` 仍返回原主人 |
 | **OW3** | 恢复出厂，然后能重新认领 | 板子已被认领，**有人在板子旁** | 按住 BOOT0 十秒 → `FACTORY RESET DONE` → 回落内置根、公开根告警回来 → 再 `takeown` 能成功 |
 
-```powershell
+```
 python tools/run_takeown.py --expect-refused          # 认领负向，不需要人
 python tools/run_takeown.py                         # 认领正向，需要有人按住 BOOT0
 python tools/run_setowner.py --current-key a.pem      # 换 owner，不需要人
@@ -175,7 +176,7 @@ python tools/inject_owner_record.py --key <hex> --also-unsigned 9   # 夺取攻�
 |---|---|---|---|
 | **AU1** | nonce 不重复，且**掉电后不从头开始** | 设备停在 bootloader；**要人工断电一次**；VBAT 电池在位 | 两阶段所有 nonce 互不相同；阶段内计数器恰好 +1；断电后的第一个计数器**严格大于**断电前最后一个 |
 
-```powershell
+```
 python tools/run_au1.py                 # 编排两个阶段，中间提示你拔电
 python tools/run_au1.py --resume         # 阶段 1 已经跑过了，直接等断电
 ```
@@ -194,8 +195,8 @@ T1–T4 和 S1 都要求设备处于 bootloader 且以太网已起。三种办�
 
 | 目录 | 怎么跑 | 覆盖什么 |
 |---|---|---|
-| `host/iapcrypto/` | 在 `IAPTranfer_Tool/` 下 `go test ./TestCase/...` | HMAC 原语对 RFC 4231 向量；派生公式 `HMAC-SHA256(password, machineID)`；同 UID 稳定、异 UID 必不同；一次完整挑战应答双方独立算出同一个 HMAC |
-| `host/bootloader_unit/` | `python build.py`（或 `./build.sh`），需要 gcc/clang | 用 stub 在主机上编译**真实的** `sha256.c` / `iap_keyderive.c` / `iap_auth.c` 并跑断言 |
+| `host/iapcert/` | 在 `IAPTranfer_Tool/` 下 `go test ./TestCase/...` | 证书布局与根签名覆盖的字节范围（换个范围就验错东西）；serial 计数器从 1 开始、递增、落文件；serial 小端落在偏移 64；挑战签名覆盖 `sha256(nonce\|\|msg)` 且顺序不可换 |
+| `host/bootloader_unit/` | `python build.py`，需要 gcc/clang | 用 stub 在主机上编译**真实的** `sha256.c` / `iap_cert.c` / `fw_verify.c` / `iap_auth.c` 并跑断言。金标证书由出货工具生成，所以过了就等于 C 和 Go 对同一套线格式达成一致 |
 | `host/fakeboard/` | `python run_cases.py` | **K1–K6** IAPTool 在传输开始前的密钥匹配决策，六种情况。**每种在真板子上都要换一把 bootloader 密钥才能构造** |
 | `host/crypto_ref/` | `python run_checks.py [--rounds N]` | SHA-256 构造对 hashlib（309 向量）；IAPTool 真实签名交给一份独立的纯算术 P-256 验证器 |
 | `host/variant_check/` | `python build.py`，需要 arduino-cli | **P4** Arduino 变体头的编译期断言。目前一个：FMC 保留脚表（39 个）自洽。**编不过就是变体头坏了，不是 sketch 坏了** |
@@ -285,17 +286,6 @@ python tools/check_allow_hygiene.py --fail-over 400   # 超过这个数才算失
 `.claude/settings.local.json` 每次人批准一条"以后别再问"，就原样追加一行——没有任何东西会删。攒到某个点，`allow` 数组里全是再也不会命中第二次的一次性记录，而真正该有通用模式的仓库反而一条没有，每条命令都弹窗。
 
 **这条不是发版门禁**——`settings.local.json` 本机专属、不进 git，不同机器天然不同，没法当"必须全绿"的检查。默认只打印、退出码 0；只有 `--fail-over` 指定阈值且真的超了才返回 1。**判据只看"像不像一次性"**（是否带绝对路径、是否带 `-First N` 这种烤进去的输出切片），会把一些合理的本机安装路径也点出来。
-
-### M7 · PowerShell → Python 迁移（已完成，2026-09-01）
-
-**测试脚本一律用 Python。** 27 个 `.ps1` 已全部归档到 `archive/ps1/`，保留原目录结构，**不再运行也不再维护** —— 对照表和取用说明在 `archive/ps1/README.md`。
-
-归档前跑了两份基线，存在同一个目录下：
-
-| 基线 | 结果 |
-|---|---|
-| `archive/ps1/M7-BASELINE-compare.txt` | **11 对全部逐字节相同**：version / mirror / core / public-root / hostunit / variant / cryptoref / fakeboard / examples / selfcheck |
-| `archive/ps1/M7-BASELINE-faults.txt` | **7 个注入故障，两版走同一条路径**；跑完 `$BOOT_REPO` 的 `git status` 与跑之前逐字节一致，故障全部还原 |
 
 ## 板上测试（`onboard/`）
 
