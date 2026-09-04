@@ -8,6 +8,8 @@ import (
 	"time"
 
 	"go.bug.st/serial"
+
+	"IAPTool/iapcert"
 )
 
 // Helper function to open a serial port with specified baud rate
@@ -125,39 +127,29 @@ func runCDCAttempt(portName, filePath, uidHex string) {
 	}
 	defer port.Close()
 
-	// Session auth is certificate-based now: signing a fresh nonce needs a
-	// live private key, not just a pre-made .sig -- so, unlike image signing,
-	// there is no sibling-.sig fallback for this part.
-	keyPath := findSigningKey()
-	if keyPath == "" {
-		logf(true, "No signing key found at %s.\n"+
-			"  Session authentication needs the private key itself (to sign the challenge) --\n"+
-			"  a sibling .sig file is not enough for this step.", defaultKeyLocation())
+	id, err := resolveUploadIdentity()
+	if err != nil {
+		logf(err, "Cannot authenticate to this board")
+		return
 	}
-	leafKey, err := loadSigningKey(keyPath)
-	logf(err, "cannot use signing key %s", keyPath)
-	certHex, err := issueLeafCert(keyPath, "") // self-signed: leaf == root
-	logf(err, "cannot issue a certificate for %s", keyPath)
 
 	logf("Proceeding with file transfer.")
 	checksum, fileSize, file := CalculateCRC32(filePath)
 	defer file.(io.Closer).Close()
 	logf("CRC Checksum: %x", checksum)
 
-	auth, err := resolveImageAuth(filePath)
+	sigHex, err := signImageInMemory(filePath, id.key)
 	if err != nil {
 		logf(err, "Failed to prepare signature for %s", filePath)
 		return
 	}
 
-	if err := verifyKeyMatchesDevice(auth, func() (string, error) {
+	if err := verifyIdentityMatchesDevice(id, func() (string, error) {
 		return SendCommandReadResponse(port, CM_GetPubKey, CommandTimeout)
 	}); err != nil {
 		logf(err, "Signing key check failed")
 		return
 	}
-
-	sigHex := auth.sigHex
 
 	authMsg := fmt.Sprintf("%s %d %x %s", CM_Flash, fileSize, checksum, sigHex)
 
@@ -166,13 +158,13 @@ func runCDCAttempt(portName, filePath, uidHex string) {
 		logf(err, "Auth challenge failed")
 		return
 	}
-	noncesigHex, err := computeNonceSig(leafKey, nonceResp, authMsg)
+	noncesigHex, err := iapcert.NonceSig(id.key, nonceResp, authMsg)
 	if err != nil {
 		logf(err, "Failed to sign auth challenge")
 		return
 	}
 
-	flashCmd := fmt.Sprintf("%s %s %s", authMsg, certHex, noncesigHex)
+	flashCmd := fmt.Sprintf("%s %s %s", authMsg, id.certHex, noncesigHex)
 	if !SendCommandWaitForResponse(port, flashCmd, Rsp_OK, FlashAckTimeout) {
 		return
 	}

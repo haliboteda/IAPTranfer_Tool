@@ -4,10 +4,12 @@ For OpenPLC transfer bin file
 ## Usage
 
 ```
-IAPTool cdc    <file.bin> <port>       [--key=<key.pem>]
-IAPTool ether  <file.bin> <ip>         [--key=<key.pem>]
+IAPTool cdc    <file.bin> <port>       [--key=<key.pem>] [--cert=<cert.txt>]
+IAPTool ether  <file.bin> <ip>         [--key=<key.pem>] [--cert=<cert.txt>]
 IAPTool sign   <file.bin> [<key.pem>]  [--key=<key.pem>] [--out=<prefix>]
 IAPTool genkey [<name>]
+IAPTool pubkey [<key.pem>]
+IAPTool cert   [<leafPubHex>]          [--key=<root.pem>]
 
 IAPTool getowner <ip>
 IAPTool takeown  <ip> --key=<owner.pem>
@@ -21,22 +23,16 @@ against the `fw_public_key[64]` baked into it (`IAPServer/fw_pubkey.c`), so
 every image has to be signed before it can be flashed. Signing is built in
 here -- no `openssl`, no shell scripts, nothing to `chmod +x`.
 
-Two ways to do it:
-
 ```sh
-# Sign at flash time. Nothing is written to disk; the image is signed in
-# memory and sent straight to the device.
+# Nothing is written to disk; the image is signed in memory and sent straight
+# to the device.
 IAPTool cdc app.bin COM5 --key=fw_signing_key.pem
-
-# Or sign separately, e.g. on an offline release machine, then hand the
-# .bin + .sig to whoever flashes it.
-IAPTool sign app.bin fw_signing_key.pem
-IAPTool cdc app.bin COM5
 ```
 
 `sign` writes `<name>.sha256`, `<name>.size` and `<name>.sig` (raw 64-byte
-r||s). Without `--key`, the `cdc`/`ether` modes read those sibling files, so
-an image signed earlier or on another machine still works unchanged.
+r||s) for anyone who needs the signature as a file, but uploading does not use
+them: the upload also has to sign a fresh challenge from the board, which needs
+the private key itself.
 
 The tool does not track firmware versions and does not compare them. An image
 that verifies against the key the board trusts is flashed, whatever it
@@ -49,22 +45,50 @@ Resolution order:
 1. `--key=<path>` on the command line
 2. `"signing_key"` in `local_config.json`
 3. `keys/fw_signing_key.pem` next to the executable
-4. nothing - then a sibling `<file>.sig` is required, and if that is missing
-   too the tool stops and says so
 
 Step 3 is what makes the Arduino IDE work with no configuration: the key
 travels in the tool's own directory, so `platform.txt` needs no path passed
 in and no per-machine setup. Both `local_config.json` and `keys/` are looked
 up relative to the **executable**, not the current directory.
 
-### Key mismatch is caught before the transfer
+## Uploading without the root key
 
-Before sending anything, the tool asks the bootloader (`getpubkey`) which
-public key it verifies against, and compares:
+One person with one key needs nothing below: their key is the root, it
+certifies itself, and everything already works.
 
-- signing locally → the local key's public half must equal the board's
-- using a `.sig` → the signature must verify against the board's public key,
-  which also proves the image has not changed since it was signed
+A team where one administrator holds the root does need it. Each colleague
+keeps their own key; the administrator issues a certificate saying that key is
+authorised, and the root private key never leaves the administrator's machine.
+
+```sh
+# On the colleague's machine
+IAPTool genkey keys/fw_signing_key          # their own key, stays with them
+IAPTool pubkey keys/fw_signing_key.pem      # 128 hex characters -- send these
+
+# On the administrator's machine
+IAPTool cert <those 128 hex characters> --key=root.pem > colleague.cert
+
+# Back on the colleague's machine: save it beside the key it covers
+#   keys/fw_signing_key.pem.cert
+IAPTool ether app.bin 192.168.1.50           # nothing else changes
+```
+
+A certificate lives at `<the key it covers>.cert`, so a key and its
+certificate cannot be paired up wrongly, and the Arduino IDE finds it with no
+configuration for the same reason it finds the key. `--cert=<file>` overrides.
+
+Revoking a colleague means handing the board to a new root
+(`IAPTool setowner`) and issuing fresh certificates to everyone still there:
+certificates from the old root stop verifying the moment the board's root
+changes, including on firmware already installed. See
+`open_plc_cube_ide/docs/design/OWNERSHIP.md`.
+
+### Mismatch is caught before the transfer
+
+Before sending anything, the tool asks the bootloader (`getpubkey`) which root
+it verifies against, and checks that the certificate it is about to present was
+issued by that root. For a self-signed certificate this is the same question as
+"is my key the board's key", so there is one check rather than two paths.
 
 A mismatch stops the upload immediately with both fingerprints printed,
 instead of transferring the whole image and having the board reject it at the

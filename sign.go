@@ -9,7 +9,6 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
-	"math/big"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -28,6 +27,18 @@ const sigLen = 64
 // next to the binary means the Arduino IDE needs no path passed in.
 const keysDirName = "keys"
 const defaultKeyName = "fw_signing_key.pem"
+
+// A certificate lives at "<the key it covers>.cert" -- the same rule
+// iapcert.CounterPath uses for the serial counter, and for the same reason:
+// state derived from a key belongs beside that key, where it cannot be paired
+// with the wrong one. A fixed path like keys/fw_cert.txt would attach itself
+// to whichever key happened to be selected, including one --key pointed
+// somewhere else entirely.
+//
+// The Arduino IDE passes no options at all (see platform.txt), so this has to
+// be findable by convention: it resolves the key to <exe dir>/keys/
+// fw_signing_key.pem, and the certificate is that path plus ".cert".
+const certSuffix = ".cert"
 
 // findSigningKey returns the signing key to use: an explicit --key or
 // local_config.json "signing_key" wins, otherwise the default file under
@@ -52,6 +63,26 @@ func findSigningKey() string {
 // messages so the operator knows where to put a key.
 func defaultKeyLocation() string {
 	return filepath.Join(GetCurDir(), keysDirName, defaultKeyName)
+}
+
+// findCert returns the certificate to present alongside keyPath, or "" when
+// there is none and the key should certify itself. An explicit --cert wins,
+// otherwise "<keyPath>.cert" if it exists.
+//
+// Absence is the normal case, not an error: one person with one key needs no
+// certificate from anybody.
+func findCert(keyPath string) string {
+	if g_signing.certPath != "" {
+		return g_signing.certPath
+	}
+	if keyPath == "" {
+		return ""
+	}
+	candidate := keyPath + certSuffix
+	if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
+		return candidate
+	}
+	return ""
 }
 
 // loadSigningKey reads a PEM-encoded ECDSA P-256 private key, accepting both
@@ -184,23 +215,6 @@ func rawPublicKey(pub *ecdsa.PublicKey) []byte {
 // the device answers to "getpubkey".
 func publicKeyHex(pub *ecdsa.PublicKey) string {
 	return hex.EncodeToString(rawPublicKey(pub))
-}
-
-// verifySignatureWithPubKey checks a raw r||s signature against a raw
-// 64-byte X||Y public key -- the same pair the bootloader hands to
-// uECC_verify, so a pass here means the device will accept the image.
-func verifySignatureWithPubKey(hash [32]byte, sig []byte, pubRaw []byte) bool {
-	if len(sig) != sigLen || len(pubRaw) != sigLen {
-		return false
-	}
-	pub := &ecdsa.PublicKey{
-		Curve: elliptic.P256(),
-		X:     new(big.Int).SetBytes(pubRaw[:sigLen/2]),
-		Y:     new(big.Int).SetBytes(pubRaw[sigLen/2:]),
-	}
-	r := new(big.Int).SetBytes(sig[:sigLen/2])
-	s := new(big.Int).SetBytes(sig[sigLen/2:])
-	return ecdsa.Verify(pub, hash[:], r, s)
 }
 
 // formatPubKeyInc renders the uncompressed point (X||Y) as the body of

@@ -6,32 +6,42 @@ firmware moves:
 
 | Suite | Case | Covers | What it checks |
 |---|---|---|---|
-| `run_cases.py` | K1–K6 | C8 | which signing key this board will accept |
+| `run_cases.py` | K1–K7 | C8 | which key and certificate this board will accept |
 
 ---
 
-# K1–K6 · the key-match decision
+# K1–K7 · the key-match decision
 
 ## What this covers
 
 Before IAPTool sends a single byte of firmware it asks the device `getpubkey`
 and decides whether the key it would sign with is one the device will accept.
-That decision has six outcomes. All six are checked here.
+That decision has seven outcomes. All seven are checked here.
 
 | Case | Board answers `getpubkey` | Host has | Expected |
 |---|---|---|---|
-| `key-match` | the key IAPTool signs with | private key | `Signing key matches this board` |
-| `key-mismatch` | a different key | private key | refuses: `verifies against a different signing key` |
-| `old-bootload` | `Unknown command` | private key | proceeds: `skipping key match check` |
-| `sig-match` | the key the `.sig` was made with | only a `.sig` | `Signature verifies against this board` |
-| `sig-mismatch` | a different key | only a `.sig` | refuses: `does not verify against this board` |
-| `nothing` | any | neither | refuses: `no signing key found and no signature` |
+| `key-match` | the key IAPTool signs with | private key, no certificate | `Signing key matches this board` |
+| `key-mismatch` | a different key | private key, no certificate | refuses: `verifies against a different signing key` |
+| `old-bootload` | `Unknown command` | private key, no certificate | proceeds: `skipping key match check` |
+| `cert-match` | the root that issued the certificate | leaf key + its certificate | `Certificate was issued by this board's root` |
+| `cert-wrong-root` | a different key | leaf key + its certificate | refuses: `was not issued by this board's root` |
+| `cert-key-mismatch` | the issuing root | a certificate covering somebody else's key | refuses: `was issued for a different key` |
+| `no-key` | any | neither | refuses: `no signing key found` |
+
+The last four are the delegated-leaf story: an administrator holds the root and
+issues certificates for colleagues' keys, so a colleague can upload without the
+root private key ever being on their machine. The first three are the same
+board seen by whoever holds the root itself, whose certificate is self-signed.
+
+Both go through one check -- does the root this board trusts vouch for this
+certificate -- because for a self-signed certificate that question *is* "is
+this my key". No branch, no second code path.
 
 ## Why it is not a hardware test
 
 Each row differs only in which key the *bootloader was compiled with*. On real
 hardware, moving between rows means rebuilding and reflashing the bootloader
-with a different key — six ST-Link rounds to check one branch of host-side
+with a different key — one ST-Link round per case to check one branch of host-side
 logic. Here it is a command-line argument.
 
 `fake_board.py` verifies nothing at all. It answers protocol commands with fixed
@@ -41,12 +51,12 @@ is case S1, against real hardware.
 ## Running
 
 ```
-python run_cases.py              # all six
+python run_cases.py              # all seven
 python run_cases.py --keep       # keep the scratch directory to inspect logs
 ```
 
 Needs `python` and `go` on PATH. Builds `IAPTool.exe` if it is missing.
-Also run as steps K1-K6 of `tools/selfcheck.py`.
+Also run as steps K1-K7 of `tools/selfcheck.py`.
 
 ## Two things the runner has to do that are not obvious
 

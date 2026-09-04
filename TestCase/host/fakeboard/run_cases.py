@@ -1,17 +1,17 @@
 """Drives the real IAPTool against fake_board.py and checks the decision it
-makes about the firmware signing key -- before any firmware is sent. Cases
-K1-K6 (selfcheck runs them under that id).
+makes about who may talk to this board -- before any firmware is sent. Cases
+K1-K7 (selfcheck runs them under that id).
 
-Why this cannot be done on a real board: the six outcomes below differ only in
-which key the bootloader was compiled with, and in whether a private key or a
-.sig file is present on the host. Reproducing them on hardware means reflashing
-the bootloader with a different key for each case. Here it is a command-line
+Why this cannot be done on a real board: the outcomes below differ only in
+which key the bootloader was compiled with, and in what key and certificate
+are present on the host. Reproducing them on hardware means reflashing the
+bootloader with a different key for each case. Here it is a command-line
 argument.
 
 What is under test is IAPTool, not the device. fake_board.py verifies nothing;
 device-side verification is covered by S1 against real hardware.
 
-    python run_cases.py              run all six
+    python run_cases.py              run all cases
     python run_cases.py --keep       keep the scratch directory for inspection
 
 Two things worth knowing:
@@ -22,7 +22,7 @@ Two things worth knowing:
   * the IAPTool copy keeps the platform's executable suffix rather than
     hardcoding ".exe".
 
-Exit 0 = all six matched, 1 = at least one did not, 2 = prerequisites missing.
+Exit 0 = all matched, 1 = at least one did not, 2 = prerequisites missing.
 """
 
 import argparse
@@ -78,40 +78,64 @@ def main():
     bin_path = scratch / "app.bin"
     bin_path.write_bytes(fixed_bytes(2048, 31, 7))
 
-    # id, board's pubkey, --key to pass (or ""), whether a .sig should exist,
-    # expected line
+    # A root of our own, and a leaf it certifies. Issuing a delegated
+    # certificate advances the counter beside the issuing key, so it is done
+    # with a scratch root rather than the repository's -- a host test must not
+    # write into a checked-out tree.
+    gen_out, _ = run_capture([iap_run, "genkey", "cert_root"], cwd=scratch)
+    root_hex = parse_hex_bytes(gen_out)
+    root_key = scratch / "cert_root.pem"
+    gen_out, _ = run_capture([iap_run, "genkey", "leaf_key"], cwd=scratch)
+    leaf_hex = parse_hex_bytes(gen_out)
+    leaf_key = scratch / "leaf_key.pem"
+    if len(root_hex) != 128 or len(leaf_hex) != 128:
+        Fail("IAPTool genkey output did not parse to a 128-hex-char key")
+        return 2
+
+    # The certificate lives at "<the key it covers>.cert", which is where
+    # IAPTool looks when no --cert is given -- the same path an Arduino install
+    # would use, since the IDE passes no options at all.
+    def issue_cert(leaf_pub_hex, dest):
+        out, rc = run_capture([iap_run, "cert", leaf_pub_hex, "--key=%s" % root_key], cwd=scratch)
+        line = next((ln.strip() for ln in out.splitlines()
+                     if re.fullmatch(r"[0-9a-f]{264}", ln.strip())), None)
+        if line is None:
+            Fail("IAPTool cert produced no certificate (rc=%d):\n%s" % (rc, out))
+            return False
+        Path(dest).write_text(line + "\n", encoding="utf-8")
+        return True
+
+    if not issue_cert(leaf_hex, str(leaf_key) + ".cert"):
+        return 2
+    # Same root, but issued for somebody else's key: the tool must notice
+    # before the board does.
+    wrong_leaf_cert = scratch / "wrong_leaf.pem"
+    if not issue_cert(bad_hex, str(wrong_leaf_cert) + ".cert"):
+        return 2
+    shutil.copy2(str(leaf_key), str(wrong_leaf_cert))
+
+    # id, board's pubkey, --key to pass (or ""), expected line
     cases = [
-        {"id": "key-match",    "pub": good_hex,  "key": good_key, "sig": False,
+        {"id": "key-match", "pub": good_hex, "key": good_key,
          "expect": "Signing key matches this board"},
-        {"id": "key-mismatch", "pub": bad_hex,   "key": good_key, "sig": False,
+        {"id": "key-mismatch", "pub": bad_hex, "key": good_key,
          "expect": "verifies against a different signing key"},
-        {"id": "old-bootload", "pub": "unknown", "key": good_key, "sig": False,
+        {"id": "old-bootload", "pub": "unknown", "key": good_key,
          "expect": "skipping key match check"},
-        {"id": "sig-match",    "pub": good_hex,  "key": "",       "sig": True,
-         "expect": "Signature verifies against this board"},
-        {"id": "sig-mismatch", "pub": bad_hex,   "key": "",       "sig": True,
-         "expect": "does not verify against this board"},
-        {"id": "nothing",      "pub": good_hex,  "key": "",       "sig": False,
-         "expect": "no signing key found and no signature"},
+        {"id": "cert-match", "pub": root_hex, "key": leaf_key,
+         "expect": "Certificate was issued by this board's root"},
+        {"id": "cert-wrong-root", "pub": bad_hex, "key": leaf_key,
+         "expect": "was not issued by this board's root"},
+        {"id": "cert-key-mismatch", "pub": root_hex, "key": wrong_leaf_cert,
+         "expect": "was issued for a different key"},
+        {"id": "no-key", "pub": good_hex, "key": "",
+         "expect": "no signing key found"},
     ]
 
-    sig_path = bin_path.with_suffix(".sig")
     failed = 0
 
     for c in cases:
         Section("%s  -- expecting: %s" % (c["id"], c["expect"]))
-
-        # A .sig produced by the good key: the sig-mismatch case is "the host has
-        # a valid signature, but this board trusts someone else", which is a
-        # different failure from a corrupt signature.
-        if sig_path.exists():
-            sig_path.unlink()
-        if c["sig"]:
-            run_capture([iap_run, "sign", bin_path, good_key])
-            if not sig_path.exists():
-                Fail("could not produce a .sig")
-                failed += 1
-                continue
 
         board, board_log, handles = start_fake_board(
             scratch, c["id"], [c["pub"], "30", "--port", port])

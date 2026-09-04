@@ -568,7 +568,7 @@ def probe(verbose=True):
     show("TOOL_REPO", cfg.TOOL_REPO, "this repo; set it in config/machine.py")
     show("CORE_LIVE", cfg.CORE_LIVE, "install the board package in the Arduino IDE first")
     show_cmd("go", "go", "H1/H3 and every IAPTool build need it")
-    show_cmd("python", "python3" if not IS_WIN else "python", "K1-K6 / X1-X2 need it")
+    show_cmd("python", "python3" if not IS_WIN else "python", "K1-K7 / X1-X2 need it")
     show("arduino-cli", cfg.ARDUINO_CLI, "P4 and command-line app builds need it")
     show("CubeIDE", cfg.CUBEIDE, "needed to build and flash the bootloader, not for the checks below")
 

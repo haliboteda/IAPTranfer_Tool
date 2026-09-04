@@ -22,7 +22,7 @@ nothing about what is now known to work.
 Everything prints in the order things actually happen: a child's output belongs
 before the banner that judges it, not after.
 
-K1-K6 / X1-X2 do not gate on finding "python" on PATH. This interpreter is
+K1-K7 / X1-X2 do not gate on finding "python" on PATH. This interpreter is
 what runs them, so there is nothing to look up -- gating on the literal "python"
 is what would make those three SKIP on a python3-only machine.
 """
@@ -60,7 +60,7 @@ CATALOG = [
     ("P8",      "-",           "no claim is written out in more than one document"),
     ("P9",      "-",           "every path a document names actually exists"),
     ("H2",      "C5",          "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)"),
-    ("K1-K6",   "C8",          "IAPTool key-match logic against a stand-in board"),
+    ("K1-K7",   "C8",          "IAPTool key/certificate match against a stand-in board"),
     ("X1-X2",   "C9",          "crypto cross-check against independent implementations"),
     ("P4",      "E6",          "Arduino variant assertions (the FMC reserved-pin table)"),
 ]
@@ -81,7 +81,7 @@ def print_catalog():
     for cid, covers, name in CATALOG:
         print("  %-*s  covers %-*s  %s" % (width, cid, cov, covers, name))
     print("")
-    print("  %d steps. --quick skips H2 / K1-K6 / X1-X2 / P4." % len(CATALOG))
+    print("  %d steps. --quick skips H2 / K1-K7 / X1-X2 / P4." % len(CATALOG))
     print("  P7, P8 and P9 check the documents, not the firmware.")
 
 
@@ -202,7 +202,7 @@ def main():
                  [python_exe(), TESTTOOL / "host" / "bootloader_unit" / "build.py"],
                  needs=cc_need, cwd=tool_repo)
 
-        run_step("K1-K6", "IAPTool key-match logic against a stand-in board",
+        run_step("K1-K7", "IAPTool key/certificate match against a stand-in board",
                  [python_exe(), TESTTOOL / "host" / "fakeboard" / "run_cases.py"],
                  cwd=tool_repo)
 

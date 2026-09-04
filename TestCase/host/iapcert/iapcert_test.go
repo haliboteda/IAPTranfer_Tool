@@ -73,6 +73,9 @@ func TestIssue_LayoutAndSignedBytes(t *testing.T) {
 	if got := cert[:64]; string(got) != string(wantLeaf) {
 		t.Errorf("self-signed leaf_pubkey is not the root's own key:\n got %x\nwant %x", got, wantLeaf)
 	}
+	if got := binary.LittleEndian.Uint32(cert[64:68]); got != iapcert.SelfSignedSerial {
+		t.Errorf("self-signed serial is %d, want %d", got, uint32(iapcert.SelfSignedSerial))
+	}
 
 	digest := sha256.Sum256(cert[:iapcert.SignedLen])
 	r := new(big.Int).SetBytes(cert[68:100])
@@ -171,11 +174,12 @@ func TestNextSerial_CountsUpAndPersists(t *testing.T) {
 func TestIssue_SerialLandsLittleEndian(t *testing.T) {
 	dir := t.TempDir()
 	rootPath, _ := writeKey(t, dir, "root")
+	_, leaf := writeKey(t, dir, "leaf")
 
 	if err := os.WriteFile(iapcert.CounterPath(rootPath), []byte("258\n"), 0644); err != nil {
 		t.Fatalf("could not seed the counter: %v", err)
 	}
-	certHex, _, err := iapcert.Issue(rootPath, "")
+	certHex, _, err := iapcert.Issue(rootPath, iapcert.PublicKeyHex(&leaf.PublicKey))
 	if err != nil {
 		t.Fatalf("Issue failed: %v", err)
 	}
@@ -183,6 +187,38 @@ func TestIssue_SerialLandsLittleEndian(t *testing.T) {
 
 	if got := binary.LittleEndian.Uint32(cert[64:68]); got != 259 {
 		t.Errorf("serial reads back as %d, want 259", got)
+	}
+}
+
+// TestIssue_SelfSignedDoesNotDrawANumber is the property that keeps a
+// revocation aimed at one delegated leaf from taking the root's own uploads
+// with it -- and that keeps an upload from writing to the directory the
+// private key lives in, which for an Arduino install is inside the board
+// package.
+func TestIssue_SelfSignedDoesNotDrawANumber(t *testing.T) {
+	dir := t.TempDir()
+	rootPath, _ := writeKey(t, dir, "root")
+	_, leaf := writeKey(t, dir, "leaf")
+
+	for i := 0; i < 3; i++ {
+		if _, _, err := iapcert.Issue(rootPath, ""); err != nil {
+			t.Fatalf("Issue failed: %v", err)
+		}
+	}
+	if _, err := os.Stat(iapcert.CounterPath(rootPath)); !os.IsNotExist(err) {
+		t.Errorf("self-signing created %s; it must leave the counter alone",
+			iapcert.CounterPath(rootPath))
+	}
+
+	// The first delegated certificate still starts at 1: the self-signed ones
+	// did not consume anything.
+	certHex, _, err := iapcert.Issue(rootPath, iapcert.PublicKeyHex(&leaf.PublicKey))
+	if err != nil {
+		t.Fatalf("Issue failed: %v", err)
+	}
+	cert, _ := hex.DecodeString(certHex)
+	if got := binary.LittleEndian.Uint32(cert[64:68]); got != 1 {
+		t.Errorf("first delegated serial is %d, want 1", got)
 	}
 }
 

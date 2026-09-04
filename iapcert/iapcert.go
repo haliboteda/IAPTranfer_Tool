@@ -17,6 +17,7 @@ package iapcert
 
 import (
 	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
@@ -24,6 +25,7 @@ import (
 	"encoding/hex"
 	"encoding/pem"
 	"fmt"
+	"math/big"
 	"os"
 	"strconv"
 	"strings"
@@ -36,7 +38,75 @@ const (
 	Size = 132
 	// SignedLen is the prefix the root signature covers: leaf_pubkey||serial.
 	SignedLen = 68
+
+	// SelfSignedSerial is the serial every self-signed certificate carries.
+	//
+	// Serial numbers exist to be named by a revocation, and a root cannot
+	// revoke itself into uselessness -- so the root's own certificate is
+	// deliberately kept out of the numbered range instead of drawing from it.
+	// Two things follow, and both matter more than they look:
+	//
+	//   - Revoking a delegated leaf can never take the root's own uploads with
+	//     it. A shared counter would interleave them, and revoking a colleague
+	//     issued on Monday would invalidate firmware the administrator uploaded
+	//     on Friday.
+	//   - Uploading stops touching the counter file at all. It lives beside the
+	//     private key, which for an Arduino install means inside the board
+	//     package -- a directory nothing else writes to during an upload.
+	SelfSignedSerial = 0xFFFFFFFF
 )
+
+// Cert is a parsed certificate. Three fields at fixed offsets and nothing
+// else, the same shape iap_cert.h parses -- Raw is kept because the root
+// signature covers the bytes, not the fields.
+type Cert struct {
+	LeafPub []byte // 64, secp256r1 X||Y
+	Serial  uint32
+	RootSig []byte // 64, over sha256(Raw[:SignedLen])
+	Raw     []byte // Size bytes
+}
+
+// ParseHex decodes the 264-hex-character form that goes on the wire.
+func ParseHex(certHex string) (*Cert, error) {
+	raw, err := hex.DecodeString(strings.TrimSpace(certHex))
+	if err != nil {
+		return nil, fmt.Errorf("certificate is not hex: %w", err)
+	}
+	if len(raw) != Size {
+		return nil, fmt.Errorf("certificate is %d bytes, expected %d", len(raw), Size)
+	}
+	return &Cert{
+		LeafPub: raw[:64],
+		Serial:  binary.LittleEndian.Uint32(raw[64:68]),
+		RootSig: raw[68:Size],
+		Raw:     raw,
+	}, nil
+}
+
+// VerifiedBy answers the one question the board asks of a certificate: did
+// this root sign it. Mirrors iap_cert_verify() in
+// open_plc_cube_ide/IAPServer/iap_cert.c, so the tool can refuse a
+// certificate the board would refuse -- before spending a transfer on it.
+//
+// Says nothing about the image or the challenge that certificate will go on
+// to authorise; those are separate checks, on the board.
+func (c *Cert) VerifiedBy(rootPub []byte) bool {
+	if len(rootPub) != SigLen {
+		return false
+	}
+	pub := &ecdsa.PublicKey{
+		Curve: elliptic.P256(),
+		X:     new(big.Int).SetBytes(rootPub[:32]),
+		Y:     new(big.Int).SetBytes(rootPub[32:]),
+	}
+	if !pub.Curve.IsOnCurve(pub.X, pub.Y) {
+		return false
+	}
+	digest := sha256.Sum256(c.Raw[:SignedLen])
+	r := new(big.Int).SetBytes(c.RootSig[:32])
+	s := new(big.Int).SetBytes(c.RootSig[32:])
+	return ecdsa.Verify(pub, digest[:], r, s)
+}
 
 // LoadKey reads a PEM-encoded ECDSA P-256 private key, accepting both the
 // SEC1 "EC PRIVATE KEY" form written by `openssl ecparam -genkey` and the
@@ -131,6 +201,9 @@ func NextSerial(rootKeyPath string) (uint32, string, error) {
 // a leaf whose private half the caller holds separately. Issuing never
 // touches that private half, only its public point.
 //
+// A self-signed certificate takes SelfSignedSerial and leaves the counter
+// alone; only delegated leaves draw a number. See SelfSignedSerial.
+//
 // Returns the certificate hex-encoded (264 hex chars) -- exactly what goes on
 // the wire in a "flash" or "openplc_server_reboot" command -- plus a warning
 // string that is empty unless the serial counter could not be written back.
@@ -140,19 +213,23 @@ func Issue(rootKeyPath string, leafPubHex string) (string, string, error) {
 		return "", "", fmt.Errorf("cannot load root key %s: %w", rootKeyPath, err)
 	}
 
-	var leafPub []byte
+	var (
+		leafPub []byte
+		serial  uint32
+		warning string
+	)
 	if strings.TrimSpace(leafPubHex) == "" {
 		leafPub = RawPublicKey(&root.PublicKey)
+		serial = SelfSignedSerial
 	} else {
 		leafPub, err = hex.DecodeString(strings.TrimSpace(leafPubHex))
 		if err != nil || len(leafPub) != SigLen {
 			return "", "", fmt.Errorf("leaf public key must be %d hex characters", SigLen*2)
 		}
-	}
-
-	serial, warning, err := NextSerial(rootKeyPath)
-	if err != nil {
-		return "", "", err
+		serial, warning, err = NextSerial(rootKeyPath)
+		if err != nil {
+			return "", "", err
+		}
 	}
 
 	signed := make([]byte, SignedLen)

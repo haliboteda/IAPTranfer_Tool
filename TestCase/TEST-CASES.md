@@ -38,7 +38,7 @@ TestCase/
 ├── host/                 ← 不需要板子，纯主机跑
 │   ├── iapcert/          ← H1  证书签发、serial 计数器、挑战签名的 Go 单元测试
 │   ├── bootloader_unit/  ← H2  用 stub 编译真实 bootloader 源码的 C 单元测试
-│   ├── fakeboard/        ← K1–K6  IAPTool 传输前的密钥匹配决策，六种情况
+│   ├── fakeboard/        ← K1–K7  IAPTool 传输前的密钥/证书匹配决策，七种情况
 │   └── crypto_ref/       ← X1/X2  SHA-256 与 ECDSA 的独立实现交叉验证
 ├── onboard/              ← 需要烧到板子上跑
 │   └── rs232/SerialPort/ ← O1  UART + CDC 回显 sketch
@@ -197,7 +197,7 @@ T1–T4 和 S1 都要求设备处于 bootloader 且以太网已起。三种办�
 |---|---|---|
 | `host/iapcert/` | 在 `IAPTranfer_Tool/` 下 `go test ./TestCase/...` | 证书布局与根签名覆盖的字节范围（换个范围就验错东西）；serial 计数器从 1 开始、递增、落文件；serial 小端落在偏移 64；挑战签名覆盖 `sha256(nonce\|\|msg)` 且顺序不可换 |
 | `host/bootloader_unit/` | `python build.py`，需要 gcc/clang | 用 stub 在主机上编译**真实的** `sha256.c` / `iap_cert.c` / `fw_verify.c` / `iap_auth.c` 并跑断言。金标证书由出货工具生成，所以过了就等于 C 和 Go 对同一套线格式达成一致 |
-| `host/fakeboard/` | `python run_cases.py` | **K1–K6** IAPTool 在传输开始前的密钥匹配决策，六种情况。**每种在真板子上都要换一把 bootloader 密钥才能构造** |
+| `host/fakeboard/` | `python run_cases.py` | **K1–K7** IAPTool 在传输开始前的密钥/证书匹配决策，七种情况：自签的三种 + 委托证书的三种 + 一把密钥都没有。**每种在真板子上都要换一把 bootloader 密钥才能构造** |
 | `host/crypto_ref/` | `python run_checks.py [--rounds N]` | SHA-256 构造对 hashlib（309 向量）；IAPTool 真实签名交给一份独立的纯算术 P-256 验证器 |
 | `host/variant_check/` | `python build.py`，需要 arduino-cli | **P4** Arduino 变体头的编译期断言。目前一个：FMC 保留脚表（39 个）自洽。**编不过就是变体头坏了，不是 sketch 坏了** |
 | `host/examples_build/` | `python build.py [--only LIB]`，需要 arduino-cli | **P5** 编译 core 自有库的**每一个 example**。⚠️ **约十分钟，故意不进 selfcheck** —— 见下 |

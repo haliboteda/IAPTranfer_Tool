@@ -27,6 +27,7 @@ var l_config LocalConfig
 // signingOptions holds the command-line signing overrides for this run.
 type signingOptions struct {
 	keyPath    string
+	certPath   string
 	outPrefix  string
 	currentKey string
 	newKey     string
@@ -39,10 +40,13 @@ type signingOptions struct {
 var g_signing signingOptions
 
 const usageText = `Usage:
-  IAPTool cdc    <file.bin> <port>       [--key=<key.pem>]
-  IAPTool ether  <file.bin> <ip>         [--key=<key.pem>]
+  IAPTool cdc    <file.bin> <port>       [--key=<key.pem>] [--cert=<cert.txt>]
+  IAPTool ether  <file.bin> <ip>         [--key=<key.pem>] [--cert=<cert.txt>]
   IAPTool sign   <file.bin> [<key.pem>]  [--key=<key.pem>] [--out=<prefix>]
   IAPTool genkey [<name>]    writes <name>.pem, prints keys/fw_pubkey.inc on stdout
+  IAPTool pubkey [<key.pem>] the key's public half as 128 hex characters, the form
+                   "cert" and "getpubkey" speak. Send this to whoever holds the
+                   root when you need a certificate issued for your key.
   IAPTool cert   [<leafPubHex>]
                    issues a 132-byte leaf certificate signed by the signing key,
                    hex on stdout. No argument = self-signed (simple mode: the key
@@ -62,9 +66,12 @@ const usageText = `Usage:
 
   --key            ECDSA P-256 private key (PEM). When omitted, falls back to
                    "signing_key" in local_config.json, then to keys/fw_signing_key.pem
-                   next to this executable. The image is then signed in memory, so no
-                   .sig file is needed. With no key anywhere, cdc/ether use the sibling
-                   <file>.sig written by an earlier "sign" run.
+                   next to this executable. Uploading needs the private key itself:
+                   the image is signed in memory and so is the board's challenge.
+  --cert           Certificate presented to the board, as issued by the holder of
+                   the root it trusts. When omitted, falls back to "<the signing
+                   key>.cert", and with no certificate there the signing key
+                   certifies itself - which is what one person with one key wants.
   --out            Output prefix for "sign". Defaults to the .bin path without its extension.
 
 To rotate the signing key, run IAPServer/keys/rotate_keys.sh.`
@@ -111,6 +118,23 @@ func main() {
 		}
 		err := generateSigningKey(name)
 		logf(err, "Failed to generate signing key")
+
+	case "pubkey":
+		// The one form a root holder can act on: "cert <leafPubHex>" takes
+		// exactly these 128 characters, and so does comparing against what a
+		// board answers to getpubkey. genkey prints the C initialiser instead,
+		// which is the wrong shape for both.
+		keyPath := findSigningKey()
+		if len(args) >= 2 {
+			keyPath = args[1]
+		}
+		if keyPath == "" {
+			logf(true, "No signing key found. Pass one as an argument or as --key=<key.pem>, "+
+				"or put one at %s", defaultKeyLocation())
+		}
+		key, err := loadSigningKey(keyPath)
+		logf(err, "Failed to read %s", keyPath)
+		fmt.Println(publicKeyHex(&key.PublicKey))
 
 	case "cert":
 		// cert [<leafPubHex>] -- issue a certificate with the signing key as
@@ -186,11 +210,12 @@ func main() {
 		RunEtherUpgrade(args[1], args[2])
 
 	default:
-		logf(true, "Invalid mode: %s. Use 'cdc', 'ether', 'sign' or 'genkey'", mode)
+		logf(true, "Invalid mode: %s. Use 'cdc', 'ether', 'sign', 'genkey', 'pubkey', "+
+			"'cert', 'signraw', 'getowner', 'takeown' or 'setowner'", mode)
 	}
 }
 
-// parseSigningFlags strips the --key / --out options out of the
+// parseSigningFlags strips the --key / --cert / --out options out of the
 // argument list and returns the remaining positional arguments. Both
 // "--key=path" and "--key path" are accepted, in any position.
 func parseSigningFlags(args []string) ([]string, error) {
@@ -216,6 +241,8 @@ func parseSigningFlags(args []string) ([]string, error) {
 		case "key":
 			g_signing.keyPath = value
 			g_signing.keyExplicit = true
+		case "cert":
+			g_signing.certPath = value
 		case "out":
 			g_signing.outPrefix = value
 		case "current-key":

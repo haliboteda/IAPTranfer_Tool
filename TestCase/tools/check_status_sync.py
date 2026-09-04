@@ -132,7 +132,7 @@ def cases_from_testcases(path):
         # Emphasised inline, which is how the P and host groups are written --
         # they are described in the prose of their section rather than given a
         # heading of their own. The run after an arrow may be "X1/X2" or
-        # "K1–K6", so take the whole run and let the splitter below deal with it.
+        # "K1–K7", so take the whole run and let the splitter below deal with it.
         heads.extend(re.findall(r"\*\*([A-Za-z0-9][\w–/-]*)\*\*", line))
         heads.extend(re.findall(r"←\s*([A-Za-z0-9][\w–/-]*)", line))
         for head in heads:
@@ -144,10 +144,10 @@ def cases_from_testcases(path):
 
 
 def expand(ids):
-    """K1-K6 in one document and K1..K6 in the other are the same six cases.
+    """K1-K7 in one document and K1..K7 in the other are the same seven cases.
 
-    The dash may be ASCII or an en dash: TEST-CASES.md writes "K1–K6" in Chinese
-    prose, selfcheck writes "K1-K6" in an id. Treating those as different ids is
+    The dash may be ASCII or an en dash: TEST-CASES.md writes "K1–K7" in Chinese
+    prose, selfcheck writes "K1-K7" in an id. Treating those as different ids is
     what made the first run report K1 as an orphan.
     """
     out = set()

@@ -19,13 +19,15 @@ the authorisation, and handing a board over remotely is a supported case.
 Physical presence gates only the operations with no signature to check -- the
 first claim, and factory reset.
 
-What gets signed is the first 76 bytes of the record about to be written:
+What gets signed is the first 88 bytes of the record about to be written:
 
-    type 'O' | slots 5 | format_ver 1 | generation | flags | new public key
-       1          1          2 (LE)      4 (LE)     4 (LE)      64
+    type 'O' | slots 5 | format_ver 2 | generation | flags | new public key | uid
+       1          1          2 (LE)      4 (LE)     4 (LE)      64            12
 
 The generation is inside the signature on purpose: without it a captured record
-could be replayed into a later slot and undo a subsequent handover.
+could be replayed into a later slot and undo a subsequent handover. The uid is
+in for the same kind of reason: without it the record could be replayed onto a
+different board.
 
 Exit 0 = ended up in the expected state, 1 = did not, 2 = setup problem.
 """
@@ -43,13 +45,23 @@ from common import (cfg, Section, Ok, Warn, Fail, get_go_bin,  # noqa: E402
                     run_capture, tcp_command)
 
 
-def signed_prefix(generation, new_key_hex):
-    """The record's first 76 bytes, laid out exactly as the bootloader reads them."""
+def signed_prefix(generation, new_key_hex, uid_hex):
+    """The record's first 88 bytes, laid out exactly as the bootloader reads them.
+
+    Every byte has to be right, including uid: this case is "a well-formed
+    record whose signature is wrong". Get the prefix wrong instead and the
+    board still says Refused, but for a reason that has nothing to do with the
+    signature -- a negative case that passes without testing anything.
+    """
+    uid = bytes.fromhex(uid_hex)
+    if len(uid) != 12:
+        raise ValueError("uid must be 24 hex characters, got %r" % uid_hex)
     return (bytes([0x4F, 5])                      # type 'O', slots
-            + struct.pack("<H", 1)                # format_ver
+            + struct.pack("<H", 2)                # format_ver
             + struct.pack("<I", generation)
             + struct.pack("<I", 0)                # flags
-            + bytes.fromhex(new_key_hex))         # root_pubkey, 64 B
+            + bytes.fromhex(new_key_hex)          # root_pubkey, 64 B
+            + uid)                                # this board's uid, 12 B
 
 
 def genkey(iap, label):
@@ -118,7 +130,11 @@ def main():
             Fail("--bad-signature generates its own key; do not pass --new-key")
             return 2
         Section("signed prefix, then corrupted")
-        prefix_hex = signed_prefix(nxt, new_pub).hex()
+        uid_hex = tcp_command(ip, args.port, "getuid").strip().lower()
+        if len(uid_hex) != 24:
+            Fail("the board answered getuid with %r, expected 24 hex characters" % uid_hex)
+            return 2
+        prefix_hex = signed_prefix(nxt, new_pub, uid_hex).hex()
         sig, _ = run_capture([iap, "signraw", prefix_hex, str(current)])
         sig = sig.strip()
         if len(sig) != 128:
