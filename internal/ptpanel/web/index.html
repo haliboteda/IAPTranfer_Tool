@@ -1,0 +1,2079 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>端口测试工装</title>
+<style>
+:root{
+  --bg:#f3f4f7; --card:#fff; --line:#dbdfe6; --line2:#eef0f4;
+  --ink:#151c26; --ink2:#4a5464; --ink3:#79838f;
+  --accent:#c0561b; --accent-bg:#fbede3;
+  --ok:#16794c; --ok-bg:#e4f2ea;
+  --warn:#a8720b; --warn-bg:#faf0dc;
+  --err:#b3392f; --err-bg:#fbe9e7;
+  --off:#828c99; --off-bg:#eceef2;
+  --sans:"Microsoft YaHei","PingFang SC",system-ui,sans-serif;
+  --mono:"Cascadia Mono","Consolas","DejaVu Sans Mono",monospace;
+}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);
+  font:14px/1.6 "Microsoft YaHei","PingFang SC",system-ui,sans-serif}
+button{font:inherit;cursor:pointer;border:1px solid var(--line);background:#fff;
+  color:var(--ink);border-radius:4px;padding:4px 12px}
+button:hover:not(:disabled){border-color:var(--accent);color:var(--accent)}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primary{background:var(--accent);border-color:var(--accent);color:#fff}
+button.primary:hover:not(:disabled){opacity:.88;color:#fff}
+input,select{font:inherit;border:1px solid var(--line);border-radius:4px;padding:3px 7px;
+  background:#fff;color:var(--ink)}
+input[type=number]{width:88px}
+code,.mono{font-family:var(--mono)}
+h1{font-size:17px;margin:0}
+h2{font-size:14px;margin:0 0 10px;color:var(--ink3);font-weight:600;
+  letter-spacing:.05em}
+
+header{background:#fff;border-bottom:1px solid var(--line);padding:10px 18px;
+  display:flex;align-items:center;gap:14px;flex-wrap:wrap}
+header .sp{flex:1}
+#status{font-size:13px;color:var(--ink2)}
+#status b{color:var(--ok)}
+#status.bad b{color:var(--err)}
+
+main{display:grid;grid-template-columns:250px minmax(0,1fr) 60%;gap:1px;background:var(--line);
+  height:calc(100vh - 53px)}
+main>section{background:var(--bg);overflow-y:auto;padding:14px}
+@media(max-width:1100px){main{grid-template-columns:1fr;height:auto}}
+
+.msg{border-left:3px solid var(--accent);background:#fff;border:1px solid var(--line);
+  border-left-width:3px;padding:10px 14px;border-radius:0 4px 4px 0;margin-bottom:12px}
+.msg.bad{border-left-color:var(--err)}
+
+/* ---- port tree ---- */
+.grp{margin-bottom:4px}
+.grp>.hd{display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:4px}
+.grp>.hd:hover{background:#fff}
+.blk{display:inline-block;width:19px;height:19px;line-height:18px;text-align:center;
+  border-radius:3px;font:600 11px var(--mono);color:#fff;flex:none}
+.blk.A{background:#4c6ea8}.blk.B{background:#2f7a68}.blk.C{background:#a85e33}
+.blk.D{background:#6e56a0}.blk.x{background:#6b7684;width:auto;padding:0 5px}
+.grp .nm{flex:1;font-weight:600;font-size:13px}
+.tag{font:11px var(--mono);padding:1px 6px;border-radius:3px}
+.tag.session{color:var(--ok);background:var(--ok-bg)}
+.tag.handover{color:var(--warn);background:var(--warn-bg)}
+.tag.run{color:#fff;background:var(--ok)}
+.kids{padding:2px 0 6px 28px;display:flex;flex-direction:column;gap:2px}
+.kids label{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink2);
+  cursor:pointer}
+.kids .t{font-family:var(--mono);color:var(--ink3);font-size:11.5px}
+.kids .selall{font-size:11.5px;color:var(--accent);cursor:pointer;
+  background:none;border:none;padding:0;text-align:left}
+
+/* ---- port cards ---- */
+.card{background:var(--card);border:1px solid var(--line);border-radius:6px;
+  padding:13px 15px;margin-bottom:12px}
+.card>.hd{display:flex;align-items:center;gap:9px;margin-bottom:10px}
+.card>.hd .nm{font-weight:600}
+.card>.hd .sp{flex:1}
+.sub{font-size:11.5px;color:var(--ink3);font-family:var(--mono)}
+.row{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center;margin:8px 0}
+.row label{font-size:12.5px;color:var(--ink2);display:flex;align-items:center;gap:5px}
+.hint{font-size:11.5px;color:var(--ink3);margin-left:2px}
+
+.tabs{display:flex;gap:4px;margin-bottom:10px}
+.tab{font-size:12.5px;padding:3px 12px;border-radius:4px 4px 0 0}
+.tab.on{background:var(--accent);border-color:var(--accent);color:#fff}
+.plansteps{display:flex;flex-direction:column;gap:2px;margin:8px 0}
+.plansteps .st{display:flex;align-items:center;gap:6px;padding:4px 6px;
+  border-radius:4px;font-size:12.5px;cursor:pointer;border:1px solid transparent}
+.plansteps .st:hover{background:#fff}
+.plansteps .st.sel{background:#fff;border-color:var(--accent)}
+.plansteps .st .ty{font:11px var(--mono);color:var(--ink3)}
+.plansteps .st .vd{margin-left:auto;font:600 11px var(--mono)}
+.vd.PASS{color:var(--ok)}.vd.FAIL,.vd.ERROR{color:var(--err)}
+.vd.TIMEOUT{color:var(--warn)}.vd.SKIPPED{color:var(--ink3)}
+.pgrid{display:grid;grid-template-columns:auto 1fr;gap:5px 10px;align-items:center;
+  font-size:12.5px;margin:8px 0}
+.pgrid .k{font-family:var(--mono);font-size:11.5px;color:var(--ink2)}
+.pgrid input,.pgrid select{width:100%}
+.pgroup{font:600 11px var(--mono);color:var(--ink3);letter-spacing:.05em;
+  grid-column:1/-1;margin-top:8px;border-top:1px solid var(--line2);padding-top:7px}
+.finding{font-size:12px;color:#8a5300;background:#fff7e6;border:1px solid #e0a34a;
+  border-radius:4px;padding:6px 9px;margin:5px 0}
+.reads{display:flex;flex-wrap:wrap;gap:6px;margin:9px 0}
+.bit{font:600 11px var(--mono);border:1px solid var(--line);border-radius:3px;
+  padding:3px 7px;min-width:52px;text-align:center;background:var(--off-bg);color:var(--ink3)}
+.bit.on{background:var(--ok-bg);color:var(--ok);border-color:var(--ok)}
+.bit.off{background:#fff;color:var(--ink2)}
+/* 复合读数：不表态。染成通/断会把一路死掉的模拟通道显示成绿色。 */
+.bit.num{background:#fff;color:var(--ink)}
+/* 悬空带：数看着像真的，这是这个故障最贵的地方，所以要显眼。 */
+.bit.warn{background:#fff7e6;color:#8a5300;border-color:#e0a34a}
+.sub.warn{color:#8a5300}
+
+.chvals{border:1px solid var(--line2);border-radius:5px;padding:9px 11px;margin:9px 0;
+  background:var(--bg)}
+.chvals .st{font-size:11px;letter-spacing:.05em;color:var(--ink3);margin-bottom:7px;
+  font-weight:600}
+.chgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(118px,1fr));gap:6px 10px;
+  margin-bottom:8px}
+.chgrid label{display:flex;align-items:center;gap:6px;font-size:12px}
+.chgrid .t{font-family:var(--mono);font-size:11px;color:var(--ink3);min-width:52px}
+.chgrid input{width:64px}
+
+.link{border-top:1px dashed var(--line);margin-top:10px;padding-top:8px;
+  font:11.5px var(--mono);color:var(--ink3);display:flex;gap:14px;flex-wrap:wrap}
+.link b{color:var(--ink2);font-weight:600}
+
+.tgt{display:flex;align-items:center;gap:9px;padding:5px 0;border-top:1px solid var(--line2)}
+.tgt:first-of-type{border-top:none}
+
+/* DO -> DI cross-check. One row per output, one cell per input, so a crossed
+   pair reads as an off-diagonal mark rather than as a number to compare. */
+.sub2{font-size:12px;color:var(--ink2);margin:7px 2px 2px;min-height:1.2em}
+.dodi{margin-top:8px;overflow-x:auto}
+.dodirow{display:flex;gap:2px;align-items:stretch}
+.dodirow .c{flex:1 0 44px;text-align:center;padding:4px 2px;font-family:var(--mono);
+            font-size:11.5px;border-top:1px solid var(--line2);color:var(--ink2)}
+.dodirow .c:first-child{flex:0 0 52px;font-weight:600;color:var(--ink)}
+.dodirow .c:last-child{flex:1 0 108px;font-family:var(--sans)}
+.dodirow.hd2 .c{border-top:none;color:var(--ink3);font-weight:600}
+.dodirow .c.hit{color:var(--ok);background:var(--ok-bg);border-radius:3px}
+.dodirow .c.wrong{color:var(--err);background:var(--err-bg);border-radius:3px}
+.tgt .n{font-family:var(--mono);font-size:12px;min-width:120px}
+.tgt .d{flex:1;font-size:12px;color:var(--ink3)}
+
+/* ---- log ---- */
+#logwrap{display:flex;flex-direction:column;height:100%}
+#logbar{display:flex;align-items:center;gap:7px;flex-wrap:wrap;margin-bottom:8px}
+#logbar .sp{flex:1}
+#paused{font-size:12px;color:var(--warn);font-weight:600}
+#log{flex:1;overflow-y:auto;background:#fff;border:1px solid var(--line);
+  border-radius:5px;padding:8px 10px;font:12px/1.55 var(--mono);
+  white-space:pre-wrap;word-break:break-all;min-height:300px}
+.l{display:block;border-left:3px solid transparent;padding-left:7px;margin:1px 0}
+.l .ts{color:var(--ink3)}
+.l.ok{border-left-color:var(--ok)}
+.l.err{border-left-color:var(--err);background:var(--err-bg);color:var(--err)}
+.l.frame{border-left-color:#4c6ea8;color:var(--ink2)}
+.l.log{color:var(--ink3)}
+.l.tx{border-left-color:var(--accent);color:var(--accent)}
+.l.echo{border-left-color:var(--off);color:var(--ink3)}
+.l.panel{border-left-color:#2f7a68;color:#2f7a68}
+
+/* Left column: pick the control port, then everything else. */
+#connbox{padding:0 0 10px;margin-bottom:10px;border-bottom:1px solid var(--line)}
+.step{font:600 12px var(--sans);color:var(--ink2);margin:0 0 7px;letter-spacing:.3px}
+#portlist{display:flex;flex-direction:column;gap:2px;max-height:190px;overflow-y:auto;
+  border:1px solid var(--line);border-radius:4px;background:#fff;padding:3px}
+#portlist .p{display:block;font:11.5px var(--mono);color:var(--ink2);padding:4px 6px;
+  border-radius:3px;cursor:pointer;border:1px solid transparent;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#portlist .p:hover{background:var(--line2)}
+#portlist .p.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
+#portlist .p .sug{color:var(--ok);font-weight:600}
+.connrow{display:flex;gap:6px;margin-top:7px}
+.hint{font-size:11.5px;color:var(--ink3);line-height:1.5;margin-top:7px}
+/* Not disabled attributes on every control - one rule, so a new control added
+   later cannot forget to be gated. */
+.gated{opacity:.35;pointer-events:none}
+.gated.live{opacity:1;pointer-events:auto}
+
+/* The port list: one row per port, grouped by board. A hardware engineer reads
+   this for two things only - has it been tested, did it pass. */
+.boardhd{font:600 11.5px var(--sans);color:var(--ink3);margin:10px 0 3px;
+  letter-spacing:.3px;border-bottom:1px solid var(--line2);padding-bottom:3px}
+.prow{display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:4px;
+  cursor:pointer;border:1px solid transparent}
+.prow:hover{background:var(--line2)}
+.prow.on{background:var(--accent-bg);border-color:var(--accent)}
+.prow .ico{font-size:12px;line-height:1}
+.prow .nm{font:12.5px var(--sans);color:var(--ink)}
+.prow .key,.howhd .key{font:10.5px var(--mono);color:var(--ink3);font-weight:400}
+.prow .stat{margin-left:auto;font-size:11px;color:var(--ink3)}
+.prow.pass .stat{color:var(--ok)}
+.prow.fail .stat{color:var(--err);font-weight:600}
+.prow.testing .stat{color:var(--accent)}
+
+/* How to test the selected port - first thing in the middle column. */
+.howto{background:var(--card);border:1px solid var(--line);border-radius:5px;
+  padding:10px 12px;margin-bottom:10px}
+.howhd{font:600 13px var(--sans);color:var(--ink);margin-bottom:7px}
+.howrow{display:flex;gap:8px;font-size:12.5px;line-height:1.65;margin:3px 0}
+.howrow .k{flex:0 0 62px;color:var(--ink3)}
+.howrow .v{color:var(--ink2)}
+
+/* The one button. Given room, because it is what the page is for. */
+.startrow{display:flex;align-items:center;gap:10px;margin:4px 0 10px;
+  padding:8px 10px;background:var(--accent-bg);border-radius:5px}
+.startrow button{padding:6px 20px;font-weight:600}
+.startrow .sub{color:var(--ink2);font-size:12.5px}
+details{margin-top:10px;border-top:1px solid var(--line2);padding-top:7px}
+details summary{cursor:pointer;font-size:12px;color:var(--ink3);outline:none}
+details summary:hover{color:var(--ink2)}
+</style>
+</head>
+<body>
+
+<header>
+  <h1>端口测试工装</h1>
+  <span id="status">没有连接</span>
+  <label id="echobox" hidden style="font-size:12.5px;display:flex;align-items:center;gap:5px">
+    <input type="checkbox" id="autoecho" checked> 自动回环应答
+    <span id="echostat" class="sub"></span>
+  </label>
+  <span class="sp"></span>
+  <!-- Which limits the ticks on this page were produced by. It sits in the
+       header rather than in a settings pane because it qualifies every verdict
+       on screen: the same board passes under one limit set and fails under
+       another, and a green tick that does not say which is not a claim. -->
+  <label id="critbox" hidden style="font-size:12.5px;display:flex;align-items:center;gap:5px">
+    <span class="sub">判据</span>
+    <select id="critplan"></select>
+    <span id="critver" class="sub"></span>
+  </label>
+</header>
+
+<main>
+  <section id="tree">
+    <!-- Step one, and nothing else works until it is done: every reading on
+         this page arrives over this one cable. The list stays visible rather
+         than collapsing into a dropdown, because which adapter is which is the
+         question people actually get wrong. -->
+    <div id="connbox">
+      <div class="step">① 选择 RS232 控制口</div>
+      <div id="portlist"><div class="sub">正在找串口…</div></div>
+      <div class="connrow">
+        <button id="connect" class="primary" disabled>连接</button>
+        <button id="disconnect" hidden>断开</button>
+        <button id="refresh">重新找</button>
+      </div>
+      <div id="connhint" class="hint">先选一个口，再点连接。板子的控制口是端子
+        <b>C05 / C06</b>，要用 USB-RS232 适配器（端子是真 ±12 V）。</div>
+    </div>
+
+    <div id="afterconn" class="gated">
+      <div class="step">② 端口与方案</div>
+      <div class="tabs">
+        <button class="tab on" data-tab="manual">端口</button>
+        <button class="tab" data-tab="plan">方案</button>
+      </div>
+      <div id="treebody"></div>
+      <div id="planlist" hidden>
+        <!-- Said once, here, because "方案" means nothing on its own and a
+             hardware engineer debugging one port should know to ignore it. -->
+        <div id="planwhat" class="hint">
+          <b>方案 = 产线用。</b>一个文件写好跑哪些步骤、每步什么算过，点一下整套跑完出报告。
+          单个端口调试用左边的「端口」页，不用碰这里。
+        </div>
+      </div>
+    </div>
+  </section>
+  <section id="panel">
+    <h2 id="panelhead">面板</h2>
+    <div id="panelbody"></div>
+    <div id="planbody" hidden></div>
+  </section>
+  <section>
+    <div id="logwrap">
+      <div id="logbar">
+        <h2 style="margin:0">日志</h2>
+        <span class="sp"></span>
+        <span id="paused" hidden></span>
+        <button id="pause">暂停</button>
+        <button id="clear">清空</button>
+        <button id="save">导出</button>
+      </div>
+      <div class="row" style="margin:0 0 7px">
+        <label><input type="checkbox" class="filt" value="ok" checked> 应答</label>
+        <label><input type="checkbox" class="filt" value="err" checked> 错误</label>
+        <label><input type="checkbox" class="filt" value="frame" checked> 采样</label>
+        <label><input type="checkbox" class="filt" value="log" checked> 板子日志</label>
+        <label><input type="checkbox" class="filt" value="echo" checked> 回环应答</label>
+        <label><input type="checkbox" class="filt" value="panel" checked> 对端链路</label>
+      </div>
+      <div id="log"></div>
+      <div class="row" style="margin-top:8px">
+        <input id="raw" placeholder="直接敲命令，比如 pt.start din ch=1,3,5" style="flex:1"
+               autocomplete="off">
+        <button id="send">发送</button>
+      </div>
+      <div class="hint">面板做不到的事，在这里都能做。命令原样发给板子，回复原样显示。</div>
+    </div>
+  </section>
+</main>
+
+<script>
+"use strict";
+
+const $ = s => document.querySelector(s);
+const el = (tag, cls, txt) => { const n = document.createElement(tag);
+  if (cls) n.className = cls; if (txt !== undefined) n.textContent = txt; return n; };
+
+let state = { connected:false, ports:[], links:{} };
+let picked = {};        // port name -> Set of selected channel numbers
+let expanded = {};      // port name -> bool
+let reads = {};         // port name -> latest frame fields
+let evtSource = null;
+
+/* ---------------- log ---------------- */
+const MAX_LOG = 20000;
+let logBuf = [];        // every line, kept whether shown or not
+let paused = false, pausedCount = 0;
+let filters = new Set(["ok","err","frame","log","tx","echo","panel"]);
+
+function isEchoTraffic(kind, line) {
+  return (kind === "ok" && line.startsWith("OK echo ")) ||
+         (kind === "tx" && line.startsWith("> pt.echo "));
+}
+
+function addLog(kind, line, at) {
+  if (isEchoTraffic(kind, line)) kind = "echo";
+  logBuf.push({kind, line, at: at || nowStamp()});
+  if (logBuf.length > MAX_LOG) logBuf.splice(0, logBuf.length - MAX_LOG);
+  if (paused) { pausedCount++; $("#paused").textContent = "已暂停，攒了 " + pausedCount + " 行"; return; }
+  appendLine(logBuf[logBuf.length-1]);
+}
+function appendLine(e) {
+  if (!filters.has(e.kind)) return;
+  const box = $("#log");
+  const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
+  const n = el("span", "l " + e.kind);
+  n.appendChild(el("span", "ts", e.at + "  "));
+  n.appendChild(document.createTextNode(e.line));
+  box.appendChild(n);
+  while (box.childElementCount > 4000) box.removeChild(box.firstChild);
+  if (stick) box.scrollTop = box.scrollHeight;
+}
+function redrawLog() {
+  const box = $("#log"); box.textContent = "";
+  for (const e of logBuf.slice(-4000)) appendLine(e);
+  box.scrollTop = box.scrollHeight;
+}
+function nowStamp() {
+  const d = new Date(), p = (n,w=2) => String(n).padStart(w,"0");
+  return p(d.getHours())+":"+p(d.getMinutes())+":"+p(d.getSeconds())+"."+p(d.getMilliseconds(),3);
+}
+
+$("#pause").onclick = () => {
+  paused = !paused;
+  $("#pause").textContent = paused ? "继续" : "暂停";
+  $("#paused").hidden = !paused;
+  if (!paused) { pausedCount = 0; redrawLog(); }
+  else { pausedCount = 0; $("#paused").textContent = "已暂停，攒了 0 行"; }
+};
+$("#clear").onclick = () => { logBuf = []; redrawLog(); };
+// Saved as .txt, and named for the moment it was saved.
+//
+// The content was always plain text; the extension was .log, which Windows
+// hands to whatever happens to have claimed it and which some mail clients and
+// chat apps refuse to attach. .txt opens by double-clicking anywhere and can
+// be pasted into a ticket, which is what this button is for.
+//
+// The whole buffer goes out, not the filtered view: a log is exported to send
+// to somebody, and one silently missing the lines the filter was hiding is
+// worse than no log at all.
+//
+// *** Structured output is a different thing and already exists - `porttool
+// *** run --json/--csv` writes the report a production line archives. This is
+// *** the raw serial conversation, for a person to read.
+$("#save").onclick = () => {
+  const stamp = new Date().toISOString().slice(0,19).replace(/[:T]/g,"");
+  const head = [
+    "PortTool log  " + new Date().toString(),
+    "control port: " + (state.port || "(not connected)") +
+      "   firmware: " + (state.firmware || "?"),
+    "lines: " + logBuf.length,
+    "".padEnd(60, "-"),
+  ].join("\r\n");
+  const text = head + "\r\n" + logBuf.map(e => e.at + "  " + e.line).join("\r\n") + "\r\n";
+  const a = el("a");
+  a.href = URL.createObjectURL(new Blob([text], {type:"text/plain;charset=utf-8"}));
+  a.download = "porttool-" + stamp + ".txt";
+  a.click(); URL.revokeObjectURL(a.href);
+};
+document.querySelectorAll(".filt").forEach(c => c.onchange = () => {
+  filters = new Set([...document.querySelectorAll(".filt:checked")].map(x=>x.value));
+  filters.add("tx");
+  redrawLog();
+});
+
+/* ---------------- api ---------------- */
+async function api(path, body) {
+  const opt = body ? {method:"POST", headers:{"Content-Type":"application/json"},
+                      body:JSON.stringify(body)} : {};
+  const r = await fetch(path, opt);
+  const j = await r.json().catch(() => ({error:"服务返回的内容看不懂。"}));
+  return j;
+}
+
+let allPorts = [];
+
+let chosenPort = null;
+
+// Which port the left list has selected - the middle column always explains
+// this one thing, whether it is a port or a plan.
+let selected = null;
+
+// Per-port pass/fail from the last time it was tested here. Kept in the page
+// because it is about this session at this bench, not about the board.
+let verdicts = {};
+
+// A hint, never a decision: the label is the only thing there is to go on, and
+// on 2026-09-08 the CAN adapter and the RS485 adapter could not be told apart
+// from their VID/PID at all. So it marks a likely one and still makes somebody
+// click.
+function looksLikeRs232(label) {
+  return /pl2303|prolific|ft232|ftdi|cp210|ch343|usb-serial ch34/i.test(label);
+}
+
+async function loadPorts() {
+  const j = await api("/api/ports");
+  allPorts = j.ports || [];
+  const host = $("#portlist"); host.textContent = "";
+
+  if (j.error || !j.ports || !j.ports.length) {
+    host.appendChild(el("div", "sub",
+      j.error || "没找到串口 —— 插上 USB-RS232 适配器再点「重新找」"));
+    $("#connect").disabled = true;
+    return;
+  }
+
+  // What was chosen last time. Offered as the selection rather than connected
+  // to automatically: opening a serial port is a side effect, and a page that
+  // grabbed a port the moment it loaded would fight anything else using it.
+  if (!chosenPort && state && state.saved && state.saved.control &&
+      j.ports.some(p => p.name === state.saved.control)) {
+    chosenPort = state.saved.control;
+  }
+
+  for (const p of j.ports) {
+    const row = el("div", "p");
+    row.title = p.label;
+    row.textContent = p.label;
+    if (looksLikeRs232(p.label)) {
+      row.appendChild(el("span", "sug", "  ← 像是 RS232"));
+    }
+    if (chosenPort === p.name) {
+      row.classList.add("on");
+      if (state && state.saved && state.saved.control === p.name) {
+        row.appendChild(el("span", "sug", "  ← 上次用的"));
+      }
+    }
+    row.onclick = () => {
+      if (state && state.connected) { return; }
+      chosenPort = p.name;
+      for (const other of host.querySelectorAll(".p")) { other.classList.remove("on"); }
+      row.classList.add("on");
+      $("#connect").disabled = false;
+      $("#connhint").innerHTML = "已选 <b>" + p.name + "</b> —— 点「连接」继续。";
+    };
+    host.appendChild(row);
+  }
+
+  // A port that went away between refreshes must not stay selected: connecting
+  // to it would fail with a message about a port nobody can see any more.
+  if (chosenPort && !j.ports.some(p => p.name === chosenPort)) {
+    chosenPort = null;
+  }
+  $("#connect").disabled = !chosenPort;
+}
+
+$("#refresh").onclick = loadPorts;
+
+// Off is a diagnostic, not a preference: with it on a healthy loop is all
+// anyone ever sees, so switching it off and watching miss climb while seq
+// stands still is how you confirm the counter means anything.
+$("#autoecho").onchange = async () => {
+  applyState(await api("/api/autoecho", {on: $("#autoecho").checked}));
+};
+
+$("#connect").onclick = async () => {
+  if (!chosenPort) { return; }
+  $("#connect").disabled = true;
+  const j = await api("/api/connect", {port: chosenPort});
+  $("#connect").disabled = false;
+  if (j.error) { showMessage(j.error, true); return; }
+  applyState(j);
+  startEvents();
+};
+
+$("#disconnect").onclick = async () => {
+  if (evtSource) { evtSource.close(); evtSource = null; }
+  applyState(await api("/api/disconnect", {}));
+};
+
+function startEvents() {
+  if (evtSource) evtSource.close();
+  evtSource = new EventSource("/api/events");
+  evtSource.onmessage = e => {
+    const d = JSON.parse(e.data);
+    addLog(d.kind, d.line, d.at);
+    if (d.kind === "frame" && d.port) { reads[d.port] = d; renderPanel(); judge(d); }
+  };
+  evtSource.onerror = () => { /* EventSource retries by itself */ };
+}
+
+/* ---------------- state ---------------- */
+function applyState(j) {
+  const st = j.state || j;
+  state = st;
+  $("#disconnect").hidden = !st.connected;
+  $("#connect").hidden = !!st.connected;
+
+  // One gate for the whole rest of the page. Everything on it is a reading
+  // that arrives over the control port, so before that port is open there is
+  // nothing here that could mean anything.
+  $("#afterconn").classList.toggle("live", !!st.connected);
+  $("#connhint").innerHTML = st.connected
+    ? "控制口 <b>" + st.port + "</b> 已连上。要换口先点「断开」。"
+    : "先选一个口，再点连接。板子的控制口是端子 <b>C05 / C06</b>，"
+      + "要用 USB-RS232 适配器（端子是真 ±12 V）。";
+
+  const s = $("#status");
+  if (st.connected) {
+    s.classList.remove("bad");
+    s.innerHTML = "已连上 <b>" + st.port + "</b>　固件 " + (st.firmware || "?");
+  } else {
+    s.classList.add("bad"); s.textContent = "没有连接"; reads = {};
+  }
+  $("#echobox").hidden = !st.connected;
+  renderCriteria(st);
+  $("#autoecho").checked = st.autoEcho !== false;
+  const es = $("#echostat");
+  if (st.echoNote) { es.textContent = "回不过去：" + st.echoNote; es.style.color = "var(--err)"; }
+  else if (st.autoEcho === false) { es.textContent = "关着 —— miss 会开始涨"; es.style.color = "var(--warn)"; }
+  else { es.textContent = "已回 " + (st.echoCount || 0) + " 次"; es.style.color = ""; }
+
+  showMessage(st.capsError, true);
+  renderTree(); renderPanel();
+}
+
+function showMessage(text, bad) {
+  const host = $("#panelbody");
+  const old = host.querySelector(".msg"); if (old) old.remove();
+  if (!text) return;
+  const m = el("div", "msg" + (bad ? " bad" : "")); m.textContent = text;
+  host.prepend(m);
+}
+
+async function refreshState() { applyState(await api("/api/state")); }
+
+/* ---------------- port tree ---------------- */
+function chanSet(p) {
+  if (!picked[p.name]) {
+    picked[p.name] = new Set();
+    for (let i = 1; i <= p.channels; i++) picked[p.name].add(i);
+  }
+  return picked[p.name];
+}
+function labelFor(p, i) {
+  return (p.terminals && p.terminals[i-1]) ? p.terminals[i-1] : "";
+}
+
+// 通道读数该不该染成「通 / 断」。
+//
+// 只有单值通道能这么染 —— din 的 0/1、dout 的占空、relay 的电平。
+// 模拟量报的是复合串（ain 的 raw/mV、aout 的 asked/量化/µA、temp 的
+// mV/0.1℃），把它当布尔判会得出「一路死掉的模拟通道显示为绿色」：
+// "0/0" 不等于字符串 "0"。所以复合串一律不染色，只显示数。
+function readingClass(v) {
+  if (v === undefined) return "";
+  if (v.indexOf("/") >= 0) return "num";
+  return v === "0" ? "off" : "on";
+}
+
+// ---- 模拟量：从引脚上的数换算到端子上的量 ----------------------------
+//
+// 固件刻意只报引脚上的 raw / mV，不做前端换算 —— 因为换算取决于板子焊成了
+// 哪个档位，而**跳线状态固件读不回来**（porttool_ain.c 有明文声明）。
+// 换算因此在这里做，系数出自 HARDWARE-FACTS.md「模拟输入前端」。
+//
+// ⚠️ 档位是 2026-08-27 定死的：**AIN1 电压档、AIN2 电流档**。板子要是焊成
+// 别的样子，下面这两行就是错的 —— 所以卡片上会把这个前提写出来。
+const AIN_RANGE = [
+  { unit: "V",  scale: 4.0089 / 1000, digits: 3 },   // 端子 mV = 引脚 mV × 4.0089
+  { unit: "mA", scale: 1 / 124,       digits: 3 },   // 端子 µA = 引脚 mV × 1000/124
+];
+
+// 出厂九个跳线全开路，此时 MCU 引脚彻底悬空，读到的是约 380 mV 的噪声。
+// 实测抖动落在 200–650 LSB —— 落进这一带就提示，因为「数看着像真的」正是
+// 这个故障最贵的地方。
+const AIN_FLOAT_MIN = 200, AIN_FLOAT_MAX = 650;
+
+// formatReading 把一路读数变成 {text, hint}。text 顶替原来那串生数，
+// hint 是补充说明；两者都拿不准就原样显示，绝不猜。
+function formatReading(portName, ch, v) {
+  if (v === undefined) return null;
+  const parts = v.split("/");
+
+  if (portName === "ain" && parts.length === 2) {
+    const raw = Number(parts[0]), mv = Number(parts[1]);
+    if (!isFinite(raw) || !isFinite(mv)) return null;
+    const r = AIN_RANGE[ch - 1];
+    const floating = raw >= AIN_FLOAT_MIN && raw <= AIN_FLOAT_MAX;
+    const out = { text: r ? (mv * r.scale).toFixed(r.digits) + " " + r.unit : v,
+                  hint: "引脚 " + mv + " mV，raw " + raw };
+    if (floating) {
+      out.hint = "⚠ 落在悬空带（raw " + raw + "，约 380 mV）—— 跳线可能没焊，这个数不是端子上的信号";
+      out.warn = true;
+    }
+    return out;
+  }
+
+  if (portName === "aout" && parts.length === 3) {
+    const asked = Number(parts[0]), quant = Number(parts[1]), ua = Number(parts[2]);
+    if (!isFinite(ua)) return null;
+    return { text: (ua / 1000).toFixed(3) + " mA",
+             // 这个电流是算出来的，不是量出来的 —— 板上没有任何回读通道。
+             hint: "算出来的，非实测。要 " + asked + " mV，DAC 实际 " + quant + " mV" };
+  }
+
+  if (portName === "temp" && parts.length === 2) {
+    const mv = Number(parts[0]), deci = Number(parts[1]);
+    if (!isFinite(deci)) return null;
+    return { text: (deci / 10).toFixed(1) + " °C", hint: mv + " mV" };
+  }
+
+  return null;
+}
+
+// The product's boards. This is the only mapping the page keeps, and it is the
+// product's structure rather than a list of ports: the board a port lives on
+// comes from the firmware's own board= field, so a port added to the firmware
+// lands in the right group here without touching this file. An unknown value
+// is shown verbatim instead of hiding the port.
+// How to test each port, in the words a hardware engineer needs: what to wire,
+// what the test does, and what counts as passing. Deliberately NOT in the
+// firmware - it is Chinese prose that changes with wording, and a reflash to
+// fix a typo would be absurd. A port with no entry says so on screen, so a
+// port added to the firmware shows up here as missing rather than silently
+// bare. The facts come from docs/design/PORTTOOL-FLOW.md section B.
+const PORT_HELP = {
+  din:   {wiring:"端子 D02–D09 接 24 V 激励（工装板或一根八芯线从 A03–A10 接过来）",
+          how:"板子只读，不驱动。v= 是八位位域",
+          pass:"该给高电平的通道在 v= 里是 1；miss 不算判据（din 的回环走控制口）"},
+  dout:  {wiring:"端子 A03–A10，空载或接已知负载。⚠️ 输出 24 V、每路限流 ≥3.8 A",
+          how:"八路各自设占空比，mode=hold 恒定 / blink 闪",
+          pass:"帧里 ch<n> 是设进去的值。⚠️ 电压电流要外部模块读，板子读不回来"},
+  relay: {wiring:"端子 B01+B02 … B11+B12，六对干接点",
+          how:"逐路设电平，mode=square 每 period 翻一次（默认 2 秒开 2 秒关）",
+          pass:"能听到咔哒。⚠️ 板上无触点回读，只能证明「已驱动」"},
+  ain:   {wiring:"端子 D12 / D13 接 0–10 V 或 0–20 mA 信号源",
+          how:"周期采样，报引脚上的 raw 和 mV",
+          pass:"ok=1（VREFBUF 起来了）且读数跟着信号源变。⚠️ 端子换算取决于出厂跳线"},
+  aout:  {wiring:"端子 D14 / D15 接万用表或负载",
+          how:"逐路设 mv=，报要求值 / 量化值 / 算出来的 µA",
+          pass:"⚠️ µA 是算的不是量的 —— 板上没有回读通道，万用表才是判据"},
+  temp:  {wiring:"不用接",
+          how:"两路板载 LM50",
+          pass:"ok=1，两路读数接近室温（帧里 ch<n> 的第二个数是 0.1 ℃）"},
+  rs232: {wiring:"就是控制口那根线",
+          how:"loop=self —— 被测链路就是控制口，所以这个回环真的证明这条链路",
+          pass:"miss 保持 0，rxlines 一直涨"},
+  rs485: {wiring:"端子 C09 / C10 接第二个 USB-RS485 适配器，在这张卡上绑成「对端串口」",
+          how:"loop=link，回环走被测那对线",
+          pass:"miss 保持 0、junk 保持 0"},
+  can:   {wiring:"mode=extloop 什么都不用接；mode=normal 才需要 C07/C08 接对端",
+          how:"extloop 的帧穿过 ISO1044 上总线再回来，覆盖收发器和 U7 隔离供电",
+          pass:"rx_frames 跟着 tx 涨、miss=0、lec=0。⚠️ alive/tec/rec 不是总线判据"},
+  knx:   {wiring:"端子 C03 / C04 接 KNX 总线，总线要有电（20–32 V）",
+          how:"loopback 的回路是 MCU→STKNX→总线→STKNX→MCU",
+          pass:"bus=ok vcc=1，chars 涨、bad=0。bus=dead vcc=0 是总线没电"},
+  soak:  {wiring:"不用接（接了负载更真实）",
+          how:"老化：高边轮转、继电器慢速翻转、温度与基准监控、自计时",
+          pass:"faults 全程 0、done=1。⚠️ 继电器 30 秒才翻一次是刻意的"},
+  sdram: {wiring:"不用接",
+          how:"probe 查总线 / sweep 整片四花样 / retention 写完等 5 秒读回",
+          pass:"mismatches=0、failed=0、size=67108864"},
+  sd:    {wiring:"往 J6 插一张卡。⚠️ 必须 FAT16/FAT32 —— 这版没有 exFAT",
+          how:"probe 认卡 / integrity 一轮读写 / stress 64 轮",
+          pass:"detected=1 ready=1；stress 的 passes 和 passed 都要是 64"},
+  eth:   {wiring:"网口插网线",
+          how:"走 MDIO 读 LAN8742A，不用 lwIP 也不用 DMA",
+          pass:"found=1 link=1 autoneg=1 speed=100 fd=1。found=0 是板子问题，link=0 通常是没插线"},
+  rtc:   {wiring:"不用接",
+          how:"按需拉起 RTC 读日历。⚠️ 只读不写",
+          pass:"能读出时间。init=0 正常（没人设过）。clk=lsi 说明时钟源是内部 RC 不是晶振"},
+  led:   {wiring:"不用接，眼睛盯着板子",
+          how:"PE2 闪六次，每次半秒",
+          pass:"⚠️ 只有你能判 —— 这个脚没有回读，回复里永远是 observed=unknown"},
+  pwm:   {wiring:"Digital Out 6（端子 A08）",
+          how:"交权入口：呼吸灯。⚠️ 进去就不回来，只能复位板子",
+          pass:"看到亮度渐变"},
+  bringup:{wiring:"五项各自的接线",
+          how:"交权入口：DI / 继电器 / 模拟量 / 温度五项同时跑，串口按键切换。⚠️ 不回来",
+          pass:"按 ? 看菜单"},
+};
+
+// port= is a protocol key and stays lowercase; what a person reads is this.
+// Two names, not one, on purpose: the key is what the board and the plan files
+// speak, and renaming it would break both.
+const PORT_LABEL = {
+  din: "DI 数字输入", dout: "DO 高侧输出", relay: "继电器",
+  ain: "AI 模拟输入", aout: "AO 模拟输出", temp: "板载温度",
+  rs232: "RS232", rs485: "RS485", can: "CAN", knx: "KNX",
+  sdram: "SDRAM", sd: "SD 卡", eth: "以太网", rtc: "RTC", led: "指示灯",
+  pwm: "PWM（Digital Out 6）", soak: "老化", bringup: "五项同跑",
+};
+
+function portLabel(name) { return PORT_LABEL[name] || name; }
+
+const BOARD_LABEL = {
+  bridge:   "Bridge 主控板",
+  upper:    "Upper Deck 上层板",
+  lower:    "Lower Deck 下层板",
+  junction: "Junction Link 底板",
+  whole:    "整机（跨板）",
+};
+
+// What a hardware engineer wants off this list at a glance: has this port been
+// tested, and did it pass. Nothing else.
+// Asks the server to judge a frame against the plan's criteria.
+//
+// The judging is deliberately NOT done here: the criteria live in the plan file
+// and the evaluator is internal/ptcheck, and a copy of either in this page
+// would drift from what a production run decides. So the page sends the numbers
+// it has and shows the answer it gets.
+let judgeBusy = {};
+let judgeWhy = {};
+
+// Returns the verdict as three states, not two: true, false, or null for "no
+// criteria, so nobody knows". Returning a boolean is what made a target with
+// no criteria come out as 通过 - the caller only tested for === false, and
+// undefined is not false. Found 2026-09-08.
+async function judge(frame) {
+  if (judgeBusy[frame.port]) { return curVerdict(frame.port); }
+  judgeBusy[frame.port] = true;
+  try {
+    const r = await api("/api/judge", {
+      port: frame.port, target: frame.target || "",
+      fields: frame.fields || {}, text: frame.line || "",
+    });
+    if (r.known === false) {
+      judgeWhy[frame.port] = r.why || "";
+      delete verdicts[frame.port];
+    } else if (r.error) {
+      judgeWhy[frame.port] = r.error;
+      delete verdicts[frame.port];
+    } else {
+      verdicts[frame.port] = !!r.pass;
+      judgeWhy[frame.port] = (r.results || [])
+        .filter(x => !x.pass)
+        .map(x => x.what + "：读到 " + x.got + (x.why ? "（" + x.why + "）" : ""))
+        .join("；");
+    }
+  } catch (e) {
+    judgeWhy[frame.port] = String(e);
+    delete verdicts[frame.port];
+  } finally {
+    judgeBusy[frame.port] = false;
+    renderTree(); renderPanel();
+  }
+  return curVerdict(frame.port);
+}
+
+function curVerdict(port) {
+  return verdicts[port] === undefined ? null : verdicts[port];
+}
+
+// How the plan starts each port, fetched once per port and kept.
+//
+// *** The card's inputs are prefilled from this, and 开始测试 sends whatever
+// *** the inputs say. *** One source of truth on screen: the criteria were
+// written for particular parameters, so the page shows those parameters rather
+// than starting with one set of values and judging by another. Changing an
+// input is then a deliberate act with a visible consequence.
+let planParams = {};      // port -> {params, frames} | null when not in the plan
+let planPending = {};
+
+function ensurePortPlan(name) {
+  if (planParams[name] !== undefined || planPending[name]) { return; }
+  planPending[name] = true;
+  api("/api/portplan?port=" + encodeURIComponent(name)).then(pp => {
+    planParams[name] = (pp && pp.known)
+      ? {params: pp.params || {}, frames: pp.frames || 3, step: pp.step}
+      : null;
+  }).catch(() => { planParams[name] = null; })
+    .finally(() => { planPending[name] = false; renderPanel(); });
+}
+
+// What the plan says this parameter should be, else what the board reports.
+function paramDefault(p, name) {
+  const pp = planParams[p.name];
+  if (pp && pp.params && pp.params[name] !== undefined) {
+    return String(pp.params[name]);
+  }
+  return (p.values || {})[name] || "";
+}
+
+// A per-channel parameter is written "1:100,2:100" in both the plan and the
+// board's own vals= line. Prefilling only the scalar ones was a real bug: the
+// relay step asks for on=1:1..6:1 and its criteria check ch1 and ch6, so with
+// the board's default on=1:0 the one-button test drove nothing and reported a
+// healthy board as failed. Found by the browser test, 2026-09-08.
+function planPerCh(p, name) {
+  const pp = planParams[p.name];
+  const spec = pp && pp.params ? pp.params[name] : undefined;
+  const out = {};
+  if (spec === undefined) { return out; }
+  for (const tok of String(spec).split(",")) {
+    const [ch, v] = tok.split(":");
+    if (v !== undefined) { out[Number(ch)] = v; }
+  }
+  return out;
+}
+
+// The plan's channel list, applied once when a port is first selected. Once,
+// not on every render: the checkboxes are the person's to change, and a render
+// that put them back would make unchecking one impossible.
+let chanApplied = {};
+function applyPlanChannels(p) {
+  const pp = planParams[p.name];
+  if (!pp || chanApplied[p.name]) { return; }
+  chanApplied[p.name] = true;
+  const spec = pp.params ? pp.params["ch"] : undefined;
+  if (!spec) { return; }
+  const s = chanSet(p);
+  s.clear();
+  for (const tok of String(spec).split(",")) {
+    const n = Number(tok.trim());
+    if (n >= 1 && n <= p.channels) { s.add(n); }
+  }
+}
+
+function portStatus(p) {
+  if (p.running) { return {icon:"⏳", cls:"testing", text:"测试中"}; }
+  const v = verdicts[p.name];
+  if (v === true)  { return {icon:"✅", cls:"pass", text:"通过"}; }
+  if (v === false) { return {icon:"❌", cls:"fail", text:"失败"}; }
+  // A port whose only entries are one-way handovers can never get a verdict
+  // from here: it prints prose for a person and takes the board with it.
+  // Showing 未测 for those reads as "somebody forgot", which sends people
+  // looking for a button that does not exist. Said plainly instead.
+  if (p.kind === "handover" && !(p.runs || []).length) {
+    return {icon:"👁", cls:"manual", text:"人工判"};
+  }
+  return {icon:"⬜", cls:"untested", text:"未测"};
+}
+
+function renderTree() {
+  const host = $("#treebody"); host.textContent = "";
+  if (!state.connected) { host.appendChild(el("div","hint","连上板子以后，这里会列出它自己报的端口。")); return; }
+
+  // Group by the firmware's board= field, in the order boards are stacked.
+  const order = ["bridge","upper","lower","junction","whole"];
+  const groups = new Map();
+  for (const p of state.ports || []) {
+    const b = p.board || "other";
+    if (!groups.has(b)) { groups.set(b, []); }
+    groups.get(b).push(p);
+  }
+  const seen = [...groups.keys()].sort(
+    (a,b) => (order.indexOf(a) + 1 || 99) - (order.indexOf(b) + 1 || 99));
+
+  for (const b of seen) {
+    host.appendChild(el("div","boardhd", BOARD_LABEL[b] || b));
+    for (const p of groups.get(b)) {
+      const st = portStatus(p);
+      const row = el("div", "prow " + st.cls + (selected === p.name ? " on" : ""));
+      row.appendChild(el("span","ico", st.icon));
+      row.appendChild(el("span","nm", portLabel(p.name)));
+      // The protocol key too: it is what the log lines and the plan files say,
+      // so hiding it would make those unreadable next to this list.
+      row.appendChild(el("span","key", p.name));
+      row.appendChild(el("span","stat", st.text));
+      row.onclick = () => { selected = p.name; renderTree(); renderPanel(); };
+      host.appendChild(row);
+    }
+  }
+}
+
+// The old expandable tree, kept for the channel checkboxes the cards need.
+function renderTreeDetail() {
+  const host = $("#treebody");
+  for (const p of state.ports || []) {
+    const g = el("div","grp");
+    const hd = el("div","hd");
+    const cb = el("input"); cb.type = "checkbox"; cb.checked = !!expanded[p.name];
+    cb.onchange = () => { expanded[p.name] = cb.checked; renderTree(); renderPanel(); };
+    hd.appendChild(cb);
+    hd.appendChild(el("span","blk " + (["A","B","C","D"].includes(p.blk) ? p.blk : "x"),
+                      p.blk === "-" ? "板载" : p.blk));
+    hd.appendChild(el("span","nm", p.name));
+    if (p.running) hd.appendChild(el("span","tag run","跑着"));
+    hd.appendChild(el("span","tag " + p.kind, p.kind === "session" ? "会话" : "交权"));
+    g.appendChild(hd);
+
+    if (expanded[p.name]) {
+      const kids = el("div","kids");
+      if (p.kind === "session" && p.channels > 1) {
+        const all = el("button","selall","全选 / 全不选");
+        all.onclick = () => {
+          const s = chanSet(p);
+          if (s.size === p.channels) s.clear(); else
+            for (let i=1;i<=p.channels;i++) s.add(i);
+          renderTree(); renderPanel();
+        };
+        kids.appendChild(all);
+        for (let i = 1; i <= p.channels; i++) {
+          const lb = el("label");
+          const c = el("input"); c.type="checkbox"; c.checked = chanSet(p).has(i);
+          c.onchange = () => { c.checked ? chanSet(p).add(i) : chanSet(p).delete(i);
+                               renderPanel(); };
+          lb.appendChild(c);
+          lb.appendChild(document.createTextNode(p.name + " " + i));
+          const t = labelFor(p,i); if (t) lb.appendChild(el("span","t", t));
+          kids.appendChild(lb);
+        }
+      } else if (p.kind === "handover") {
+        for (const t of p.targets || []) kids.appendChild(el("div","t", t));
+      } else {
+        kids.appendChild(el("div","t", p.term));
+      }
+      g.appendChild(kids);
+    }
+    host.appendChild(g);
+  }
+}
+
+/* ---------------- port cards ---------------- */
+function chList(p) { return [...chanSet(p)].sort((a,b)=>a-b).join(","); }
+
+// Which values a parameter takes comes from the board's own limits= line, so a
+// mode added to the firmware appears here with no change to this page and a
+// dropdown can never offer something the board will refuse. The hard-coded
+// pair is the fallback for firmware older than the limits= line.
+function modesFor(p) {
+  const enum_ = ((p.limits || {}).mode || {}).enum;
+  if (enum_ && enum_.length) { return enum_; }
+  if (p.name === "relay") return ["hold","square"];
+  if (p.name === "dout")  return ["hold","blink"];
+  return [(p.values || {}).mode || ""];
+}
+
+// A number the board bounds is bounded in the input too, so a value it would
+// refuse is hard to type rather than refused after the fact.
+function applyLimit(p, name, inp) {
+  const l = (p.limits || {})[name];
+  if (!l) { return; }
+  if (l.min !== null && l.min !== undefined) { inp.min = l.min; }
+  if (l.max !== null && l.max !== undefined) { inp.max = l.max; }
+  if (l.spec) { inp.title = name + " 接受 " + l.spec; }
+}
+
+// Which plan supplies the limits, shown and switchable.
+//
+// Switching is a real thing a bench and a line both need - a looser limit set
+// exists (station6-poweron-relaxed.json) and somebody has to be able to say
+// they used it. What must NOT happen is a limit being edited on screen: that
+// leaves no trace, and the production guide bans passing a board by widening a
+// limit. Choosing a whole named plan keeps the decision auditable, because the
+// name and its limit_version go into every report.
+//
+// The plan list is fetched once and cached; it only changes when somebody adds
+// a file next to the exe.
+let critPlans = null;
+
+async function renderCriteria(st) {
+  const box = $("#critbox");
+  box.hidden = !st.connected;
+  if (!st.connected) { return; }
+
+  const sel = $("#critplan");
+  if (critPlans === null) {
+    critPlans = [];
+    try {
+      const r = await api("/api/plans");
+      critPlans = (r.plans || []).map(p => p.name || p);
+    } catch (e) { critPlans = []; }
+  }
+  const want = st.criteriaPlan || "";
+  // Whatever the server says is in use has to be selectable even if the list
+  // came back empty, or the box would show something that is not what is
+  // judging.
+  const names = critPlans.slice();
+  if (want && names.indexOf(want) < 0) { names.unshift(want); }
+
+  const same = sel.options.length === names.length &&
+               names.every((n, i) => sel.options[i].value === n);
+  if (!same) {
+    sel.textContent = "";
+    for (const n of names) {
+      const o = el("option", null, n);
+      o.value = n;
+      sel.appendChild(o);
+    }
+  }
+  sel.value = want;
+
+  const ver = $("#critver");
+  if (st.criteriaProblem) {
+    ver.textContent = "读不了：" + st.criteriaProblem;
+    ver.style.color = "var(--err)";
+  } else {
+    ver.textContent = st.criteriaLimits ? "限值 " + st.criteriaLimits : "";
+    // A limit set that is not the default is worth noticing, since a board can
+    // pass under it and fail under the strict one.
+    ver.style.color = /relax|宽/i.test(st.criteriaPlan || "") ? "var(--warn)" : "";
+  }
+}
+
+$("#critplan").onchange = async () => {
+  const j = await api("/api/criteria", {plan: $("#critplan").value});
+  if (j.error) { showMessage(j.error, true); return; }
+  // Every verdict on screen was produced by the old limits, so they are no
+  // longer claims about anything. Cleared rather than left to look current.
+  verdicts = {}; judgeWhy = {};
+  addLog("panel", "判据换成 " + j.plan + "（限值 " + (j.limitVersion || "?") +
+                  "）—— 之前的结论已经清掉，要重新测");
+  const st = await api("/api/state");
+  applyState(st);
+};
+
+function renderPanel() {
+  const host = $("#panelbody");
+  const msg = host.querySelector(".msg");
+  host.textContent = ""; if (msg) host.appendChild(msg);
+
+  if (!state.connected) {
+    host.appendChild(el("div","hint","上面选一个串口，点「连接」。板子要用 PORTTOOL_ENABLE=1 编的固件，接线是端子 C05 / C06 / C02，115200。"));
+    return;
+  }
+  // One rule for this column: it always explains whatever the left list has
+  // selected. That is why the plan lives on the same left list - a second
+  // explaining pane would be a second rule to learn.
+  const p = (state.ports||[]).find(x => x.name === selected);
+  if (!p) {
+    host.appendChild(el("div","hint","左边选一个端口，这里就说明它怎么测。"));
+    return;
+  }
+  ensurePortPlan(p.name);
+  applyPlanChannels(p);
+
+  // How to test this port, before any controls. A hardware engineer opening a
+  // port they have not touched needs the wiring and the criterion first.
+  const help = (PORT_HELP[p.name] || null);
+  const hb = el("div","howto");
+  hb.appendChild(el("div","howhd",
+    portLabel(p.name) + "　" + portStatus(p).text + "　"));
+  hb.querySelector(".howhd").appendChild(el("span","key", p.name));
+  if (help) {
+    for (const [k, v] of [["接线", help.wiring], ["方法", help.how], ["什么算过", help.pass]]) {
+      if (!v) { continue; }
+      const r = el("div","howrow");
+      r.appendChild(el("span","k", k));
+      r.appendChild(el("span","v", v));
+      hb.appendChild(r);
+    }
+  } else {
+    hb.appendChild(el("div","howrow",
+      "这个端口还没有写说明 —— 固件报了它，help/ports.json 里还没有对应条目。"));
+  }
+  // Why it failed, right where the verdict is. A red mark with no reason
+  // means somebody has to go read the log to find out what happened, which is
+  // exactly the step this is meant to remove.
+  const why = judgeWhy[p.name];
+  if (why) {
+    const w = el("div", "howrow");
+    w.appendChild(el("span", "k", verdicts[p.name] === false ? "没过" : "说明"));
+    w.appendChild(el("span", "v", why));
+    hb.appendChild(w);
+  }
+  host.appendChild(hb);
+
+  // expanded[] still drives the channel checkboxes the cards use, so
+  // selecting a port is also what opens it.
+  expanded[p.name] = true;
+  host.appendChild(p.kind === "session" ? sessionCard(p) : handoverCard(p));
+
+  // The cable joins these two ports, so it is reachable from either. Somebody
+  // who came in through din must not have to guess that the test lives under
+  // dout.
+  if (p.name === "dout" || p.name === "din") {
+    const cross = dodiCard(p);
+    if (cross) { host.appendChild(cross); }
+  }
+}
+
+function sessionCard(p) {
+  const c = el("div","card");
+  const hd = el("div","hd");
+  hd.appendChild(el("span","nm", p.name));
+  hd.appendChild(el("span","sub", p.blk === "-" ? p.term : ("Klemmblock " + p.blk + " · " + p.term)));
+  hd.appendChild(el("span","sp"));
+  // 启动/停止 are the manual pair, for probing with a scope in one hand. They
+  // stay, but they are no longer the first thing: the one-button test below is
+  // what somebody wants who just needs to know whether this port is good.
+  const start = el("button",null, p.running ? "重新启动" : "启动");
+  const stop  = el("button",null,"停止"); stop.disabled = !p.running;
+  hd.appendChild(start); hd.appendChild(stop);
+  c.appendChild(hd);
+  // Filled in below, once the parameter controls exist: the one-button test
+  // sends what the inputs say, and they are built further down.
+  const startHere = el("div");
+  c.appendChild(startHere);
+
+  // readings
+  const fr = reads[p.name];
+  if (fr) {
+    const rr = el("div","reads");
+    let anyFloating = false;
+    for (let i = 1; i <= p.channels; i++) {
+      const v = fr.fields["ch"+i];
+      const eng = formatReading(p.name, i, v);
+      const shown = eng ? eng.text : v;
+      const b = el("div","bit " + readingClass(v) + (eng && eng.warn ? " warn" : ""),
+                   (labelFor(p,i) || (p.name+i)) + (shown === undefined ? "" : " " + shown));
+      if (eng) { b.title = eng.hint; anyFloating = anyFloating || !!eng.warn; }
+      rr.appendChild(b);
+    }
+    c.appendChild(rr);
+    // 换算前提要写在看得见的地方：档位是焊出来的，固件读不回来，所以这行
+    // 数字只在板子确实按这个档位焊了的时候才成立。
+    if (p.name === "ain") {
+      c.appendChild(el("div","sub",
+        "按已定档位换算：AIN1 电压（0–10 V）、AIN2 电流（0–20 mA）。跳线焊成别的样子，这两个数就是错的"));
+    }
+    if (p.name === "aout") {
+      c.appendChild(el("div","sub",
+        "毫安是按 Iout = Vin × 10 / 1024 算的，**不是实测** —— 板上没有回读通道，万用表才是判据"));
+    }
+    if (anyFloating) {
+      c.appendChild(el("div","sub warn",
+        "⚠ 有通道落在悬空带（raw 200–650）。出厂九个跳线全开路，此时 MCU 引脚彻底悬空 —— 先确认 JP5/JP6/JP8/JP9 焊了没有"));
+    }
+    const extra = Object.entries(fr.fields)
+      .filter(([k]) => !/^ch\d+$/.test(k) && !["seq","rx","miss"].includes(k))
+      .map(([k,v]) => k + "=" + v).join("　");
+    if (extra) c.appendChild(el("div","sub", extra));
+  } else {
+    c.appendChild(el("div","hint", p.running ? "启动了，等第一帧数据…" : "还没启动。"));
+  }
+
+  // parameters, straight from what the board says it accepts
+  const inputs = {};       // param -> one control for every channel
+  const perCh = {};        // param -> { channel: control }
+  const row = el("div","row");
+  for (const name of p.params || []) {
+    if (name === "ch") continue;                 // the tree owns the channel choice
+    const cur = paramDefault(p, name);
+
+    // A parameter the board reports per channel gets one control per channel.
+    // Which parameters those are is not hard-coded here: it is whatever came
+    // back in that shape, so a new one needs no change to this page.
+    if ((p.perChannel || {})[name]) {
+      const box = el("div","chvals");
+      box.appendChild(el("div","st", name + " —— 每路一个"));
+      const grid = el("div","chgrid");
+      perCh[name] = {};
+      const want = planPerCh(p, name);
+      for (const i of [...chanSet(p)].sort((a,b)=>a-b)) {
+        const lb = el("label");
+        lb.appendChild(el("span","t", labelFor(p,i) || (p.name+i)));
+        const inp = el("input"); inp.type = "number"; inp.min = 0;
+        applyLimit(p, name, inp);
+        inp.value = want[i] ?? p.perChannel[name][i] ?? 0;
+        perCh[name][i] = inp;
+        lb.appendChild(inp);
+        grid.appendChild(lb);
+      }
+      box.appendChild(grid);
+      const same = el("button",null,"全都设成第一路的值");
+      same.onclick = () => {
+        const first = Object.values(perCh[name])[0];
+        for (const inp of Object.values(perCh[name])) inp.value = first.value;
+      };
+      box.appendChild(same);
+      c.appendChild(box);
+      continue;
+    }
+
+    const lb = el("label", null, name + " ");
+    let inp;
+    if (name === "mode") {
+      inp = el("select");
+      for (const o of modesFor(p)) {
+        const op = el("option",null,o); op.value = o; if (o === cur) op.selected = true;
+        inp.appendChild(op);
+      }
+    } else {
+      inp = el("input"); inp.value = cur;
+      if (/^\d+$/.test(cur)) { inp.type = "number"; applyLimit(p, name, inp); }
+    }
+    lb.appendChild(inp); inputs[name] = inp; row.appendChild(lb);
+  }
+  if (p.channels > 1) row.appendChild(el("span","hint","通道在左边勾：" + (chList(p) || "一个都没选")));
+  c.appendChild(row);
+
+  // A loop=link port needs a second adapter on the terminal being tested.
+  // Without it the counter can never close, and the frames would look exactly
+  // like broken wiring - so the card says so rather than leaving it to guess.
+  if (p.loop === "link") c.appendChild(linkRow(p));
+
+  // the echo counter, kept away from the readings on purpose
+  if (fr && fr.fields.seq !== undefined) {
+    const lk = el("div","link");
+    lk.appendChild(el("span",null,"链路健康"));
+    for (const k of ["seq","rx","miss"]) {
+      if (fr.fields[k] !== undefined) {
+        const s = el("span"); s.appendChild(el("b",null,k+"="));
+        s.appendChild(document.createTextNode(fr.fields[k])); lk.appendChild(s);
+      }
+    }
+    lk.appendChild(el("span","hint", p.loop === "link"
+      ? "回环走的是被测链路本身，这个数在涨就说明那条线双向通。"
+      : "回环走的是 RS232 控制口，这个数只说明控制口活着 —— 这个端口好不好，看上面的读数。"));
+    c.appendChild(lk);
+  }
+
+  const build = () => {
+    let cmd = "pt.start " + p.name;
+    if (p.channels > 1) cmd += " ch=" + chList(p);
+    for (const [k,i] of Object.entries(inputs)) if (i.value !== "") cmd += " " + k + "=" + i.value;
+    for (const [k,byCh] of Object.entries(perCh)) {
+      const parts = Object.entries(byCh)
+        .filter(([ch]) => chanSet(p).has(Number(ch)))
+        .map(([ch,inp]) => ch + ":" + (inp.value === "" ? 0 : inp.value));
+      if (parts.length) cmd += " " + k + "=" + parts.join(",");
+    }
+    return cmd;
+  };
+  start.onclick = () => {
+    if (p.channels > 1 && chanSet(p).size === 0) {
+      showMessage("「" + p.name + "」一个通道都没勾，先在左边勾上要测的那几路。", true); return;
+    }
+    run(build());
+  };
+  stop.onclick = () => run("pt.stop " + p.name);
+  // The one-button test sends the same command the 启动 button would, so what
+  // is on screen is what runs. Put back at the top of the card, where it was.
+  startHere.appendChild(startRow(p, build));
+
+  // A session may also own one-shot targets - eth's PHY probe does not need
+  // the TCP server or a peer, so it stays worth pressing on its own. The
+  // one-button test above runs these too; this is for pressing just one.
+  for (const t of (p.runs || [])) {
+    const r = el("div","tgt");
+    r.appendChild(el("span","n", t));
+    const b = el("button",null,"单独跑");
+    b.onclick = () => runOne(p, t);
+    r.appendChild(b);
+    c.appendChild(r);
+  }
+  return c;
+}
+
+// ---- DO -> DI cross-check -------------------------------------------------
+//
+// One eight-way cable from A03-A10 to D02-D09 puts sixteen channels under test
+// at once, and the failures it finds are the ones a single port can never see:
+// a crossed pair, two channels shorted together, one channel dead.
+//
+// It walks the outputs one at a time and records what the inputs read each
+// time. The verdict is that the matrix is diagonal - driving channel n moved
+// input n and nothing else.
+//
+// *** The criterion is deliberately NOT "the input reads 1". Whether a driven
+// *** output shows up as a high or a low at the input depends on the wiring and
+// *** on how the fixture is built, and a page that assumed one of them would
+// *** call a correctly wired board faulty. A diagonal matrix is the same answer
+// *** either way, and it is the answer that actually locates a crossed wire.
+
+const DODI_SETTLE_FRAMES = 2;
+
+// Everything this view remembers between commands, kept the way testing[] and
+// verdicts[] are.
+//
+// *** It cannot live in the DOM. applyState() calls renderPanel() after every
+// *** single command, so #panelbody - this card included - is rebuilt eight
+// *** times during one walk. A card holding its own progress in captured
+// *** nodes writes to elements that left the document one command ago, and the
+// *** screen simply stops updating.
+let dodi = {busy: "", rows: [], idle: null, note: ""};
+
+// Resolves once the port has pushed n frames NEWER than the ones already seen,
+// so a caller can tell "the board answered my change" from "a frame from
+// before it arrived".
+function waitForNewFrames(port, n, ms) {
+  const before = (reads[port] || {}).tick;
+  return new Promise(resolve => {
+    const fresh = new Set();
+    const start = Date.now();
+    const iv = setInterval(() => {
+      const r = reads[port];
+      if (r && r.tick !== undefined && r.tick !== before) { fresh.add(r.tick); }
+      if (fresh.size >= n) { clearInterval(iv); resolve(r); }
+      else if (Date.now() - start > ms) { clearInterval(iv); resolve(fresh.size ? r : null); }
+    }, 60);
+  });
+}
+
+function dodiPorts() {
+  const all = state.ports || [];
+  return {
+    dout: all.find(x => x.name === "dout"),
+    din:  all.find(x => x.name === "din"),
+  };
+}
+
+// One pass: drive exactly one output, read every input.
+function dutyOnly(n, count) {
+  const parts = [];
+  for (let i = 1; i <= count; i++) { parts.push(i + ":" + (i === n ? 100 : 0)); }
+  return parts.join(",");
+}
+
+function allChannels(count) {
+  const parts = [];
+  for (let i = 1; i <= count; i++) { parts.push(i); }
+  return parts.join(",");
+}
+
+async function dodiRun(say, render) {
+  const {dout, din} = dodiPorts();
+  if (!dout || !din) {
+    say("这块固件没有同时报 dout 和 din，跑不了对照。");
+    return null;
+  }
+  const nOut = dout.channels, nIn = din.channels;
+
+  say("起 din 和 dout…");
+  await run("pt.stop all");
+  await run("pt.start din ch=" + allChannels(nIn) + " period=200");
+  await run("pt.start dout ch=" + allChannels(nOut) +
+            " mode=hold period=200 duty=" + dutyOnly(0, nOut));
+
+  if (!await waitForNewFrames("din", 1, 8000)) {
+    await run("pt.stop all");
+    say("din 一帧都没来 —— 看日志，可能是启动被拒了。");
+    return null;
+  }
+
+  // The baseline: every output off. Whatever the inputs read here is what a
+  // driven channel has to differ from, so a fixture that idles high works
+  // exactly as well as one that idles low.
+  await waitForNewFrames("din", DODI_SETTLE_FRAMES, 5000);
+  const idle = [];
+  for (let i = 1; i <= nIn; i++) { idle.push(((reads.din || {}).fields || {})["ch" + i]); }
+
+  const rows = [];
+  for (let n = 1; n <= nOut; n++) {
+    say("驱动 DO" + n + " —— 看 DI 哪一路跟着动（" + n + "/" + nOut + "）");
+    await run("pt.set dout duty=" + dutyOnly(n, nOut));
+    await waitForNewFrames("din", DODI_SETTLE_FRAMES, 5000);
+
+    const f = (reads.din || {}).fields || {};
+    const seen = [];
+    for (let i = 1; i <= nIn; i++) { seen.push(f["ch" + i]); }
+    // Which inputs are not where they idled.
+    const moved = [];
+    for (let i = 0; i < nIn; i++) { if (seen[i] !== idle[i]) { moved.push(i + 1); } }
+    rows.push({out: n, seen: seen, moved: moved});
+    render(rows, idle);
+  }
+
+  say("收尾：把输出全放掉…");
+  await run("pt.set dout duty=" + dutyOnly(0, nOut));
+  await run("pt.stop all");
+
+  return {rows: rows, idle: idle, nIn: nIn, nOut: nOut};
+}
+
+// Turns the matrix into a sentence a person can act on: which wire to look at.
+function dodiVerdict(res) {
+  if (!res) { return {ok: null, why: "没跑完"}; }
+  const bad = [];
+  for (const r of res.rows) {
+    if (r.moved.length === 0) {
+      bad.push("DO" + r.out + " 驱动了，但 DI 一路都没动 —— 那一路断了，或者输出坏了");
+    } else if (r.moved.length > 1) {
+      bad.push("DO" + r.out + " 一动，DI " + r.moved.join("、") + " 一起动 —— 这几路短在一起了");
+    } else if (r.moved[0] !== r.out) {
+      bad.push("DO" + r.out + " 动的是 DI" + r.moved[0] + " —— 这两根接错位了");
+    }
+  }
+  if (bad.length) { return {ok: false, why: bad.join("；")}; }
+  return {ok: true, why: "八路一一对应，没有错位、短路或断路"};
+}
+
+function dodiCard(p) {
+  const {dout, din} = dodiPorts();
+  if (!dout || !din) { return null; }
+
+  const c = el("div","card");
+  const hd = el("div","hd");
+  hd.appendChild(el("span","nm","DO → DI 对照"));
+  hd.appendChild(el("span","sub","A03-A10 → D02-D09，一根八芯线"));
+  hd.appendChild(el("span","sp"));
+  const go = el("button","primary dodigo", dodi.busy ? "跑着…" : "走一遍");
+  go.disabled = !!dodi.busy;
+  hd.appendChild(go);
+  c.appendChild(hd);
+
+  c.appendChild(el("div","hint",
+    "逐路只驱动一个输出，看是不是只有对应那一路输入跟着动。" +
+    "判据是「对角」不是「读到 1」 —— 高低电平取决于怎么接的，错位和短路才是这根线要查的东西。"));
+
+  c.appendChild(el("div","sub2", dodi.busy || dodi.note ||
+    "还没跑过。接好那根八芯线再点「走一遍」。"));
+
+  if (dodi.rows.length) {
+    const grid = el("div","dodi");
+    const head = el("div","dodirow hd2");
+    head.appendChild(el("span","c","驱动"));
+    for (let i = 1; i <= din.channels; i++) { head.appendChild(el("span","c","DI" + i)); }
+    head.appendChild(el("span","c","结论"));
+    grid.appendChild(head);
+
+    for (const r of dodi.rows) {
+      const row = el("div","dodirow");
+      row.appendChild(el("span","c","DO" + r.out));
+      for (let i = 1; i <= din.channels; i++) {
+        const moved = r.moved.indexOf(i) >= 0;
+        row.appendChild(el("span", "c" + (moved ? (i === r.out ? " hit" : " wrong") : ""),
+                         r.seen[i - 1] === undefined ? "-" : String(r.seen[i - 1])));
+      }
+      let note = "对";
+      if (r.moved.length === 0) { note = "没反应"; }
+      else if (r.moved.length > 1) { note = "多路一起动"; }
+      else if (r.moved[0] !== r.out) { note = "错到 DI" + r.moved[0]; }
+      row.appendChild(el("span","c " + (note === "对" ? "hit" : "wrong"), note));
+      grid.appendChild(row);
+    }
+    c.appendChild(grid);
+    if (dodi.idle) {
+      c.appendChild(el("div","hint",
+        "空载时 DI 读的是 " + dodi.idle.map(v => v === undefined ? "-" : v).join(" ") +
+        " —— 上面的「动」是相对它说的。"));
+    }
+  }
+
+  go.onclick = async () => {
+    dodi = {busy: "起会话…", rows: [], idle: null, note: ""};
+    renderPanel();
+    try {
+      const res = await dodiRun(
+        t => { dodi.busy = t; renderPanel(); },
+        (rows, idle) => { dodi.rows = rows.slice(); dodi.idle = idle; renderPanel(); });
+      const v = dodiVerdict(res);
+      dodi.note = v.ok === true ? "✅ " + v.why : v.ok === false ? "❌ " + v.why : v.why;
+      // Both ports carry the answer: the cable is what was tested, and somebody
+      // looking at either port has to see the same result.
+      if (v.ok !== null) {
+        verdicts.dout = v.ok; verdicts.din = v.ok;
+        judgeWhy.dout = "DO→DI 对照：" + v.why;
+        judgeWhy.din  = "DO→DI 对照：" + v.why;
+      }
+    } finally {
+      dodi.busy = "";
+      renderTree(); renderPanel();
+    }
+  };
+
+  return c;
+}
+
+function linkRow(p) {
+  const bound = (state.links || {})[p.name];
+  const box = el("div","chvals");
+  box.appendChild(el("div","st","对端串口 —— 这个端口的回环走被测链路本身"));
+
+  if (bound) {
+    const r = el("div","row");
+    r.appendChild(el("span","sub", bound.com + " @ " + bound.baud +
+      "　收 " + bound.rxLines + " 行，送回 " + bound.echoed + " 行"));
+    const off = el("button",null,"解开");
+    off.onclick = async () => { applyState(await api("/api/unlink", {port:p.name})); };
+    r.appendChild(off);
+    box.appendChild(r);
+    if (bound.error) {
+      const e = el("div","hint", "出问题了：" + bound.error);
+      e.style.color = "var(--err)";
+      box.appendChild(e);
+    }
+    box.appendChild(el("div","hint",
+      "对端把板子发来的每一行原样送回去。板子自己比对送出和收回的数 —— 所以这里不能改动内容。"));
+  } else {
+    const r = el("div","row");
+    const sel = el("select");
+    // Which adapter was on this terminal last time. The panel has been saving
+    // this since it was first bound and was not reading it back, so somebody
+    // picked the same COM out of a list of five on every connect.
+    const was = ((state.saved || {}).peers || {})[p.name];
+    for (const o of linkChoices()) {
+      const op = el("option",null,o.label + (was && was.com === o.name ? "　← 上次" : ""));
+      op.value = o.name;
+      if (was && was.com === o.name) { op.selected = true; }
+      sel.appendChild(op);
+    }
+    r.appendChild(sel);
+    const on = el("button","primary","绑上");
+    on.onclick = async () => {
+      const j = await api("/api/link", {port:p.name, com:sel.value});
+      if (j.error) showMessage(j.error, true); else applyState(j);
+    };
+    r.appendChild(on);
+    box.appendChild(r);
+    box.appendChild(el("div","hint",
+      "**还没绑。**这个端口的回环走被测链路，没有对端就永远闭合不了 —— " +
+      "那时 miss 会一直涨，但那是接线不全，不是端口坏了。" +
+      (was ? "上次这个端口绑的是 " + was.com + "。" : "")));
+  }
+  return box;
+}
+
+// Everything except the control port. The panel cannot tell which adapter is
+// wired to which terminal - only the person at the bench can - so it lists
+// them all with their descriptions and lets them choose.
+function linkChoices() {
+  return (allPorts || []).filter(p => p.name !== state.port);
+}
+
+function handoverCard(p) {
+  const c = el("div","card");
+  const hd = el("div","hd");
+  hd.appendChild(el("span","nm", p.name));
+  hd.appendChild(el("span","sub", p.blk === "-" ? p.term : ("Klemmblock " + p.blk + " · " + p.term)));
+  c.appendChild(hd);
+  // The runs come first and the one-way entries are folded away. They answer
+  // different questions, and only one of them fits how anybody wants to work:
+  // pick a port, press start, wait for a result. An entry that needs the board
+  // reset before another port can be tested is a troubleshooting tool, not a
+  // test - and showing it as the only option, which this card did until
+  // 2026-09-08, made the whole panel look like it needs a reset per port.
+  if ((p.runs || []).length) {
+    c.appendChild(startRow(p));
+    for (const t of p.runs) {
+      const r = el("div","tgt");
+      r.appendChild(el("span","n", t));
+      const b = el("button",null,"单独跑");
+      b.onclick = () => runOne(p, t);
+      r.appendChild(b);
+      c.appendChild(r);
+    }
+  }
+
+  if ((p.targets || []).length) {
+    const det = el("details");
+    det.appendChild(el("summary", null,
+      "深度排查入口（" + p.targets.length + " 个，⚠️ 进去就回不来，要按复位键）"));
+    det.appendChild(el("div","hint",
+      "这些是老的独占测试，打的是给人看的散文，上位机判不了。正常测这个端口用上面的「开始测试」，不用碰这里。"));
+    for (const t of p.targets) {
+      const r = el("div","tgt");
+      r.appendChild(el("span","n", t));
+      const b = el("button",null,"进入");
+      b.onclick = () => {
+        if (!confirm("要进入「" + t + "」吗？\n\n进去之后工装就不响应命令了，要按板子上的复位键才能回来，其他端口也就没法测了。\n\n正常测这个端口用「开始测试」。"))
+          return;
+        run("pt.handover " + t);
+      };
+      r.appendChild(b);
+      det.appendChild(r);
+    }
+    c.appendChild(det);
+  }
+  return c;
+}
+
+// The one button the whole page is organised around: press it, wait, read the
+// verdict. Asked for on 2026-09-08 - "选了端口，看一下做什么测试，然后开始，
+// 就等着测试结果了".
+// Whether a port's one-button test is in flight, and how far it has got.
+//
+// Page state, NOT a DOM node: judging a reading re-renders this card, so a
+// button or a label the click handler was holding on to would be replaced
+// mid-test and the progress and verdict would vanish. Found on 2026-09-08 by
+// the browser test - the run really happened and the card had nothing to show
+// for it.
+let testing = {};
+let cancelled = {};
+
+function startRow(p, cmdFor) {
+  const row = el("div","startrow");
+  const busy = testing[p.name];
+  const b = el("button","primary", busy ? "跑着…" : "开始测试");
+  b.disabled = !!busy;
+  b.onclick = async () => {
+    testing[p.name] = "启动…";
+    delete cancelled[p.name];
+    renderPanel();
+    try {
+      await runPortTest(p, t => { testing[p.name] = t; renderPanel(); }, cmdFor);
+    } finally {
+      delete testing[p.name];
+      renderTree(); renderPanel();
+    }
+  };
+  row.appendChild(b);
+  // A burn-in can be told to run for ten hours, so a test in flight has to be
+  // stoppable from the same place it was started. Without this the only way
+  // out of a long run is the reset key, which also loses every other verdict
+  // on the page.
+  if (busy) {
+    const x = el("button",null,"中止");
+    x.onclick = () => {
+      cancelled[p.name] = true;
+      testing[p.name] = "中止中…";
+      run("pt.stop " + p.name);
+      renderPanel();
+    };
+    row.appendChild(x);
+  }
+  row.appendChild(el("span","sub",
+    busy || judgeWhy[p.name] ||
+    (verdicts[p.name] === true ? "通过" :
+     verdicts[p.name] === false ? "失败 —— 看日志" : "还没测过")));
+  return row;
+}
+
+// Runs one pt.run target and judges the reply it comes back with.
+// Returns {state, note}: state is true, false, or null for "no criteria".
+async function runOne(p, target) {
+  const j = await run("pt.run " + target);
+  const line = ((j && j.lines) || []).find(l => l.startsWith("OK " + target));
+  let state;
+  if (!line) {
+    verdicts[p.name] = false;
+    judgeWhy[p.name] = (j && j.error)
+      ? target + " 没等到应答：" + j.error
+      : target + " 应答里没有 OK 行 —— 看日志";
+    state = false;
+  } else {
+    const fields = {};
+    for (const tok of line.split(/\s+/).slice(2)) {
+      const i = tok.indexOf("=");
+      if (i > 0) { fields[tok.slice(0, i)] = tok.slice(i + 1); }
+    }
+    state = await judge({port: p.name, target: target, fields: fields, line: line});
+  }
+  renderTree(); renderPanel();
+  return {state: state,
+          note: judgeWhy[p.name] ||
+                (state === true ? "过" : state === false ? "看日志" : "没有判据")};
+}
+
+// One port, one press.
+//
+// Runs whichever halves the port has - its one-shot targets, its session, or
+// both - and reports a single verdict for the hardware.
+async function runPortTest(p, say, cmdFor) {
+  // A port can have both: eth's session is the TCP server and eth.link is the
+  // PHY probe over MDIO, one RJ45 between them (DECISIONS.md 28). Both have to
+  // run - a board whose PHY answers but whose link carries nothing is not a
+  // good board, and running only the one-shot would never find that out.
+  let pre = null;
+
+  if ((p.runs || []).length) {
+    // Every target has to pass, and each is judged by its own step's criteria.
+    // Letting the last one's verdict stand was the bug the browser test caught
+    // on 2026-09-08 - sdram ran three targets and reported the third's
+    // judgement as the chip's.
+    //
+    // A target with no criteria leaves the port unjudged, not passed: three
+    // states in, three states out.
+    const notes = [];
+    let worst = true;                 // true -> null -> false
+    for (const t of p.runs) {
+      say("跑 " + t + " …");
+      const r = await runOne(p, t);
+      notes.push(t + "：" + r.note);
+      if (r.state === false) { worst = false; break; }
+      if (r.state === null && worst === true) { worst = null; }
+    }
+    pre = {state: worst, note: notes.join("；")};
+
+    // Nothing else to run for a port that is only one-shots.
+    if (p.kind !== "session") {
+      if (worst === null) { delete verdicts[p.name]; } else { verdicts[p.name] = worst; }
+      judgeWhy[p.name] = pre.note;
+      return judgeWhy[p.name];
+    }
+  }
+
+  const note = await runSessionTest(p, say, cmdFor);
+  if (pre === null) {
+    return note;
+  }
+
+  // Merge the two halves. false wins over null wins over true: a port is only
+  // good when nothing said otherwise, and a half nobody could judge must not
+  // be reported as a pass.
+  const after = (p.name in verdicts) ? verdicts[p.name] : null;
+  let merged = pre.state;
+  if (after === false || merged === false) { merged = false; }
+  else if (after === null || merged === null) { merged = null; }
+  else { merged = true; }
+
+  if (merged === null) { delete verdicts[p.name]; } else { verdicts[p.name] = merged; }
+  judgeWhy[p.name] = pre.note + "；会话：" + note;
+  return judgeWhy[p.name];
+}
+
+// The session half of one port's test: start it the way the plan says, let it
+// produce frames, judge, and stop it again - stopping matters, because a relay
+// left closed or an analog output left driving after the answer is in is a
+// hazard rather than a result.
+async function runSessionTest(p, say, cmdFor) {
+  // Started with exactly what the card shows. The inputs were prefilled from
+  // the plan, so by default the session runs the way the criteria were written
+  // for - can's are written for mode=extloop, and judging a default
+  // mode=normal session by them would fail a healthy board - and an engineer
+  // who changes an input can see that is what they did.
+  const pp = planParams[p.name];
+  const frames = (pp && pp.frames) || 3;
+  const cmd = cmdFor ? cmdFor() : ("pt.start " + p.name);
+
+  say("启动…");
+  const started = await run(cmd);
+  if (started && (started.error || started.refused)) {
+    verdicts[p.name] = false;
+    judgeWhy[p.name] = "启动被拒：" + (started.refused || started.error);
+    return judgeWhy[p.name];
+  }
+
+  // A session carrying minutes= times itself and says so with done=; waiting
+  // for a fixed handful of frames would judge it while it was still running,
+  // and done=0 would fail a burn-in that was going perfectly well.
+  const mins = Number((cmd.match(/\bminutes=(\d+)/) || [])[1] || 0);
+  let seen;
+  if (mins > 0) {
+    seen = await waitForDone(p.name, mins * 60000 + 60000, say);
+  } else {
+    seen = await waitForFrames(p.name, frames, 30000);
+  }
+  await run("pt.stop " + p.name);
+
+  if (cancelled[p.name]) {
+    delete verdicts[p.name];
+    judgeWhy[p.name] = "中止了 —— 没跑完就没有结论";
+    return judgeWhy[p.name];
+  }
+  if (!seen) {
+    verdicts[p.name] = false;
+    judgeWhy[p.name] = "没收到采样帧 —— 看日志，可能是启动被拒了";
+    return judgeWhy[p.name];
+  }
+  return judgeWhy[p.name] ||
+         (verdicts[p.name] === true ? "通过" :
+          verdicts[p.name] === false ? "看日志" : "没有判据");
+}
+
+// Resolves once the port has pushed n frames, or on timeout. Counts distinct
+// ticks rather than events, so one frame arriving twice is not two frames.
+function waitForFrames(port, n, ms) {
+  return new Promise(resolve => {
+    const ticks = new Set();
+    const start = Date.now();
+    const iv = setInterval(() => {
+      if (cancelled[port]) { clearInterval(iv); resolve(ticks.size > 0); return; }
+      const r = reads[port];
+      if (r && r.tick !== undefined) { ticks.add(r.tick); }
+      if (ticks.size >= n) { clearInterval(iv); resolve(true); }
+      else if (Date.now() - start > ms) { clearInterval(iv); resolve(ticks.size > 0); }
+    }, 300);
+  });
+}
+
+// Resolves once the board says done=1, showing how far it has got meanwhile.
+// The board times itself and stops driving at its own deadline whatever the PC
+// does, so the timeout here is only a backstop for a board that went quiet.
+function waitForDone(port, ms, say) {
+  return new Promise(resolve => {
+    const start = Date.now();
+    const iv = setInterval(() => {
+      if (cancelled[port]) { clearInterval(iv); resolve(false); return; }
+      const r = reads[port];
+      const f = (r && r.fields) || {};
+      if (f.done === "1") { clearInterval(iv); resolve(true); return; }
+      if (Date.now() - start > ms) { clearInterval(iv); resolve(!!r); return; }
+      if (f.left_s !== undefined) {
+        say("跑着 —— 还剩 " + fmtLeft(f.left_s) +
+            "，faults=" + (f.faults ?? "?") +
+            (f.tmax !== undefined ? "，最高 " + (Number(f.tmax) / 10).toFixed(1) + " ℃" : ""));
+      } else {
+        say("跑着 —— 等第一帧…");
+      }
+    }, 500);
+  });
+}
+
+function fmtLeft(s) {
+  const n = Number(s) || 0;
+  if (n < 60) { return n + " 秒"; }
+  const m = Math.floor(n / 60);
+  if (m < 60) { return m + " 分 " + (n % 60) + " 秒"; }
+  return Math.floor(m / 60) + " 小时 " + (m % 60) + " 分";
+}
+
+/* ---------------- send ---------------- */
+async function run(cmd) {
+  addLog("tx", "> " + cmd);
+  const j = await api("/api/command", {cmd});
+  if (j.error) showMessage(j.error, true);
+  else if (j.refused) showMessage("板子拒绝了这条命令：" + j.refused, true);
+  else showMessage("", false);
+  if (j.state) applyState(j);
+  // Returned so a caller can read the board's own reply - the one-button test
+  // judges a pt.run answer, and it has to see the line to do that.
+  return j;
+}
+
+$("#send").onclick = () => {
+  const v = $("#raw").value.trim();
+  if (!v) return;
+  $("#raw").value = "";
+  run(v);
+};
+$("#raw").addEventListener("keydown", e => { if (e.key === "Enter") $("#send").click(); });
+
+/* ---------------- go ---------------- */
+// State first, then the port list: the list wants to know which port was
+// chosen last time, and that arrives with the state. The other way round the
+// list renders once with nothing preselected and the prefill is lost.
+refreshState()
+  .then(() => loadPorts())
+  .then(() => { if (state.connected) startEvents(); });
+
+/* ================= 方案页 =================
+ *
+ * 三栏和参考架构一样：左边方案文件，中间步骤表（复选框 = 跑不跑），
+ * 右边属性网格。日志那一栏两个页面共用，因为跑方案时最该看的就是它。
+ *
+ * ⚠️ 判据不是单独一层，是步骤自己的参数（DECISIONS.md 第 24 条），
+ * 所以属性网格里「限值」和「参数」并排，不分两个地方编辑。
+ */
+let planTab = "manual";
+let plan = null;         // 当前方案，编辑就地改这个对象
+let planName = "";
+let planSel = 0;         // 选中第几步
+let planVerdicts = {};   // 上次运行的逐步结果
+
+function switchTab(which) {
+  planTab = which;
+  document.querySelectorAll(".tab").forEach(b =>
+    b.classList.toggle("on", b.dataset.tab === which));
+  const manual = which === "manual";
+  $("#treebody").hidden = !manual;
+  $("#planlist").hidden = manual;
+  $("#panelbody").hidden = !manual;
+  $("#planbody").hidden = manual;
+  $("#panelhead").textContent = manual ? "面板" : "方案";
+  if (!manual) { loadPlanList(); }
+}
+
+async function loadPlanList() {
+  const r = await api("/api/plans");
+  const host = $("#planlist");
+  host.textContent = "";
+
+  // What a plan is, said before the list of them: "方案" on its own tells a
+  // hardware engineer nothing, and the one debugging a single port needs to
+  // know this tab is not for them.
+  const what = el("div", "hint");
+  what.id = "planwhat";
+  what.innerHTML = "<b>方案 = 产线用。</b>一个文件写好跑哪些步骤、每步什么算过，" +
+    "点一下整套跑完出报告。单个端口调试用左边的「端口」页，不用碰这里。";
+  host.appendChild(what);
+
+  if (r.error) { host.appendChild(el("div", "msg bad", r.error)); return; }
+
+  host.appendChild(el("div", "sub", r.dir));
+  for (const name of (r.plans || [])) {
+    const b = el("button", name === planName ? "primary" : null, name);
+    b.style.cssText = "display:block;width:100%;text-align:left;margin:3px 0";
+    b.onclick = () => openPlan(name);
+    host.appendChild(b);
+  }
+  if (!(r.plans || []).length) {
+    host.appendChild(el("div", "hint", "这个目录里还没有方案文件。"));
+  }
+}
+
+async function openPlan(name) {
+  const r = await api("/api/plan?name=" + encodeURIComponent(name));
+  if (r.error) { $("#planbody").textContent = ""; $("#planbody").appendChild(el("div", "msg bad", r.error)); return; }
+  plan = r.plan; planName = r.name; planSel = 0; planVerdicts = {};
+  loadPlanList();
+  renderPlan();
+  checkPlan();
+}
+
+/* 只有固件说得清的事才发到板子上判：端口在不在、参数收不收、值在不在范围内。 */
+async function checkPlan() {
+  if (!plan) return;
+  const r = await api("/api/plan/check", { plan });
+  const host = $("#planfindings");
+  if (!host) return;
+  host.textContent = "";
+  if (r.error) { host.appendChild(el("div", "msg bad", r.error)); return; }
+  if (r.note) { host.appendChild(el("div", "hint", r.note)); return; }
+  for (const f of (r.findings || [])) {
+    host.appendChild(el("div", "finding", f));
+  }
+}
+
+function renderPlan() {
+  const host = $("#planbody");
+  host.textContent = "";
+  if (!plan) {
+    host.appendChild(el("div", "hint", "左边选一个方案文件。"));
+    return;
+  }
+
+  const hd = el("div", "card");
+  const t = el("div", "hd");
+  t.appendChild(el("div", "nm", plan.name));
+  t.appendChild(el("span", "sp"));
+  const run = el("button", "primary", "运行");
+  run.onclick = runPlan;
+  const save = el("button", null, "保存");
+  save.onclick = savePlan;
+  t.appendChild(run); t.appendChild(save);
+  hd.appendChild(t);
+  hd.appendChild(el("div", "sub", "限值版本 " + plan.limit_version + "　·　" + planName));
+  hd.appendChild(el("div", "findings-host"));
+  hd.lastChild.id = "planfindings";
+  host.appendChild(hd);
+
+  const list = el("div", "plansteps");
+  (plan.steps || []).forEach((st, i) => {
+    const row = el("div", "st" + (i === planSel ? " sel" : ""));
+    const cb = el("input");
+    cb.type = "checkbox";
+    cb.checked = st.enabled !== false;
+    /* 勾掉 = 这一步不跑，但仍然会进报告并标成跳过 —— 悄悄消失的步骤
+       就是没人知道没跑过的步骤。 */
+    cb.onclick = e => { e.stopPropagation(); st.enabled = cb.checked; };
+    row.appendChild(cb);
+    row.appendChild(el("span", null, st.id));
+    row.appendChild(el("span", "ty", st.type));
+    const v = planVerdicts[st.id];
+    if (v) { row.appendChild(el("span", "vd " + v, v)); }
+    row.onclick = () => { planSel = i; renderPlan(); };
+    list.appendChild(row);
+  });
+  host.appendChild(list);
+
+  host.appendChild(renderStepProps());
+}
+
+/* 属性网格。分组照参考架构：类型专有参数在上，六个通用字段在「杂项」里。 */
+function renderStepProps() {
+  const card = el("div", "card");
+  const st = (plan.steps || [])[planSel];
+  if (!st) { card.appendChild(el("div", "hint", "选一步。")); return card; }
+
+  card.appendChild(el("div", "hd")).appendChild(el("div", "nm", st.id + " · " + st.type));
+  const g = el("div", "pgrid");
+
+  const put = (label, node) => {
+    g.appendChild(el("div", "k", label));
+    g.appendChild(node);
+  };
+  const text = (get, set) => {
+    const i = el("input");
+    i.value = get() ?? "";
+    i.onchange = () => set(i.value);
+    return i;
+  };
+  const num = (get, set) => {
+    const i = el("input");
+    i.type = "number";
+    i.value = get() ?? "";
+    i.onchange = () => set(i.value === "" ? undefined : Number(i.value));
+    return i;
+  };
+
+  if (st.type === "PtSession") {
+    put("port", text(() => st.port, v => { st.port = v; checkPlan(); }));
+    put("frames", num(() => st.frames, v => st.frames = v));
+    const ports = (state.ports || []).filter(p => p.name === st.port);
+    const lim = ports.length ? (ports[0].limits || {}) : {};
+    for (const k of Object.keys(st.params || {})) {
+      const spec = lim[k] ? lim[k].spec : "";
+      put(k + (spec ? "  " + spec : ""),
+          text(() => st.params[k], v => { st.params[k] = v; checkPlan(); }));
+    }
+  }
+  if (st.type === "PtRun")  { put("target", text(() => st.target, v => st.target = v)); }
+  if (st.type === "PtRaw")  { put("command", text(() => st.command, v => st.command = v)); }
+  if (st.type === "Tool")   { put("tool_name", text(() => st.tool_name, v => st.tool_name = v)); }
+  if (st.type === "UserConfirm") { put("prompt", text(() => st.prompt, v => st.prompt = v)); }
+  if (st.type === "ReadSN") { put("source", text(() => st.source, v => st.source = v)); }
+  if (st.type === "PushResult") { put("sink", text(() => st.sink, v => st.sink = v)); }
+
+  if ((st.checks || []).length) {
+    g.appendChild(el("div", "pgroup", "判据"));
+    st.checks.forEach((c, ci) => {
+      const line = el("div");
+      line.style.cssText = "display:flex;gap:5px;align-items:center";
+      const mk = (key, w) => {
+        const i = el("input");
+        i.value = c[key] ?? "";
+        i.style.width = w;
+        i.onchange = () => {
+          const v = i.value;
+          if (v === "") { delete c[key]; }
+          else if (key === "min" || key === "max") { c[key] = Number(v); }
+          else { c[key] = v; }
+        };
+        return i;
+      };
+      line.appendChild(mk("op", "80px"));
+      line.appendChild(mk("min", "62px"));
+      line.appendChild(mk("max", "62px"));
+      line.appendChild(mk("value", "80px"));
+      line.appendChild(mk("unit", "52px"));
+      g.appendChild(el("div", "k", c.field));
+      g.appendChild(line);
+      void ci;
+    });
+  }
+
+  /* 六个通用字段。它们是框架和一堆脚本的分界线 —— 每个步骤都有，
+     与步骤类型无关（DECISIONS.md 第 24 条）。 */
+  g.appendChild(el("div", "pgroup", "杂项（每个步骤都有）"));
+  const cond = el("select");
+  ["PASS", "FAIL", "ALWAYS"].forEach(o => {
+    const opt = el("option", null, o);
+    opt.value = o;
+    if ((st.execute_condition || "PASS") === o) opt.selected = true;
+    cond.appendChild(opt);
+  });
+  cond.onchange = () => st.execute_condition = cond.value;
+  put("execute_condition", cond);
+  put("retry_count", num(() => st.retry_count, v => st.retry_count = v));
+  put("retry_interval_ms", num(() => st.retry_interval_ms, v => st.retry_interval_ms = v));
+  put("sleep_before_ms", num(() => st.sleep_before_ms, v => st.sleep_before_ms = v));
+  put("sleep_after_ms", num(() => st.sleep_after_ms, v => st.sleep_after_ms = v));
+  put("timeout_ms", num(() => st.timeout_ms, v => st.timeout_ms = v));
+
+  card.appendChild(g);
+  if (st._note) { card.appendChild(el("div", "sub", st._note)); }
+  return card;
+}
+
+async function savePlan() {
+  const r = await api("/api/plan", { name: planName, plan });
+  if (r.error) { alert("保存失败：" + r.error); return; }
+  loadPlanList();
+}
+
+async function runPlan() {
+  if (!plan) return;
+  planVerdicts = {};
+  renderPlan();
+  const r = await api("/api/plan/run", { plan, sn: "" });
+  if (r.error) { alert(r.error); return; }
+  for (const s of (r.report.steps || [])) { planVerdicts[s.id] = s.outcome; }
+  renderPlan();
+}
+
+document.querySelectorAll(".tab").forEach(b =>
+  b.onclick = () => switchTab(b.dataset.tab));
+
+</script>
+</body>
+</html>

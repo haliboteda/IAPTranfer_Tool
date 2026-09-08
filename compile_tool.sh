@@ -1,8 +1,15 @@
 #!/bin/bash
 
-# Define output directory and base file name
+# Define output directory
 OUTPUT_DIR="./Output"
-BASE_NAME="IAPTool"
+
+# Binaries to build: "name:package". Two audiences, two executables, one module
+# and one internal/ between them -- a hardware engineer's panel should not carry
+# firmware signing and takeown. See $BOOT/docs/design/DECISIONS.md 8.
+TARGETS=(
+    "IAPTool:."
+    "PortTool:./cmd/porttool"
+)
 
 # Platforms to build: "GOOS:extension"
 PLATFORMS=(
@@ -11,24 +18,39 @@ PLATFORMS=(
     "linux:"
 )
 
+for target in "${TARGETS[@]}"; do
+    BASE_NAME="${target%%:*}"
+    PACKAGE="${target#*:}"
+
+    for entry in "${PLATFORMS[@]}"; do
+        PLATFORM="${entry%%:*}"
+        EXTENSION="${entry#*:}"
+
+        PLATFORM_DIR="$OUTPUT_DIR/$PLATFORM"
+        OUTPUT_FILE="$PLATFORM_DIR/$BASE_NAME$EXTENSION"
+
+        mkdir -p "$PLATFORM_DIR"
+
+        echo "Building $BASE_NAME for the '$PLATFORM' platform..."
+        GOOS=$PLATFORM GOARCH=amd64 go build -o "$OUTPUT_FILE" "$PACKAGE"
+
+        if [ $? -eq 0 ]; then
+            echo "Build succeeded! The executable is saved at: $OUTPUT_FILE"
+        else
+            echo "Build failed for $BASE_NAME on '$PLATFORM'. Please check the error messages."
+            exit 1
+        fi
+    done
+done
+
+# PortTool's plan page reads plan files from a plans/ folder beside the
+# executable. Existing files are overwritten and extra ones left alone: the
+# shipped plans belong to this repository, but a plan somebody wrote on a line
+# is theirs.
 for entry in "${PLATFORMS[@]}"; do
     PLATFORM="${entry%%:*}"
-    EXTENSION="${entry#*:}"
-
-    PLATFORM_DIR="$OUTPUT_DIR/$PLATFORM"
-    OUTPUT_FILE="$PLATFORM_DIR/$BASE_NAME$EXTENSION"
-
-    mkdir -p "$PLATFORM_DIR"
-
-    echo "Building the executable for the '$PLATFORM' platform..."
-    GOOS=$PLATFORM GOARCH=amd64 go build -o "$OUTPUT_FILE"
-
-    if [ $? -eq 0 ]; then
-        echo "Build succeeded! The executable is saved at: $OUTPUT_FILE"
-    else
-        echo "Build failed for platform '$PLATFORM'. Please check the error messages."
-        exit 1
-    fi
+    mkdir -p "$OUTPUT_DIR/$PLATFORM/plans"
+    cp ./TestCase/plans/*.json "$OUTPUT_DIR/$PLATFORM/plans/"
 done
 
 # The Arduino IDE's Upload button runs the copy inside the board package, not
