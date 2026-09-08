@@ -1,0 +1,253 @@
+/*
+ * The fourteen standalone bring-up entries, as addresses only.
+ *
+ * porttool_handover.c's table holds a function pointer per target, so the
+ * symbols must exist to link. None of them should ever run here: a handover is
+ * one-way and would take the harness with it. Each one therefore fails the run
+ * loudly rather than doing nothing, so a test that accidentally hands over is
+ * a red result and not a quiet pass.
+ */
+
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+
+#include "KNX/knx_test.h"
+#include "CAN/can_test.h"
+#include "RS485/rs485_test.h"
+#include "PWM/pwm_test.h"
+#include "RS232/rs232_test.h"
+#include "ETH/eth_test.h"
+#include "SD/sd_test.h"
+#include "SDRAM/sdram_test.h"
+#include "bringup_test.h"
+
+static void never(const char *who)
+{
+    fprintf(stderr, "TEST FAILURE: handover to %s actually ran\n", who);
+    exit(3);
+}
+
+#define ENTRY(fn) void fn(void) { never(#fn); }
+
+ENTRY(BringUp_Test_Run)
+ENTRY(CAN_Test_Run)
+ENTRY(CAN_Test_Soak_Run)
+ENTRY(CAN_Test_Scope_Run)
+ENTRY(CAN_Test_Echo_Run)
+ENTRY(KNX_Test_Run)
+ENTRY(RS485_Test_Run)
+ENTRY(RS232_Test_Run)
+ENTRY(PWM_Test_Run)
+ENTRY(SD_Test_Info)
+ENTRY(SD_Test_FileIntegrity)
+ENTRY(SDRAM_Test_Capacity)
+ENTRY(SDRAM_Test_Retention)
+ENTRY(SDRAM_Test_CubeProgrammerVerify)
+
+/* The SD one-shots, like the SDRAM probe below: pt.run calls them and comes
+ * back, so they stand in for the measurement instead of failing the run.
+ * test_sd_* let a test model a missing card and a card that reads back wrong -
+ * the two failures that look alike from a distance. */
+int test_sd_detected = 1;
+int test_sd_ready = 1;
+int test_sd_identical = 1;
+int test_sd_probe_count = 0;
+int test_sd_integrity_count = 0;
+
+void SD_Test_Probe(sd_probe_t *out)
+{
+    test_sd_probe_count++;
+    printf("SDCARD_TEST: probing (stub)\r\n");
+
+    out->detected = (uint8_t)(test_sd_detected ? 1 : 0);
+    out->ready = (uint8_t)((test_sd_detected && test_sd_ready) ? 1 : 0);
+    out->block_count  = out->ready ? 62333952u : 0u;
+    out->block_size   = out->ready ? 512u : 0u;
+    out->capacity_mib = out->ready ? 30436u : 0u;
+    out->card_type    = 1u;
+    out->version_2x   = (uint8_t)(out->ready ? 1 : 0);
+    out->card_class   = out->ready ? 1461u : 0u;
+}
+
+int SD_Test_IntegrityOnce(sd_integrity_t *out)
+{
+    test_sd_integrity_count++;
+    printf("SDCARD_TEST: one integrity round (stub)\r\n");
+
+    out->bytes = 4096u;
+    out->fresult = 0;
+    if (!test_sd_detected || !test_sd_ready) {
+        out->mounted = 0; out->wrote = 0; out->read_back = 0; out->identical = 0;
+        out->write_crc = 0; out->read_crc = 0; out->fresult = -1;
+        return 0;
+    }
+    out->mounted = 1; out->wrote = 1; out->read_back = 1;
+    out->write_crc = 0xDEADBEEFu;
+    out->read_crc = test_sd_identical ? 0xDEADBEEFu : 0x11112222u;
+    out->identical = (uint8_t)(test_sd_identical ? 1 : 0);
+    return test_sd_identical ? 1 : 0;
+}
+
+/* The Ethernet PHY over MDIO. test_eth_* let a test model the three answers a
+ * station has to tell apart: no PHY at all (a board fault), a PHY with no link
+ * (usually an unplugged cable), and a negotiated link. */
+int test_eth_present = 1;
+int test_eth_link = 1;
+int test_eth_probe_count = 0;
+
+int ETH_Test_Probe(eth_probe_t *out)
+{
+    test_eth_probe_count++;
+    printf("ETH_TEST: MDIO bring-up (stub)\r\n");
+
+    memset(out, 0, sizeof(*out));
+    out->mdio_ready = 1;
+    if (!test_eth_present) {
+        return 0;
+    }
+    out->found  = 1;
+    out->addr   = 0;
+    out->phy_id = 0x0007C131u;      /* LAN8742A, as the board really reports */
+    out->bcr    = 0x1000u;
+    if (test_eth_link) {
+        out->bsr          = 0x782Du;
+        out->scsr         = 0x1058u;
+        out->link         = 1;
+        out->autoneg_done = 1;
+        out->speed_mbit   = 100;
+        out->full_duplex  = 1;
+    } else {
+        out->bsr  = 0x7809u;        /* no link, negotiation not complete */
+        out->scsr = 0x0040u;
+    }
+    return 1;
+}
+
+void ETH_Test_Run(void)
+{
+    printf("ETH_TEST: watch (stub) - would not return\r\n");
+    for (;;) { }
+}
+
+/* The stress pass. test_sd_stress_fail_at is 0 for a clean run, or the 1-based
+ * round that goes wrong - which is how a test checks that a run stopping early
+ * is reported as passes< attempted rather than as a smaller clean result. */
+int test_sd_stress_fail_at = 0;
+int test_sd_stress_count = 0;
+
+#define TEST_SD_STRESS_PASSES 64u
+
+int SD_Test_StressOnce(sd_stress_t *out)
+{
+    test_sd_stress_count++;
+    printf("SDCARD_TEST: stress (stub)\r\n");
+
+    out->bytes_each = 4096u;
+    out->passes = TEST_SD_STRESS_PASSES;
+    out->passed = 0;
+    out->bytes_total = 0;
+    out->elapsed_ms = 1234u;
+    out->first_bad_pass = 0;
+    out->fresult = 0;
+
+    if (!test_sd_detected || !test_sd_ready) {
+        /* Mirrors the real one: nothing attempted means passes 0, not the 64
+         * that were planned. */
+        out->mounted = 0;
+        out->passes  = 0;
+        out->fresult = -1;
+        return 0;
+    }
+    out->mounted = 1;
+
+    if (test_sd_stress_fail_at > 0) {
+        out->passed = (uint32_t)(test_sd_stress_fail_at - 1);
+        out->passes = (uint32_t)test_sd_stress_fail_at;
+        out->first_bad_pass = (uint32_t)test_sd_stress_fail_at;
+        out->bytes_total = out->passed * out->bytes_each;
+        return 0;
+    }
+
+    out->passed = TEST_SD_STRESS_PASSES;
+    out->bytes_total = out->passed * out->bytes_each;
+    return 1;
+}
+
+/* SDRAM_Test_Probe is the opposite case: pt.run is supposed to call it and
+ * come back, so it stands in for the measurement instead of failing the run.
+ * test_sdram_* let a test decide what the board "found", including the failure
+ * shape - a controller that was never brought up. */
+int test_sdram_ready = 1;
+int test_sdram_databus_ok = 1;
+int test_sdram_addrbus_ok = 1;
+int test_sdram_probe_count = 0;
+
+void SDRAM_Test_Probe(sdram_probe_t *out)
+{
+    test_sdram_probe_count++;
+
+    /* The real one prints as it goes, and pt.run has to keep that prose out of
+     * the middle of its OK line. Printing here is what makes that testable. */
+    printf("SDRAM_TEST: probing (stub)\r\n");
+
+    out->base = 0xC0000000UL;
+    out->size_bytes = 0x04000000UL;
+    out->ready = (uint8_t)(test_sdram_ready ? 1 : 0);
+    out->databus_ok = (uint8_t)((test_sdram_ready && test_sdram_databus_ok) ? 1 : 0);
+    out->addrbus_ok = (uint8_t)((test_sdram_ready && test_sdram_addrbus_ok) ? 1 : 0);
+}
+
+/* test_sdram_sweep_mismatches is how a test says "the array has a bad word":
+ * the sweep still finishes, and the count is the whole finding. */
+int test_sdram_sweep_mismatches = 0;
+int test_sdram_sweep_count = 0;
+
+int SDRAM_Test_SweepOnce(sdram_sweep_t *out)
+{
+    test_sdram_sweep_count++;
+    printf("SDRAM_TEST: full sweep (stub)\r\n");
+
+    memset(out, 0, sizeof(*out));
+    out->ready = (uint8_t)(test_sdram_ready ? 1 : 0);
+    if (!test_sdram_ready) {
+        return 0;
+    }
+
+    out->patterns = 4u;
+    out->words_each = 0x04000000UL / 4u;
+    out->write_ms = 8000u;
+    out->verify_ms = 6000u;
+    out->mismatches = (uint32_t)test_sdram_sweep_mismatches;
+    if (out->mismatches > 0u) {
+        out->first_bad_offset = 0x00A0B000UL;
+        out->first_bad_pattern = 0x55555555UL;
+        return 0;
+    }
+    return 1;
+}
+
+int test_sdram_retention_failed = 0;
+int test_sdram_retention_count = 0;
+
+int SDRAM_Test_RetentionOnce(sdram_retention_t *out)
+{
+    test_sdram_retention_count++;
+    printf("SDRAM_TEST: retention cycle (stub)\r\n");
+
+    memset(out, 0, sizeof(*out));
+    out->ready = (uint8_t)(test_sdram_ready ? 1 : 0);
+    if (!test_sdram_ready) {
+        return 0;
+    }
+
+    out->checked = 64u;
+    out->wait_ms = 5000u;
+    out->seed = 0x12345678UL;
+    out->failed = (uint32_t)test_sdram_retention_failed;
+    if (out->failed > 0u) {
+        out->first_bad_addr = 0xC0A0B000UL;
+        return 0;
+    }
+    return 1;
+}
