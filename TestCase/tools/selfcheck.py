@@ -60,6 +60,7 @@ CATALOG = [
     ("P8",      "-",           "no claim is written out in more than one document"),
     ("P9",      "-",           "every path a document names actually exists"),
     ("H2",      "C5",          "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)"),
+    ("H4",      "-",           "port tool protocol contract (real porttool.c, then the Go parser)"),
     ("K1-K7",   "C8",          "IAPTool key/certificate match against a stand-in board"),
     ("X1-X2",   "C9",          "crypto cross-check against independent implementations"),
     ("P4",      "E6",          "Arduino variant assertions (the FMC reserved-pin table)"),
@@ -81,7 +82,7 @@ def print_catalog():
     for cid, covers, name in CATALOG:
         print("  %-*s  covers %-*s  %s" % (width, cid, cov, covers, name))
     print("")
-    print("  %d steps. --quick skips H2 / K1-K7 / X1-X2 / P4." % len(CATALOG))
+    print("  %d steps. --quick skips H2 / H4 / K1-K7 / X1-X2 / P4." % len(CATALOG))
     print("  P7, P8 and P9 check the documents, not the firmware.")
 
 
@@ -200,6 +201,14 @@ def main():
 
         run_step("H2", "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)",
                  [python_exe(), TESTTOOL / "host" / "bootloader_unit" / "build.py"],
+                 needs=cc_need, cwd=tool_repo)
+
+        # build.py runs both halves: the C harness against the real firmware
+        # source, then the Go test over the transcript it just wrote. They are
+        # one step because running either alone lets the two drift apart, which
+        # is the failure this case exists to prevent.
+        run_step("H4", "port tool protocol contract (real porttool.c, then the Go parser)",
+                 [python_exe(), TESTTOOL / "host" / "porttool_caps" / "build.py"],
                  needs=cc_need, cwd=tool_repo)
 
         run_step("K1-K7", "IAPTool key/certificate match against a stand-in board",

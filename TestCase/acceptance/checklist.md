@@ -21,7 +21,8 @@
 | CHK-A1 | 主机侧 Go 测试（用例 **H1**） | 全过 | 见 [../TEST-CASES.md](../TEST-CASES.md) 的 host 层表 |
 | CHK-A2 | 主机侧 C 测试（用例 **H2**） | 全过 | `host/bootloader_unit/build.py` —— 编译器路径填 `config/machine.py` 的 `HOST_CC` |
 | CHK-A3 | 整模块静态检查（用例 **H3**） | 无输出 | `go vet ./...` |
-| CHK-A4 | bootloader 构建 | **0 errors 0 warnings**，且 `.bin` ≤ **122,880 B** | `tools/flash_bootloader.py`（构建阶段会打占用率） |
+| CHK-A4 | bootloader 构建 | **0 errors 0 warnings**，且 `.bin` ≤ **122,880 B** | `tools/build_image.py`（自己按链接脚本判尺寸），或 `tools/flash_bootloader.py` 的构建阶段 |
+| CHK-A4b | 工装镜像构建 | **0 errors**，只许有那条刻意的 `#warning`，且 `.bin` ≤ **122,880 B** | `tools/build_image.py --porttool`。⚠️ **2026-09-08 之前这一项是不通过的** —— 溢出 47,608 字节，见 `$BOOT/docs/test/PORTTOOL-FIRST-BENCH.md` |
 | CHK-A5 | 烧写 + 启动日志 | 见 [BG1](#bg1--启动门禁) | `tools/flash_bootloader.py` |
 | CHK-A6 | 设备行为用例 | 全过 | `TestCase all --ip=<板子IP> --bin=<app.bin> --key=<板子信任的 .pem>` |
 | CHK-A7 | 变体断言 + 公开根指纹（用例 **P4** / **P6**） | 全过 | 都在 `tools/selfcheck.py` 里 |

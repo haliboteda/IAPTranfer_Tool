@@ -89,12 +89,24 @@ if want_print:
 # board stopped verifying an application signed with the intended key. On a
 # rotation where both keys are ours, nothing would have looked wrong at all.
 stale_build = False
+tool_build = False
 binary = Path(cfg.BOOT_REPO) / "Debug" / "open_plc_cube_ide.bin"
 if binary.exists():
     Section("built image")
-    found = binary.read_bytes().find(key_bytes)
+    image = binary.read_bytes()
+    found = image.find(key_bytes)
     if found >= 0:
         Ok("  the key from fw_pubkey.inc is in Debug/*.bin at 0x%X" % found)
+    elif b"porttool=" in image:
+        # The last build was the hardware test tool (PORTTOOL_ENABLE=1). That
+        # image links no IAP server and therefore no signing key at all, so the
+        # key being absent is what it is supposed to look like. Reporting it as
+        # a stale bootloader sends somebody looking for a rotation that never
+        # happened - and this check says "do not go to the board until green",
+        # which a false red makes expensive.
+        Warn("  Debug/*.bin is the port tool image, which carries no signing key")
+        Warn("  -- nothing to compare. Rebuild without PORTTOOL_ENABLE to check a bootloader.")
+        tool_build = True
     else:
         Warn("  Debug/*.bin does NOT contain the key from fw_pubkey.inc")
         Warn("  -- the build is stale. Touch fw_pubkey.inc and rebuild.")
@@ -117,5 +129,9 @@ if have.lower() != want.lower():
 if stale_build:
     Fail("the fingerprint is right, but the built image carries a different key")
     sys.exit(1)
-Ok("the warning recognises the published root, and the build carries it")
+if tool_build:
+    Ok("the warning recognises the published root; the built image is the port tool, "
+       "so it says nothing either way")
+else:
+    Ok("the warning recognises the published root, and the build carries it")
 sys.exit(0)

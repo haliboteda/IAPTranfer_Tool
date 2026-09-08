@@ -1,7 +1,6 @@
 package main
 
 import (
-	"errors"
 	"fmt"
 	"io"
 	"strings"
@@ -10,19 +9,14 @@ import (
 	"go.bug.st/serial"
 
 	"IAPTool/iapcert"
+	"IAPTool/internal/serialx"
 )
 
-// Helper function to open a serial port with specified baud rate
+// Helper function to open a serial port with specified baud rate.
+// PortTool opens the same adapters the same way, so the behaviour lives in
+// internal/serialx and both binaries share it.
 func openPort(comName string, baudRate int) (serial.Port, error) {
-	mode := &serial.Mode{BaudRate: baudRate}
-	port, err := serial.Open(comName, mode)
-	if err != nil {
-		return nil, err
-	}
-	if port == nil {
-		return nil, errors.New("serial.Open returned nil port")
-	}
-	return port, nil
+	return serialx.Open(comName, baudRate)
 }
 
 // Retry logic for opening serial port

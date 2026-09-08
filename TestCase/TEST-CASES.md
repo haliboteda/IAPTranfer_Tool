@@ -38,6 +38,10 @@ TestCase/
 ├── host/                 ← 不需要板子，纯主机跑
 │   ├── iapcert/          ← H1  证书签发、serial 计数器、挑战签名的 Go 单元测试
 │   ├── bootloader_unit/  ← H2  用 stub 编译真实 bootloader 源码的 C 单元测试
+│   ├── porttool_caps/    ← H4  端口工装协议契约：C harness 跑真实固件源码产出
+│   │                          caps_golden.txt，Go 测试再拿它验 internal/ptproto
+│   ├── porttool_plan/    ← H1  方案文件、判据算子、执行器、报告，以及方案页的
+│   │                          HTTP 面（板子由脚本假扮，逐条命令自己决定怎么答）
 │   ├── fakeboard/        ← K1–K7  IAPTool 传输前的密钥/证书匹配决策，七种情况
 │   └── crypto_ref/       ← X1/X2  SHA-256 与 ECDSA 的独立实现交叉验证
 ├── onboard/              ← 需要烧到板子上跑
@@ -212,12 +216,42 @@ T1–T4 和 S1 都要求设备处于 bootloader 且以太网已起。三种办�
 
 ## 主机侧测试（`host/`，不需要板子）
 
+### 模拟板：手上没板子时怎么联调
+
+**它是什么**：`TestCase/porttool/` 那些 `.c` 原样编成的 PC 程序，只换掉外设 stub 和最外层 main。命令解析、`pt.caps`、会话逻辑、帧格式、版本号全是固件那份源码，所以固件改了它编不过 —— **不会漂移**。设计理由见 `$BOOT/docs/design/DECISIONS.md` 第 29 条。
+
+```bash
+cd TestCase/host/porttool_caps && python build.py --sim   # 编，产出 harness/porttool_simboard.exe
+porttool                                                  # 面板的端口列表里选 "sim"
+porttool run --port sim --yes TestCase/plans/station6-poweron.json
+cd TestCase/host/porttool_panel && python run.py --port sim   # H5，不用板子
+```
+
+**造故障看面板怎么显示**（手敲进它的 stdin，或在面板底部的命令框里）：
+
+| 命令 | 干什么 |
+|---|---|
+| `sim.help` | 列全部 |
+| `sim.din 0x00` | 数字输入全低，看 din 判失败 |
+| `sim.vdda 1800` | 基准坏掉，落在方案的 2400–2600 之外 |
+| `sim.ain <ch> <mv>` / `sim.temp <ch> <mv>` | 单路模拟量读数 |
+| `sim.link 0` | 拔网线（PHY 的 BSR 和 netif 一起变） |
+| `sim.walk 1` | 数字输入自己轮转，看面板动起来 |
+
+⚠️ **`sim.` 开头的命令真板上一条都没有**，由 `sim_main.c` 自己拦下，不进固件的 `dispatch()`。
+
+⚠️ **它证明不了任何硬件行为。** 读数全是 stub 造的一块理想板子，每根对端线都当接好的；UART 中断收发、`rx_errors`、真 ADC、真 PHY 都不在里面。**它验的是 PC 侧的线路和方案文件。**
+
+
 跑得快、随时能跑，**改完代码先过这一层再上板**。
 
 | 目录 | 怎么跑 | 覆盖什么 |
 |---|---|---|
 | `host/iapcert/` | 在 `IAPTranfer_Tool/` 下 `go test ./TestCase/...` | 证书布局与根签名覆盖的字节范围（换个范围就验错东西）；serial 计数器从 1 开始、递增、落文件；serial 小端落在偏移 64；挑战签名覆盖 `sha256(nonce\|\|msg)` 且顺序不可换 |
 | `host/bootloader_unit/` | `python build.py`，需要 gcc/clang | 用 stub 在主机上编译**真实的** `sha256.c` / `iap_cert.c` / `fw_verify.c` / `iap_auth.c` 并跑断言。金标证书由出货工具生成，所以过了就等于 C 和 Go 对同一套线格式达成一致 |
+| `host/porttool_caps/` | `python build.py`，需要 gcc/clang | **H4** 端口工装的协议契约，判据见 [PORTTOOL-CAPS-TEST.md](host/porttool_caps/PORTTOOL-CAPS-TEST.md) |
+| `host/porttool_panel/` | `python run.py --port COMx`（**真板子**）或 `--port sim`（**模拟板，不用板子**，见下），都要 playwright + Chrome | **H5** 面板在真浏览器里点一遍。判据：①页面先过一遍语法（用 playwright 自带的 node `--check`，板子都不用）②页面抛的任何异常、控制台任何 error 直接判失败 ③串口列表、未连接时的门闸、按板子分组 ④**逐个端口按一次「开始测试」，每个端口的结论必须是这台工位应该出的那一个** —— 缺激励的端口要失败，并且失败原因里要点出是哪个读数 ⑤只有交权入口的端口（pwm / bringup）没有按钮且显示「人工判」⑥**方案文件里的参数真的发出去了** —— `on=1:1` / `mv=1:1000` / `duty=1:100` / `minutes=1` / `mode=extloop` 在日志里能查到 ⑦老化跑起来要显示板子自己的倒计时，并且能中止 ⑧两个 tab、日志的暂停/清空/过滤、断开、记下的控制口。⚠️ 覆盖不到的是**真外观** —— 颜色间距好不好看只能人看 |
+| `host/porttool_plan/` | 在 `IAPTranfer_Tool/` 下 `go test ./TestCase/...` | 判据算子（缺字段一律判失败）；执行器（超时与判据失败分得开、重试保留被它替掉的那次失败、失败后的门闸看最后一个真跑过的步骤）；随包发布的 `plans/bench-smoke.json` 和 `plans/station6-poweron.json` 都能拿假板子跑通；方案里的 `pt.run` 目标对着 caps 的 `runs=` 离线校验（打错名字、把交权入口当成 `pt.run` 目标，两种都要报）；方案页四个接口 —— **写盘前先验、方案名出不了 plans 目录、跑方案期间面板自己的回环应答器停摆** |
 | `host/fakeboard/` | `python run_cases.py` | **K1–K7** IAPTool 在传输开始前的密钥/证书匹配决策，七种情况：自签的三种 + 委托证书的三种 + 一把密钥都没有。**每种在真板子上都要换一把 bootloader 密钥才能构造** |
 | `host/crypto_ref/` | `python run_checks.py [--rounds N]` | SHA-256 构造对 hashlib（309 向量）；IAPTool 真实签名交给一份独立的纯算术 P-256 验证器 |
 | `host/variant_check/` | `python build.py`，需要 arduino-cli | **P4** Arduino 变体头的编译期断言。目前一个：FMC 保留脚表（39 个）自洽。**编不过就是变体头坏了，不是 sketch 坏了** |
