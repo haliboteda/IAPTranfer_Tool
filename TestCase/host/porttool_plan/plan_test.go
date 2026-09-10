@@ -953,7 +953,7 @@ func TestStation6PlanRuns(t *testing.T) {
 	}
 
 	caps := []string{
-		"OK porttool=0.9.0 ports=17 lines=30",
+		"OK porttool=0.9.0 ports=17 lines=32",
 		"OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0",
 		"OK vals=din ch=1,2,3,4,5,6,7,8 period=200",
 		"OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0",
@@ -975,7 +975,9 @@ func TestStation6PlanRuns(t *testing.T) {
 		"OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0",
 		"OK vals=knx mode=loopback period=1000",
 		"OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention",
-		"OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress,sd.speed",
+		"OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed",
+		"OK vals=sd period=500",
+		"OK limits=sd period:50..",
 		// A session with a one-shot on the same row: the TCP server and the PHY
 		// probe are one RJ45 (DECISIONS.md 28).
 		"OK port=eth board=bridge kind=session blk=- term=J1 channels=1 loop=link params=mode,port,ip,period running=0 runs=eth.link",

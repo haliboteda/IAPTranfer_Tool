@@ -55,6 +55,15 @@ int test_sd_identical = 1;
 int test_sd_probe_count = 0;
 int test_sd_integrity_count = 0;
 
+/* The detect switch on its own. The session polls this every superloop pass,
+ * so a test moves test_sd_detected between advance() calls to stage an
+ * insertion or a removal - which is the only way hot-plug is decidable
+ * without a hand on the card slot. */
+int SD_Test_Detected(void)
+{
+    return test_sd_detected ? 1 : 0;
+}
+
 void SD_Test_Probe(sd_probe_t *out)
 {
     test_sd_probe_count++;

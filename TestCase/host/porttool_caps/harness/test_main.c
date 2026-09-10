@@ -414,6 +414,44 @@ int main(void)
     run("pt.stop all");
     run("pt.caps");
 
+    /* ---- the card detect switch, and hot-plug ---------------------------
+     *
+     * The one thing about the SD slot that a person with the card in their
+     * hand can check and nothing else can - except here, where the detect pin
+     * is a variable. So this is where "an insertion is seen, and counted"
+     * becomes decidable without a hand on the slot.
+     *
+     * A count and not just a level: a step that only ever sees detected=1
+     * cannot tell a card that was put in during the test from one that was
+     * already there when it started.
+     */
+    run("pt.stop all");
+    test_sd_detected = 1;
+    run("pt.start sd period=1000");
+    advance(1000);                       /* a card, sitting there */
+
+    test_sd_detected = 0;                /* pulled out */
+    advance(10);
+    advance(1000);
+
+    test_sd_detected = 1;                /* put back */
+    advance(10);
+    advance(1000);
+
+    /* Out and in again between two frames. The edge is sampled every
+     * superloop pass rather than once per frame, so neither is lost. */
+    test_sd_detected = 0; advance(10);
+    test_sd_detected = 1; advance(10);
+    advance(1000);
+
+    /* Starting again zeroes the counters, or a plan step could be satisfied
+     * by an insertion that happened before it began. */
+    run("pt.start sd period=1000");
+    advance(1000);
+
+    run("pt.stop all");
+    test_sd_detected = 1;
+
     /* ---- the four encoders ---------------------------------------------
      *
      * The same eight pins as the digital inputs, read as four A/B pairs. What

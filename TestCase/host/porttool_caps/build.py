@@ -151,6 +151,7 @@ def main():
         str(PORTTOOL / "porttool_soak.c"),
         str(PORTTOOL / "porttool_handover.c"),
         str(PORTTOOL / "porttool_run.c"),
+        str(PORTTOOL / "porttool_sd.c"),
         str(HARNESS / ("sim_main.c" if sim else "test_main.c")),  # #includes porttool.c
         "-o", str(binary),
     ]
@@ -563,6 +564,34 @@ def main():
         check(any(l.startswith("ERR") and expect in l for l in got),
               "refused with the reason: %s" % cmd,
               " / ".join(got)[:160])
+
+    # ------------------------------------------------ the card detect switch
+    #
+    # Hot-plug is the one thing about the SD slot that normally needs a person
+    # with the card in their hand. Here the detect pin is a variable, so it is
+    # decidable - and the property being pinned down is that an insertion is
+    # COUNTED, not just visible as a level. A step that only sees detected=1
+    # cannot tell a card put in during the test from one already there.
+    Section("SD hot-plug")
+    sdf = [dict(parse_kv(l)) for _, body in sections for l in body
+           if l.startswith("!sd ")]
+    want = [
+        ("1", "0", "0", "0", "a card sitting in the slot is no edge at all"),
+        ("0", "1", "0", "1", "pulling it out is seen, and counted as a removal"),
+        ("1", "2", "1", "1", "putting it back is counted as an insertion"),
+        ("1", "4", "2", "2", "out and in between two frames loses neither edge"),
+        ("1", "0", "0", "0", "starting again zeroes the counters"),
+    ]
+    check(len(sdf) >= len(want), "the transcript stages %d hot-plug frames" % len(want),
+          "got %d" % len(sdf))
+    for i, (det, ch, ins, outs, why) in enumerate(want):
+        if i >= len(sdf):
+            break
+        f = sdf[i]
+        got = (f.get("detected"), f.get("changes"), f.get("in"), f.get("out"))
+        check(got == (det, ch, ins, outs), "frame %d - %s" % (i + 1, why),
+              "detected/changes/in/out = %s, want %s"
+              % ("/".join(map(str, got)), "/".join((det, ch, ins, outs))))
 
     # ------------------------------------------------------- the encoders
     #

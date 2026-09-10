@@ -65,12 +65,17 @@ func TestParseGoldenCaps(t *testing.T) {
 	// hardware got a session, and one piece of hardware gets one row. Their
 	// deep bring-up entries ride on that row as targets=.
 	wantSessions := []string{"din", "dout", "relay", "ain", "aout", "temp",
-		"rs232", "rs485", "can", "knx", "soak"}
+		"rs232", "rs485", "can", "knx", "soak", "sd"}
 	wantHandovers := []string{"bringup", "pwm"}
-	// sd and sdram moved here when their checks became pt.run targets: the
-	// chip's one-shot checks and its one-way soak entries are the same
-	// hardware, so they share a row and it is the run row that anchors it.
-	wantRuns := []string{"sd", "sdram", "rtc", "led"}
+	// sdram is here because its checks are pt.run targets: the chip's one-shot
+	// checks and its one-way soak entries are the same hardware, so they share
+	// a row and it is the run row that anchors it.
+	//
+	// sd left this list on 2026-09-10. Its detect switch is polled by a
+	// session now, so an insertion shows on the panel as it happens; the four
+	// deep checks stay pt.run targets and ride on the session's row as runs=.
+	// Same shape eth has - one piece of hardware, one row.
+	wantRuns := []string{"sdram", "rtc", "led"}
 
 	for _, name := range wantSessions {
 		p, ok := caps.Port(name)
