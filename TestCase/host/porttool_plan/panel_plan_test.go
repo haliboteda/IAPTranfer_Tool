@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"reflect"
 	"strings"
 	"testing"
 
@@ -145,6 +146,80 @@ func TestPlanPageWritesOnlyPlansThatLoad(t *testing.T) {
 	plan, _ := back["plan"].(map[string]any)
 	if plan == nil || plan["name"] != "good" || len(plan["steps"].([]any)) != 2 {
 		t.Fatalf("the plan did not come back as it was saved: %v", back)
+	}
+}
+
+// A save may move how a step measures. It may not move what counts as a pass.
+//
+// Relaxing a limit ships a board that failed, and the report's traceability is
+// the plan name plus its limit_version - so neither can be reachable from a
+// request. The page draws them read-only, but a page is only what a browser
+// chose to send; this is the half that does not depend on the browser.
+// DECISIONS.md 30, restated in 34.
+func TestSavingAPlanCannotMoveItsLimits(t *testing.T) {
+	srv, dir := planPanel(t, plainBoard)
+
+	if r := postJSON(t, srv, "/api/plan", map[string]any{"name": "keep", "plan": samplePlan("keep")}); r["error"] != nil {
+		t.Fatalf("saving the plan to start from: %v", r["error"])
+	}
+	before, err := ptplan.Load(filepath.Join(dir, "keep.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// One widened limit, one forged limit_version, and one legitimate edit in
+	// the same request. Without the legitimate one, a save that refused
+	// everything would pass this test.
+	attack := samplePlan("keep")
+	steps := attack["steps"].([]any)
+	step := steps[1].(map[string]any)
+	step["checks"] = []any{map[string]any{"field": "v", "op": "contains", "value": "0x"}}
+	step["timeout_ms"] = 9999
+	attack["limit_version"] = "forged"
+
+	if r := postJSON(t, srv, "/api/plan", map[string]any{"name": "keep", "plan": attack}); r["error"] != nil {
+		t.Fatalf("the save was refused outright, so the parameter edit was lost too: %v", r["error"])
+	}
+
+	after, err := ptplan.Load(filepath.Join(dir, "keep.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got, want := after.Steps[1].Checks, before.Steps[1].Checks; !reflect.DeepEqual(got, want) {
+		t.Errorf("a widened limit reached the file: %+v, want %+v", got, want)
+	}
+	if after.LimitVersion != before.LimitVersion {
+		t.Errorf("limit_version = %q, want the file's own %q", after.LimitVersion, before.LimitVersion)
+	}
+	if after.Steps[1].TimeoutMS != 9999 {
+		t.Errorf("timeout_ms = %d, want the edit to have gone through", after.Steps[1].TimeoutMS)
+	}
+}
+
+// A step the file has never heard of has no limits on disk to keep, and making
+// some up would be saving a step that passes on anything.
+func TestSavingAPlanRefusesAStepTheFileDoesNotHave(t *testing.T) {
+	srv, dir := planPanel(t, plainBoard)
+
+	if r := postJSON(t, srv, "/api/plan", map[string]any{"name": "keep", "plan": samplePlan("keep")}); r["error"] != nil {
+		t.Fatalf("saving the plan to start from: %v", r["error"])
+	}
+
+	smuggled := samplePlan("keep")
+	smuggled["steps"] = append(smuggled["steps"].([]any), map[string]any{
+		"id": "smuggled", "type": "PtRaw", "command": "pt.id",
+		"checks": []any{map[string]any{"field": "_text", "op": "contains", "value": ""}},
+	})
+	if r := postJSON(t, srv, "/api/plan", map[string]any{"name": "keep", "plan": smuggled}); r["error"] == nil {
+		t.Fatal("a step that is not in the file was accepted, limits and all")
+	}
+
+	after, err := ptplan.Load(filepath.Join(dir, "keep.json"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(after.Steps) != 2 {
+		t.Fatalf("the file has %d steps, want the 2 it had", len(after.Steps))
 	}
 }
 

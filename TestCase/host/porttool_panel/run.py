@@ -292,6 +292,118 @@ def main():
     os._exit(code)
 
 
+def check_limits_are_readonly(page):
+    """The plan tab's limits, and the save that could put one back.
+
+    This is where the limits actually live, and until 2026-09-10 nothing looked
+    at it: the only assertion was on the port tab, for an attribute nothing ever
+    set, so it held whatever the plan tab did. The plan tab was in fact drawing
+    every op/min/max/value/unit as a text box, and saving wrote the lot back -
+    the opposite of DECISIONS.md 30 and 34, under a green light.
+
+    Two halves, because a page is only half the protection. What is on screen
+    is the operator's side; what the server accepts is everybody else's, and a
+    request does not have to come from this page.
+    """
+    import json
+
+    Section("limits are read-only, and unsavable")
+
+    page.locator('.tab[data-tab="plan"]').click()
+    page.wait_for_selector("#planlist button")
+    plans = page.locator("#planlist button")
+    name = plans.nth(0).inner_text().strip()
+    plans.nth(0).click()
+    page.wait_for_selector("#planbody .plansteps .st")
+
+    # The first step that has limits at all. A step without them would make
+    # every assertion below vacuously true.
+    steps = page.locator("#planbody .plansteps .st")
+    shown = False
+    for i in range(steps.count()):
+        steps.nth(i).click()
+        page.wait_for_timeout(120)
+        if page.locator("#planbody .pgrid .ro").count() > 0:
+            shown = True
+            break
+    if not check(shown, "a step's limits are drawn on the plan tab"):
+        return
+
+    # Everything between the 判据 heading and the next one belongs to the
+    # limits. Counted in the page rather than by selector because the grid is
+    # flat - the heading is the only boundary there is.
+    editable = page.evaluate(
+        """() => {
+            const g = document.querySelector('#planbody .pgrid');
+            let inside = false, n = 0;
+            for (const el of g.children) {
+              if (el.classList.contains('pgroup')) { inside = el.textContent.includes('判据'); continue; }
+              if (inside) n += el.querySelectorAll('input,select,textarea').length;
+            }
+            return n;
+        }"""
+    )
+    check(editable == 0,
+          "not one limit on the plan tab is typeable", "%d editable" % editable)
+
+    # And the server refuses one anyway. Sent the way anything else would send
+    # it, not through the page: the page is what is being taken out of the
+    # trust chain here.
+    # Absolute: the request context has no page to resolve a relative URL
+    # against, whatever the page happens to be showing.
+    base = page.url.split("#")[0].rstrip("/")
+    got = page.request.get(base + "/api/plan?name=" + name).json()
+    if not check("plan" in got, "the plan loads over the API", json.dumps(got)[:200]):
+        return
+
+    # The bytes, kept so this run leaves the shipped plan exactly as it found
+    # it. Saving through the panel reflows the file and quotes its numbers -
+    # harmless to the loader, and still not something a test should leave in a
+    # file somebody else's run will diff.
+    on_disk = panel_exe().parent / "plans" / name
+    original = on_disk.read_bytes() if on_disk.exists() else None
+    plan = got["plan"]
+    idx = next((i for i, s in enumerate(plan["steps"]) if s.get("checks")), None)
+    if not check(idx is not None, "the plan has a step with limits"):
+        return
+
+    was_checks = json.loads(json.dumps(plan["steps"][idx]["checks"]))
+    was_version = plan["limit_version"]
+    was_timeout = plan["steps"][idx].get("timeout_ms")
+
+    # One attack and one legitimate edit in the same save. If only the attack
+    # were sent, a save that simply refused everything would pass this.
+    plan["steps"][idx]["checks"][0]["value"] = "ANYTHING"
+    plan["steps"][idx]["checks"][0]["op"] = "contains"
+    plan["limit_version"] = "forged"
+    plan["steps"][idx]["timeout_ms"] = (was_timeout or 20000) + 1234
+
+    saved = page.request.post(base + "/api/plan", data={"name": name, "plan": plan}).json()
+    check("error" not in saved or not saved["error"],
+          "the save itself is accepted", json.dumps(saved)[:200])
+
+    back = page.request.get(base + "/api/plan?name=" + name).json()["plan"]
+    now = back["steps"][idx]
+    check(now["checks"] == was_checks,
+          "a widened limit did not survive the save - the file's own limits won",
+          json.dumps(now["checks"])[:200])
+    check(back["limit_version"] == was_version,
+          "and limit_version is still the one the file had",
+          "%s -> %s" % (was_version, back["limit_version"]))
+    check(now.get("timeout_ms") == (was_timeout or 20000) + 1234,
+          "while the parameter edit in the same save did go through",
+          str(now.get("timeout_ms")))
+
+    # Put the file back byte for byte, not by saving it again: a second save
+    # would leave the reflow behind, which is the thing being avoided.
+    if original is not None:
+        on_disk.write_bytes(original)
+    check(original is None or on_disk.read_bytes() == original,
+          "and the plan file is left exactly as it was found")
+
+    page.locator('.tab[data-tab="manual"]').click()
+
+
 def check_remembered(saved, com):
     Section("what it remembered")
     import json
@@ -420,7 +532,6 @@ def run_checks(page, com):
     EXPECT = {
         # Need nothing wired. These must pass, and a failure here is a real one.
         "sdram": ("pass", None),
-        "eth":   ("pass", None),
         "temp":  ("pass", None),
         "rtc":   ("pass", None),
         "led":   ("pass", None),
@@ -435,6 +546,14 @@ def run_checks(page, com):
         "din":   ("fail", "v"),         # nothing is driving the inputs
         "ain":   ("fail", "ch1"),       # no signal source on D12/D13
         "rs485": ("fail", "miss"),      # no peer bound on C09/C10
+        # eth's session half needs a TCP peer to connect, and this bench has
+        # none: the panel does not open sockets, and the production answerer
+        # that would (PRODUCTION-TEST-GAP.md, "Golden endpoint") is not written
+        # yet. So conn stays 0 and the port fails - which is the honest result,
+        # named by the reading that is missing. eth.link, the one-shot PHY half,
+        # passes on its own; it is the merged verdict that fails.
+        # ⚠️ This flips to ("pass", None) the day that answerer exists.
+        "eth":   ("fail", "conn"),
         "knx":   ("either", None),      # bus power is the operator's business
         # rs232 got criteria on 2026-09-08 after this sweep found it had none.
         "rs232": ("pass", None),
@@ -677,7 +796,9 @@ def run_checks(page, com):
 
     # No editable limit anywhere: that is the property being protected.
     check(page.locator("#panelbody input[data-limit]").count() == 0,
-          "no limit is editable on screen - switching plans is the only way")
+          "no limit is editable on the port tab")
+
+    check_limits_are_readonly(page)
 
     # -------------------------------------------------- DO -> DI cross-check
     #
@@ -751,6 +872,83 @@ def run_checks(page, com):
             # Leave the board the way the rest of the run expects it.
             raw("sim.cable 0")
             raw("pt.stop all")
+
+    # ---------------------------------------------------- KNX frame mode
+    #
+    # The point of mode=frames is that a person can put a real KNX frame on the
+    # bus from this page and read back what the bus said - and that the page
+    # answers "which reading of the octets is the real frame" with the check
+    # octet rather than leaving it to the eye.
+    #
+    # ⚠️ This transmits on the installation, to group address 31/7/255. That
+    # address is the default because it is the corner of the address space a
+    # real project is least likely to have assigned; nothing subscribes to it.
+    Section("KNX frame mode")
+
+    def pick_port(name):
+        rows = page.locator(".prow")
+        for i in range(rows.count()):
+            if rows.nth(i).locator(".key").inner_text().strip() == name:
+                rows.nth(i).click()
+                page.wait_for_timeout(200)
+                return True
+        return False
+
+    if not check(pick_port("knx"), "knx is in the port list"):
+        pass
+    else:
+        # The address controls exist because the board advertised them as
+        # parameters - nothing about knx is written into the page.
+        labels = page.locator(".card .row label")
+        names = [labels.nth(i).inner_text().strip().split()[0]
+                 for i in range(labels.count())]
+        for want in ("ga", "src", "val"):
+            check(want in names,
+                  "the card offers %s, straight from what the board accepts" % want,
+                  " ".join(names))
+
+        # val is advertised as a set of values, so it has to be a dropdown -
+        # a typo in a field would be refused by the board after the fact.
+        val_ctl = page.locator(".card .row label", has_text="val").locator("select")
+        check(val_ctl.count() > 0,
+              "val is a dropdown, because the board declares it as a value set")
+        # ga is NOT: an address is neither a range nor a set, so it must stay
+        # typeable. A vertical bar in its limits line would have made the panel
+        # offer the format words as choices instead of an address field.
+        ga_sel = page.locator(".card .row label", has_text="ga").locator("select")
+        check(ga_sel.count() == 0, "ga stays typeable - an address is not a menu")
+
+        page.fill("#raw", "pt.start knx mode=frames period=1000")
+        page.click("#send")
+        # A frame goes out once a period, comes back over the bus, and the peer
+        # acknowledges it. Twenty-five seconds is room for several.
+        #
+        # ⚠️ Waited for on the rendered node, NOT on document.body.textContent.
+        # That includes the <script> source, and this page's own source carries
+        # the words 报文事件 and crc=raw inside a hint string - so a wait on the
+        # body returns instantly, before a single frame has arrived, and every
+        # assertion after it reads the page's source instead of its render.
+        # That is exactly what happened while writing this check.
+        box = page.locator(".card .chvals", has_text="报文事件")
+        try:
+            box.first.wait_for(timeout=25000)
+        except Exception as e:
+            Fail("no frame events on the knx card: %s" % type(e).__name__)
+            failures.append("knx frame events missing")
+        else:
+            Ok("PASS  received frames appear on the card as events")
+            text = box.first.inner_text()
+            seen = " ".join(text.split())[:180]
+            check("crc=raw" in text or "crc=inv" in text,
+                  "the card says which reading of the octets passed the check octet",
+                  seen)
+            check("crc=ack" in text,
+                  "a lone acknowledge octet reads as ack, not as a bad frame", seen)
+            check("dst=31/7/255" in text,
+                  "and which group address the frame carried", seen)
+        page.fill("#raw", "pt.stop knx")
+        page.click("#send")
+        page.wait_for_timeout(400)
 
     # ---------------------------------------------------- disconnect
     Section("disconnecting")

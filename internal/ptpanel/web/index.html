@@ -96,6 +96,9 @@ main>section{background:var(--bg);overflow-y:auto;padding:14px}
   font-size:12.5px;margin:8px 0}
 .pgrid .k{font-family:var(--mono);font-size:11.5px;color:var(--ink2)}
 .pgrid input,.pgrid select{width:100%}
+/* 判据的值。看得出是印上去的，不是能敲的。 */
+.pgrid .ro{font-family:var(--mono);font-size:12px;color:var(--ink);
+  background:var(--bg);border:1px solid var(--line2);border-radius:3px;padding:3px 7px}
 .pgroup{font:600 11px var(--mono);color:var(--ink3);letter-spacing:.05em;
   grid-column:1/-1;margin-top:8px;border-top:1px solid var(--line2);padding-top:7px}
 .finding{font-size:12px;color:#8a5300;background:#fff7e6;border:1px solid #e0a34a;
@@ -2074,32 +2077,25 @@ function renderStepProps() {
   if (st.type === "ReadSN") { put("source", text(() => st.source, v => st.source = v)); }
   if (st.type === "PushResult") { put("sink", text(() => st.sink, v => st.sink = v)); }
 
+  /* 判据只读。放宽一个限值就是让不合格的板子通过，所以屏幕上没有任何
+     可编辑的限值 —— 换限值的唯一办法是换一份具名方案文件
+     （DECISIONS.md 第 30 条，第 34 条又重申了一遍）。 */
   if ((st.checks || []).length) {
-    g.appendChild(el("div", "pgroup", "判据"));
-    st.checks.forEach((c, ci) => {
-      const line = el("div");
-      line.style.cssText = "display:flex;gap:5px;align-items:center";
-      const mk = (key, w) => {
-        const i = el("input");
-        i.value = c[key] ?? "";
-        i.style.width = w;
-        i.onchange = () => {
-          const v = i.value;
-          if (v === "") { delete c[key]; }
-          else if (key === "min" || key === "max") { c[key] = Number(v); }
-          else { c[key] = v; }
-        };
-        return i;
-      };
-      line.appendChild(mk("op", "80px"));
-      line.appendChild(mk("min", "62px"));
-      line.appendChild(mk("max", "62px"));
-      line.appendChild(mk("value", "80px"));
-      line.appendChild(mk("unit", "52px"));
+    g.appendChild(el("div", "pgroup", "判据（只读）"));
+    st.checks.forEach(c => {
+      const parts = [];
+      if (c.op !== undefined) parts.push(c.op);
+      if (c.min !== undefined || c.max !== undefined) {
+        parts.push((c.min ?? "") + ".." + (c.max ?? ""));
+      }
+      if (c.value !== undefined) parts.push(String(c.value));
+      if (c.unit !== undefined) parts.push(c.unit);
       g.appendChild(el("div", "k", c.field));
-      g.appendChild(line);
-      void ci;
+      g.appendChild(el("div", "ro", parts.join(" ")));
     });
+    g.appendChild(el("div", "k", ""));
+    g.appendChild(el("div", "sub",
+      "限值不能在这里改。要用别的限值，换一份具名方案文件 —— 报告里那条 limit_version 追溯链靠这个成立。"));
   }
 
   /* 六个通用字段。它们是框架和一堆脚本的分界线 —— 每个步骤都有，

@@ -1,11 +1,14 @@
 package ptpanel
 
-// The plan page: load a plan file, edit its steps and limits, check it against
+// The plan page: load a plan file, edit how its steps measure, check it against
 // the board that is connected, and run it.
 //
-// The point of doing this in the panel at all is who edits limits. A limit
-// that only a person who can write JSON can change is a limit production and
-// quality have to come and ask for - see DECISIONS.md 24.
+// *** Parameters are editable and limits are not. A parameter says how to
+// *** measure - period, byte count, baud - and changing one only changes the
+// *** measurement, which is then judged by the same limits as before. A limit
+// *** says what counts as a pass, and relaxing one ships a board that failed.
+// *** So limits are changed by swapping in a named plan file, never on screen:
+// *** DECISIONS.md 30, restated in 34. keepLimits below is where that holds.
 
 import (
 	"encoding/json"
@@ -125,6 +128,11 @@ func (s *Server) savePlan(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"error": err.Error()})
 		return
 	}
+	// Limits come off the disk, never off the wire. See DECISIONS.md 34.
+	if err := keepLimits(&body.Plan, path); err != nil {
+		writeJSON(w, http.StatusOK, map[string]any{"error": err.Error()})
+		return
+	}
 	// Validated before it is written, never after: a plan file on disk that
 	// does not load is one somebody will try to run on a line.
 	if err := body.Plan.Validate(); err != nil {
@@ -142,6 +150,52 @@ func (s *Server) savePlan(w http.ResponseWriter, r *http.Request) {
 	}
 	s.emit("saved " + filepath.Base(path))
 	writeJSON(w, http.StatusOK, map[string]any{"saved": filepath.Base(path)})
+}
+
+// keepLimits puts the limits back the way the file on disk has them, so a save
+// can only ever have changed how a step measures, never what counts as a pass.
+//
+// The panel draws the checks read-only, so nothing here should normally have a
+// different value to put back. That is exactly why it is done on this side as
+// well: a page is what a browser sends, and the one thing that must not be
+// takeable from a browser is the number that decides whether a board ships.
+//
+// limit_version travels with them. It is the report's whole traceability
+// claim - "these readings were judged by that limit set" - and a claim that a
+// period edit could rewrite is not a claim.
+//
+// A step the file does not have is refused rather than merged: it would be a
+// step whose limits nothing on disk can supply, and inventing empty ones would
+// mean saving a step that passes on anything.
+//
+// A name with no file yet is a new plan, and there is nothing to keep: its
+// limits are the ones it is being created with, under its own name and its own
+// limit_version. That is the sanctioned way to get different limits (DECISIONS
+// 30) - what is barred is quietly moving the ones a named plan already has.
+func keepLimits(p *ptplan.Plan, path string) error {
+	if _, err := os.Stat(path); os.IsNotExist(err) {
+		return nil
+	}
+	onDisk, err := ptplan.Load(path)
+	if err != nil {
+		return fmt.Errorf("cannot re-read %s to keep its limits: %v", filepath.Base(path), err)
+	}
+	byID := make(map[string]ptplan.Step, len(onDisk.Steps))
+	for _, s := range onDisk.Steps {
+		byID[s.ID] = s
+	}
+	for i := range p.Steps {
+		was, ok := byID[p.Steps[i].ID]
+		if !ok {
+			return fmt.Errorf(
+				"step %q is not in %s, and limits are only ever taken from the file - "+
+					"reload the plan and try again",
+				p.Steps[i].ID, filepath.Base(path))
+		}
+		p.Steps[i].Checks = was.Checks
+	}
+	p.LimitVersion = onDisk.LimitVersion
+	return nil
 }
 
 // handlePlanCheck reports what only the connected board can settle.
