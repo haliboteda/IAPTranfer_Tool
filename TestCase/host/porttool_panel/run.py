@@ -371,8 +371,16 @@ def check_limits_are_readonly(page):
     was_version = plan["limit_version"]
     was_timeout = plan["steps"][idx].get("timeout_ms")
 
-    # One attack and one legitimate edit in the same save. If only the attack
-    # were sent, a save that simply refused everything would pass this.
+    # A parameter to move as well, on whichever step has one. Without a
+    # legitimate edit in the same request, a save that refused everything
+    # outright would pass every assertion below.
+    pidx = next((i for i, s in enumerate(plan["steps"]) if s.get("params")), None)
+    pkey = pval = None
+    if pidx is not None:
+        pkey = sorted(plan["steps"][pidx]["params"])[0]
+        pval = str(plan["steps"][pidx]["params"][pkey])
+        plan["steps"][pidx]["params"][pkey] = pval + "0"
+
     plan["steps"][idx]["checks"][0]["value"] = "ANYTHING"
     plan["steps"][idx]["checks"][0]["op"] = "contains"
     plan["limit_version"] = "forged"
@@ -393,6 +401,16 @@ def check_limits_are_readonly(page):
     check(now.get("timeout_ms") == (was_timeout or 20000) + 1234,
           "while the parameter edit in the same save did go through",
           str(now.get("timeout_ms")))
+
+    # And the log says which parameter moved and what it moved from. The file
+    # only shows where it ended up; which readings were taken before the change
+    # is what the log answers and the file cannot.
+    if pidx is not None:
+        want = "%s %s %s -> %s0" % (plan["steps"][pidx]["id"], pkey, pval, pval)
+        page.wait_for_timeout(400)
+        check(want in page.locator("#log").inner_text(),
+              "and the log names the parameter that moved, and what it moved from",
+              want)
 
     # Put the file back byte for byte, not by saving it again: a second save
     # would leave the reflow behind, which is the thing being avoided.

@@ -128,6 +128,14 @@ func (s *Server) savePlan(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"error": err.Error()})
 		return
 	}
+	// What the file says now, for the limits to be taken from and for the log
+	// line below to have something to compare against.
+	before, hadBefore := ptplan.Plan{}, false
+	if _, err := os.Stat(path); err == nil {
+		if p, err := ptplan.Load(path); err == nil {
+			before, hadBefore = p, true
+		}
+	}
 	// Limits come off the disk, never off the wire. See DECISIONS.md 34.
 	if err := keepLimits(&body.Plan, path); err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"error": err.Error()})
@@ -149,7 +157,48 @@ func (s *Server) savePlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	s.emit("saved " + filepath.Base(path))
+	if hadBefore {
+		for _, line := range paramChanges(before, body.Plan) {
+			s.emit(filepath.Base(path) + ": " + line)
+		}
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"saved": filepath.Base(path)})
+}
+
+// paramChanges names every parameter this save moved, and what it moved from.
+//
+// The saved file itself only shows where a parameter ended up. Which readings
+// on screen were taken before the change and which after is a question the log
+// answers and the file cannot - and it is the question somebody asks when two
+// runs of the same plan disagree. DECISIONS.md 34.
+func paramChanges(before, after ptplan.Plan) []string {
+	was := make(map[string]ptplan.Params, len(before.Steps))
+	for _, s := range before.Steps {
+		was[s.ID] = s.Params
+	}
+	var out []string
+	for _, s := range after.Steps {
+		old, known := was[s.ID]
+		if !known {
+			continue
+		}
+		for k, v := range s.Params {
+			if o, had := old[k]; !had {
+				out = append(out, fmt.Sprintf("%s %s set to %s", s.ID, k, v))
+			} else if o != v {
+				out = append(out, fmt.Sprintf("%s %s %s -> %s", s.ID, k, o, v))
+			}
+		}
+		for k, o := range old {
+			if _, still := s.Params[k]; !still {
+				out = append(out, fmt.Sprintf("%s %s removed (was %s)", s.ID, k, o))
+			}
+		}
+	}
+	// Map order is random, and a log line that comes out differently every
+	// time is one nobody can diff.
+	sort.Strings(out)
+	return out
 }
 
 // keepLimits puts the limits back the way the file on disk has them, so a save
