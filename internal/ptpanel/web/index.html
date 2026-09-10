@@ -314,6 +314,16 @@ let state = { connected:false, ports:[], links:{} };
 let picked = {};        // port name -> Set of selected channel numbers
 let expanded = {};      // port name -> bool
 let reads = {};         // port name -> latest frame fields
+
+// Event frames - a port name with a dot, like knx.rx - are occurrences, not
+// periodic readings. The latest one is not enough: the point is the sequence,
+// so they accumulate here per owning port instead of overwriting.
+//
+// ⚠️ Module level, not a card closure. applyState() calls renderPanel() after
+// every command, so anything a card has to keep across commands has to live
+// out here (the same rule testing[] and verdicts[] follow).
+let events = {};        // owning port -> [{tick, sub, fields}], newest last
+const EVENTS_MAX = 10;
 let evtSource = null;
 
 /* ---------------- log ---------------- */
@@ -509,7 +519,23 @@ function startEvents() {
   evtSource.onmessage = e => {
     const d = JSON.parse(e.data);
     addLog(d.kind, d.line, d.at);
-    if (d.kind === "frame" && d.port) { reads[d.port] = d; renderPanel(); judge(d); }
+    if (d.kind === "frame" && d.port) {
+      reads[d.port] = d;
+      const dot = d.port.indexOf(".");
+      if (dot > 0) {
+        // An event frame belongs to the port before the dot, and is NOT
+        // judged: the plan states criteria per port, so asking for knx.rx's
+        // criteria would find none and report the port unjudged - overwriting
+        // a verdict its own session had already reached.
+        const owner = d.port.slice(0, dot);
+        const list = events[owner] || (events[owner] = []);
+        list.push({tick: d.tick, sub: d.port.slice(dot + 1), fields: d.fields});
+        while (list.length > EVENTS_MAX) list.shift();
+        renderPanel();
+        return;
+      }
+      renderPanel(); judge(d);
+    }
   };
   evtSource.onerror = () => { /* EventSource retries by itself */ };
 }
@@ -1190,8 +1216,22 @@ function sessionCard(p) {
     }
 
     const lb = el("label", null, name + " ");
+    const lim = (p.limits || {})[name] || {};
     let inp;
-    if (name === "mode") {
+    // A parameter the board declares as a set of values becomes a dropdown -
+    // any parameter, not just mode. The board is the only thing that knows
+    // which those are, so nothing here is hard-coded per port: a new enum
+    // parameter in the firmware appears as a dropdown with no edit to this
+    // page. A value the board would refuse is then not typeable at all.
+    if (lim.enum && lim.enum.length) {
+      inp = el("select");
+      for (const o of lim.enum) {
+        const op = el("option",null,o); op.value = o; if (o === cur) op.selected = true;
+        inp.appendChild(op);
+      }
+    } else if (name === "mode") {
+      // Kept for a board whose limits line names no modes: modesFor has the
+      // per-port fallbacks that predate the enum being advertised.
       inp = el("select");
       for (const o of modesFor(p)) {
         const op = el("option",null,o); op.value = o; if (o === cur) op.selected = true;
@@ -1205,6 +1245,36 @@ function sessionCard(p) {
   }
   if (p.channels > 1) row.appendChild(el("span","hint","通道在左边勾：" + (chList(p) || "一个都没选")));
   c.appendChild(row);
+
+  // What the port reported as events, newest first. Generic on purpose: the
+  // fields are whatever the board wrote, so a port that starts reporting
+  // events needs no edit here.
+  const ev = events[p.name];
+  if (ev && ev.length) {
+    const box = el("div","chvals");
+    box.appendChild(el("div","st","报文事件 —— 最近 " + ev.length + " 条，新的在上"));
+    for (let i = ev.length - 1; i >= 0; i--) {
+      const e = ev[i];
+      const bad = e.fields.crc === "bad";
+      const line = el("div","sub" + (bad ? " warn" : ""));
+      const parts = [e.sub];
+      for (const [k,v] of Object.entries(e.fields)) {
+        if (k === "t") continue;
+        parts.push(k + "=" + v);
+      }
+      line.textContent = parts.join("　");
+      box.appendChild(line);
+    }
+    // crc= is the machine's answer to a question this board actually has: the
+    // RX chain's polarity is unsettled, so which reading of the octets is the
+    // real frame is decided by the check octet, not by eye.
+    if (p.name === "knx") {
+      box.appendChild(el("div","sub",
+        "crc=raw 表示收到的字节原样就是合法报文；crc=inv 表示要按位取反才对（极性反了）；" +
+        "crc=ack 是单字节应答，没有校验字节可判；crc=bad 是两种读法都不对"));
+    }
+    c.appendChild(box);
+  }
 
   // A loop=link port needs a second adapter on the terminal being tested.
   // Without it the counter can never close, and the frames would look exactly
