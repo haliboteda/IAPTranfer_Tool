@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Station 6 - PCBA power-on test",
-  "limit_version": "2026-09-08-a",
+  "limit_version": "2026-09-10-a",
   "_note": "Covers the items in OPLC-MFG-TEST-001 section 3.6 that the firmware can report and this tool can judge. What is NOT here, and why, is listed step by step in docs/design/PRODUCTION-TEST-GAP.md: the power rails, standby and maximum current, high-side and relay voltage/current readback, and the Ethernet / USB / SWD items all need an external instrument or a fixture this build has no driver for. ⚠️ Every limit below is an engineering starting point. Production limits are the ones Quality signs off, and the document itself still says TBD for all of them. Each independent group's first step is ALWAYS, so one failure no longer hides every later port: a board with no SD card still gets its ethernet, USB, relay and analog results in the same run. Steps left on the default PASS are the ones whose immediate predecessor is a genuine precondition - stressing SDRAM whose buses failed, or checking the integrity of a card that is not there, measures nothing.",
   "steps": [
     {
@@ -368,14 +368,14 @@
       "id": "rtc",
       "type": "PtRun",
       "execute_condition": "ALWAYS",
-      "_note": "⚠️ 'RTC test and calibration' is only half done here. Reading the calendar works; writing a calibration value is deliberately not offered, because the backup domain also holds the bootloader's nonce counter. And clk=lsi says the clock is the internal RC oscillator, not a crystal - accuracy cannot be judged against a calibration figure until that is settled. See PRODUCTION-TEST-GAP.md group B.",
+      "_note": "⚠️ 'RTC test and calibration' is only half done here. Reading the calendar works; writing a calibration value is deliberately not offered, because the backup domain also holds the bootloader's nonce counter. clk=lse since 2026-09-10: the calendar counts the 32.768 kHz crystal, so a timestamp from this board is worth something - LSI drifted by more than an hour a day. Writing a calibration value is still not offered here. See PRODUCTION-TEST-GAP.md group B.",
       "target": "rtc.read",
       "timeout_ms": 8000,
       "checks": [
         {
           "field": "clk",
           "op": "eq",
-          "value": "lsi"
+          "value": "lse"
         },
         {
           "field": "_text",

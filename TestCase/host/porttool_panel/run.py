@@ -292,6 +292,92 @@ def main():
     os._exit(code)
 
 
+def check_aout_walk(page):
+    """The multi-point analog-output walk, with the meter reading typed in.
+
+    Two things are only decidable in a browser. One is that the prompt asking
+    for the meter reading SURVIVES - the panel rebuilds itself on every frame,
+    and an input inside that region is destroyed under the person's hands while
+    they are still typing. The other is that the verdict uses percent of full
+    scale: at the bottom of the range one DAC step is already a large fraction
+    of the reading, so a percent-of-reading limit is one this hardware cannot
+    meet there.
+    """
+    Section("AOUT multi-point walk")
+
+    page.locator('.tab[data-tab="manual"]').click()
+    page.wait_for_selector(".prow")
+    rows = page.locator(".prow")
+    picked = False
+    for i in range(rows.count()):
+        if rows.nth(i).locator(".key").inner_text().strip() == "aout":
+            rows.nth(i).click()
+            page.wait_for_timeout(300)
+            picked = True
+            break
+    if not check(picked, "aout is in the port list"):
+        return
+
+    card = page.locator(".card", has_text="AOUT 多点测量")
+    if not check(card.count() > 0, "the multi-point card appears under aout"):
+        return
+
+    # Two points, so the walk is short but still more than one - one point
+    # cannot separate an offset from a gain error, which is why it is a walk.
+    boxes = card.locator("input")
+    boxes.nth(0).fill("1, 20")
+    boxes.nth(1).fill("2")
+    page.wait_for_timeout(150)
+
+    card.locator("button.aocalgo").click()
+
+    # The prompt has to come up, and it has to still be there after frames have
+    # rebuilt the panel underneath it.
+    ask = page.locator("#meterask")
+    try:
+        ask.wait_for(state="visible", timeout=15000)
+    except Exception:
+        check(False, "the walk asks for a meter reading", "#meterask never appeared")
+        return
+    check(True, "the walk stops and asks for a meter reading")
+
+    first_text = page.locator("#meterwhat").inner_text()
+    check("mA" in first_text, "the prompt says what the board is putting out", first_text)
+
+    # Sit through several frames. This is the assertion that matters: a prompt
+    # built inside #panelbody would have been rebuilt away by now.
+    page.wait_for_timeout(2500)
+    check(ask.is_visible(), "and it is still there after the panel has redrawn")
+    typed = page.locator("#meterval")
+    typed.fill("0.900")
+    check(typed.input_value() == "0.900",
+          "what was typed survives the redraws too", typed.input_value())
+
+    # 0.900 against a 1 mA target is -0.1 mA, which is -0.5% of a 20 mA full
+    # scale - outside the 2% asked for? No: it is inside. Deliberately, so the
+    # first point passes and the second is the one that fails.
+    page.locator("#meterok").click()
+    try:
+        ask.wait_for(state="visible", timeout=15000)
+    except Exception:
+        check(False, "it moves on to the second point")
+        return
+    check(True, "it moves on to the second point")
+    page.locator("#meterval").fill("18.0")     # 2 mA low on 20 = -10% FS
+    page.locator("#meterok").click()
+    page.wait_for_timeout(1500)
+
+    card = page.locator(".card", has_text="AOUT 多点测量")
+    body = card.inner_text()
+    check("过" in body and "不过" in body,
+          "the table shows one point passing and one failing", body[-300:])
+    check("% FS" in body,
+          "and the verdict is stated against full scale, not against the reading",
+          body[-300:])
+    check("不算补偿值" in body,
+          "the card says out loud that it does not compute a correction yet")
+
+
 def check_limits_are_readonly(page):
     """The plan tab's limits, and the save that could put one back.
 
@@ -817,6 +903,7 @@ def run_checks(page, com):
           "no limit is editable on the port tab")
 
     check_limits_are_readonly(page)
+    check_aout_walk(page)
 
     # -------------------------------------------------- DO -> DI cross-check
     #

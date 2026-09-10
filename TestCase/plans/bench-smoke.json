@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Bench smoke - nothing but the control cable",
-  "limit_version": "2026-09-07-a",
+  "limit_version": "2026-09-10-a",
   "_note": "Every step here is judgeable with only the USB-RS232 adapter on C05/C06/C02. No fixture board, no loopback wire, no card. It exists to prove the plan file, the executor and the report work on a real board before any of the wired checks are attempted. Limits are engineering starting points, NOT production limits: see docs/design/PRODUCTION-TEST-GAP.md.",
 
   "steps": [
@@ -50,11 +50,11 @@
     {
       "id": "rtc",
       "type": "PtRun",
-      "_note": "The RTC is not up in this image until the target brings it up. init=0 just means nobody ever set the calendar, which is normal on a fresh board - it is not judged here. clk=lsi is why RTC accuracy cannot be judged at all yet: the clock is the internal RC oscillator, not a crystal.",
+      "_note": "The RTC is not up in this image until the target brings it up. init=0 just means nobody ever set the calendar, which is normal on a fresh board - it is not judged here. clk=lse since 2026-09-10 - the calendar counts the crystal, not the internal RC. The field is read out of RCC_BDCR, so it cannot disagree with the hardware.",
       "target": "rtc.read",
       "timeout_ms": 5000,
       "checks": [
-        { "field": "clk", "op": "eq", "value": "lsi" },
+        { "field": "clk", "op": "eq", "value": "lse" },
         { "field": "_text", "op": "contains", "value": "time=" }
       ]
     },

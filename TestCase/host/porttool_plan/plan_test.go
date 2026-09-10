@@ -765,7 +765,7 @@ func TestBenchSmokePlanRuns(t *testing.T) {
 		case cmd == "pt.run rtc.read":
 			return []string{
 				"RTC_TEST: not up yet, running MX_RTC_Init()",
-				"OK rtc.read init=0 clk=lsi date=26-09-07 time=13:45:07",
+				"OK rtc.read init=0 clk=lse date=26-09-07 time=13:45:07",
 			}, nil
 		case cmd == "pt.run led.blink":
 			return []string{
@@ -1042,7 +1042,7 @@ func TestStation6PlanRuns(t *testing.T) {
 					"bsr=0x782D scsr=0x1058 mdio_errors=0",
 			}, nil
 		case cmd == "pt.run rtc.read":
-			return []string{"OK rtc.read init=0 clk=lsi date=26-09-08 time=09:14:22"}, nil
+			return []string{"OK rtc.read init=0 clk=lse date=26-09-08 time=09:14:22"}, nil
 		case cmd == "pt.run led.blink":
 			return []string{"OK led.blink pin=PE2 pulses=6 half_ms=250 observed=unknown"}, nil
 

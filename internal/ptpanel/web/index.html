@@ -101,6 +101,11 @@ main>section{background:var(--bg);overflow-y:auto;padding:14px}
   background:var(--bg);border:1px solid var(--line2);border-radius:3px;padding:3px 7px}
 .pgroup{font:600 11px var(--mono);color:var(--ink3);letter-spacing:.05em;
   grid-column:1/-1;margin-top:8px;border-top:1px solid var(--line2);padding-top:7px}
+/* 人工读数框：浮在最上层，因为它要在一次走点的中途一直站着不动。 */
+#meterask{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:50;
+  background:var(--card);border:2px solid #2f6fd0;border-radius:6px;
+  padding:12px 16px;min-width:460px;box-shadow:0 6px 24px rgba(0,0,0,.18)}
+#meterwhat{font:600 14px/1.5 var(--mono);color:var(--ink)}
 .finding{font-size:12px;color:#8a5300;background:#fff7e6;border:1px solid #e0a34a;
   border-radius:4px;padding:6px 9px;margin:5px 0}
 .reads{display:flex;flex-wrap:wrap;gap:6px;margin:9px 0}
@@ -305,6 +310,21 @@ details summary:hover{color:var(--ink2)}
     </div>
   </section>
 </main>
+
+<!-- 人工读数框。⚠️ 刻意放在 <main> 外面：每来一帧 applyState() 都会重建
+     #panelbody，输入框在里面的话，人打字打到一半就会被重建掉。放这里它不受
+     重建影响，所以人可以慢慢读表、慢慢填。 -->
+<div id="meterask" hidden>
+  <div id="meterwhat"></div>
+  <div class="row" style="margin-top:8px">
+    <input id="meterval" type="number" step="any" placeholder="表上读到多少" style="flex:1">
+    <span id="meterunit" class="hint"></span>
+    <button id="meterok" class="primary">记下</button>
+    <button id="meterskip">跳过这一点</button>
+    <button id="meterstop">中止</button>
+  </div>
+  <div class="hint" id="meterhint"></div>
+</div>
 
 <script>
 "use strict";
@@ -1132,6 +1152,11 @@ function renderPanel() {
     const cross = dodiCard(p);
     if (cross) { host.appendChild(cross); }
   }
+
+  // 多点测量只挂在 aout 下面 —— 只有模拟输出的判据来自外部仪器。
+  if (p.name === "aout") {
+    host.appendChild(aocalCard(p));
+  }
 }
 
 function sessionCard(p) {
@@ -1561,6 +1586,242 @@ function dodiCard(p) {
     }
   };
 
+  return c;
+}
+
+// ---- Analog Out: walk a list of points, a meter reads each one -------------
+//
+// The board cannot check its own analog output - there is no read-back path on
+// this hardware, so the µA in an aout frame is arithmetic, not a measurement
+// (porttool_aout.c says so out loud). The only judge is an instrument on the
+// terminal, and today that instrument is a person with a multimeter.
+//
+// *** So the reading comes from a human by design, not as a stopgap. What IS a
+// *** stopgap is that the human is the only supported source: meter= leaves
+// *** room for an instrument that can be asked over a wire, and nothing in the
+// *** walk below assumes the value came from a keyboard.
+//
+// *** Several points, not one. A single point cannot separate an offset from a
+// *** gain error, and those need different corrections - which is the whole
+// *** reason calibration data is worth collecting at all.
+//
+// *** This records and judges. It does NOT fit a correction curve: what shape
+// *** that curve should be is a question about real hardware, and nobody has
+// *** the measurements yet. Inventing one now would put an unexplainable bias
+// *** underneath every board that follows. See ISS-C1 in $BOOT/docs/work.
+
+const AOCAL_METERS = ["manual"];   // 仪器接口预留：加了别的就在这里出现
+
+let aocal = {
+  busy: "",
+  ch: 1,
+  meter: "manual",
+  pointsText: "1, 10, 20",   // mA, 覆盖量程高中低
+  tolPct: 2,                 // 合格判据，可配
+  rows: [],
+  note: "",
+  ask: null,                 // 正在等人读表时的 resolve
+};
+
+// mA -> DAC millivolts, through the XTR111 set resistor. The board reports the
+// current it expects from a given mV; this is that arithmetic inverted, so a
+// person can think in the unit the meter shows.
+function aocalMaMv(ma) { return Math.round(ma * 1000 * 1024 / 10000); }
+
+function askMeter(what, unit, hint) {
+  return new Promise(resolve => {
+    $("#meterwhat").textContent = what;
+    $("#meterunit").textContent = unit;
+    $("#meterhint").textContent = hint || "";
+    const inp = $("#meterval");
+    inp.value = "";
+    $("#meterask").hidden = false;
+    inp.focus();
+    aocal.ask = resolve;
+  });
+}
+
+function meterDone(value) {
+  const resolve = aocal.ask;
+  aocal.ask = null;
+  $("#meterask").hidden = true;
+  if (resolve) resolve(value);
+}
+
+function aocalPoints() {
+  return aocal.pointsText.split(/[,，\s]+/)
+    .map(s => Number(s))
+    .filter(v => isFinite(v) && v >= 0);
+}
+
+async function aocalRun(p, say, render) {
+  const ch = aocal.ch;
+  const pts = aocalPoints();
+  if (!pts.length) { say("一个点都没有 —— 先在上面填要测的电流值。"); return; }
+
+  say("起 aout，把其它会话停掉…");
+  await run("pt.stop all");
+  await run("pt.start aout ch=" + ch + " mv=" + ch + ":0 period=500");
+  if (!await waitForNewFrames("aout", 1, 8000)) {
+    await run("pt.stop all");
+    say("aout 一帧都没来 —— 看日志，可能是 VREFBUF 没起来，启动被拒了。");
+    return;
+  }
+
+  const rows = [];
+  for (let i = 0; i < pts.length; i++) {
+    const ma = pts[i];
+    const mv = aocalMaMv(ma);
+    say("第 " + (i + 1) + "/" + pts.length + " 点：要 " + ma + " mA（DAC " + mv + " mV）");
+    await run("pt.set aout mv=" + ch + ":" + mv);
+    await waitForNewFrames("aout", 2, 5000);
+
+    // What the board says it should be putting out, after its own quantising.
+    // Not a measurement - that is what the meter is for - but it IS the number
+    // the meter has to be compared against.
+    const f = (reads.aout || {}).fields || {};
+    const parts = String(f["ch" + ch] || "0/0/0").split("/");
+    const wantUa = Number(parts[2]);
+
+    const typed = await askMeter(
+      "AOUT" + ch + " 第 " + (i + 1) + "/" + pts.length + " 点 —— 板子在输出 "
+        + (wantUa / 1000).toFixed(3) + " mA，万用表读到多少？",
+      "mA",
+      "串进 D14 → 万用表 → Analog GND。读不到就点「跳过这一点」，那一点会记成未测。");
+
+    if (typed === null) { say("中止了。"); break; }
+    const gotMa = (typed === "") ? null : Number(typed);
+    const wantMa = wantUa / 1000;
+    const row = {ma: ma, mv: mv, wantMa: wantMa, gotMa: gotMa};
+    if (gotMa !== null && isFinite(gotMa)) {
+      row.errMa = gotMa - wantMa;
+      // Against full scale, not against the reading. At the bottom of the
+      // range one DAC step is already a large fraction of the reading, so a
+      // percent-of-reading limit is one the hardware cannot meet there -
+      // see the note in the panel below.
+      row.errPct = wantMa === 0 ? 0 : (row.errMa / AOCAL_FS_MA) * 100;
+      row.pass = Math.abs(row.errPct) <= aocal.tolPct;
+    }
+    rows.push(row);
+    aocal.rows = rows;
+    render();
+  }
+
+  say("收尾：把输出放回 0…");
+  await run("pt.set aout mv=" + ch + ":0");
+  await run("pt.stop all");
+}
+
+// 满量程。0-20 mA 那一档，JP3/JP4 开路时成立。
+const AOCAL_FS_MA = 20;
+
+function aocalCard(p) {
+  const c = el("div","card");
+  const hd = el("div","hd");
+  hd.appendChild(el("span","nm","AOUT 多点测量"));
+  hd.appendChild(el("span","sub","D14/D15，万用表串在回路里"));
+  hd.appendChild(el("span","sp"));
+  const go = el("button","primary aocalgo", aocal.busy ? "跑着…" : "走一遍");
+  go.disabled = !!aocal.busy;
+  hd.appendChild(go);
+  c.appendChild(hd);
+
+  c.appendChild(el("div","hint",
+    "板子上没有回读通道，帧里那个毫安是算出来的不是量出来的 —— 所以判据只能来自表。" +
+    "多点是为了把零点误差和增益误差分开，一个点分不开。"));
+
+  // 三项人工配置，值都存在模块状态里而不是 DOM 里：每来一帧面板都会重建。
+  const row = el("div","row");
+  const mk = (label, get, set, width, step) => {
+    const lb = el("label", null, label + " ");
+    const i = el("input");
+    i.value = get();
+    i.style.width = width;
+    if (step) { i.type = "number"; i.step = step; }
+    i.oninput = () => set(i.value);
+    lb.appendChild(i);
+    row.appendChild(lb);
+  };
+  mk("测哪几个点（mA）", () => aocal.pointsText, v => aocal.pointsText = v, "180px");
+  mk("合格判据（±% FS）", () => aocal.tolPct, v => aocal.tolPct = Number(v) || 0, "70px", "0.1");
+
+  const chsel = el("select");
+  for (let i = 1; i <= (p.channels || 2); i++) {
+    const o = el("option", null, "AOUT" + i); o.value = i;
+    if (i === aocal.ch) o.selected = true;
+    chsel.appendChild(o);
+  }
+  chsel.onchange = () => { aocal.ch = Number(chsel.value); renderPanel(); };
+  const chlb = el("label", null, "通道 "); chlb.appendChild(chsel); row.appendChild(chlb);
+
+  const msel = el("select");
+  for (const m of AOCAL_METERS) {
+    const o = el("option", null, m === "manual" ? "人工读表" : m); o.value = m;
+    if (m === aocal.meter) o.selected = true;
+    msel.appendChild(o);
+  }
+  msel.onchange = () => { aocal.meter = msel.value; };
+  const mlb = el("label", null, "读数来自 "); mlb.appendChild(msel); row.appendChild(mlb);
+  c.appendChild(row);
+
+  c.appendChild(el("div","sub",
+    "⚠ 判据是**满量程的百分比**（满量程 " + AOCAL_FS_MA + " mA），不是读数的百分比。" +
+    "DAC 是 12 位，一步约 5.9 µA —— 在 1 mA 那一点，一步就占读数的 0.6%，" +
+    "「读数的 0.1%」在量程低端是硬件到不了的指标"));
+
+  c.appendChild(el("div","sub2", aocal.busy || aocal.note ||
+    "还没跑过。把万用表串进 D14 → 表 → Analog GND，再点「走一遍」。"));
+
+  if (aocal.rows.length) {
+    const grid = el("div","dodi");
+    const head = el("div","dodirow hd2");
+    for (const t of ["目标 mA", "板子应出 mA", "表读到 mA", "偏差 mA", "偏差 %FS", "结论"]) {
+      head.appendChild(el("span","c",t));
+    }
+    grid.appendChild(head);
+    for (const r of aocal.rows) {
+      const line = el("div","dodirow");
+      line.appendChild(el("span","c", String(r.ma)));
+      line.appendChild(el("span","c", r.wantMa.toFixed(3)));
+      line.appendChild(el("span","c", r.gotMa === null ? "未测" : r.gotMa.toFixed(3)));
+      line.appendChild(el("span","c", r.errMa === undefined ? "-" : r.errMa.toFixed(3)));
+      line.appendChild(el("span","c", r.errPct === undefined ? "-" : r.errPct.toFixed(2)));
+      line.appendChild(el("span","c " + (r.pass === undefined ? "" : (r.pass ? "ok" : "bad")),
+                          r.pass === undefined ? "未测" : (r.pass ? "过" : "不过")));
+      grid.appendChild(line);
+    }
+    c.appendChild(grid);
+
+    const measured = aocal.rows.filter(r => r.pass !== undefined);
+    if (measured.length) {
+      const bad = measured.filter(r => !r.pass).length;
+      c.appendChild(el("div", bad ? "msg bad" : "msg",
+        bad ? (measured.length + " 个点里 " + bad + " 个超出 ±" + aocal.tolPct + "% FS")
+            : (measured.length + " 个点全部在 ±" + aocal.tolPct + "% FS 以内")));
+    }
+    c.appendChild(el("div","hint",
+      "⚠ 这一步只测量和判定，**不算补偿值**。拟合用什么形状要靠一批真实数据定，" +
+      "现在编一个出来，等于给后面每块板埋一个说不清的偏差。校准值存哪也还没定（ISS-C1）"));
+  }
+
+  go.onclick = async () => {
+    if (aocal.busy) return;
+    aocal.busy = "跑着…";
+    aocal.rows = [];
+    aocal.note = "";
+    renderPanel();
+    const say = t => { aocal.busy = t; renderPanel(); };
+    try {
+      await aocalRun(p, say, () => renderPanel());
+      aocal.note = "跑完了。";
+    } catch (e) {
+      aocal.note = "出错了：" + e;
+    } finally {
+      aocal.busy = "";
+      meterDone(null);
+      renderPanel();
+    }
+  };
   return c;
 }
 
@@ -2156,6 +2417,15 @@ async function runPlan() {
 
 document.querySelectorAll(".tab").forEach(b =>
   b.onclick = () => switchTab(b.dataset.tab));
+
+// 人工读数框的按钮。绑在这里而不是在卡片里：这个框在 <main> 外面，
+// renderPanel() 不重建它，所以只需要绑一次 —— 而这正是它放在外面的理由。
+$("#meterok").onclick    = () => meterDone($("#meterval").value.trim());
+$("#meterskip").onclick  = () => meterDone("");
+$("#meterstop").onclick  = () => meterDone(null);
+$("#meterval").onkeydown = e => {
+  if (e.key === "Enter") { meterDone($("#meterval").value.trim()); }
+};
 
 </script>
 </body>
