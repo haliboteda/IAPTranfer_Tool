@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Station 6 - PCBA power-on test",
-  "limit_version": "2026-09-10-a",
+  "limit_version": "2026-09-10-b",
   "_note": "Covers the items in OPLC-MFG-TEST-001 section 3.6 that the firmware can report and this tool can judge. What is NOT here, and why, is listed step by step in docs/design/PRODUCTION-TEST-GAP.md: the power rails, standby and maximum current, high-side and relay voltage/current readback, and the Ethernet / USB / SWD items all need an external instrument or a fixture this build has no driver for. ⚠️ Every limit below is an engineering starting point. Production limits are the ones Quality signs off, and the document itself still says TBD for all of them. Each independent group's first step is ALWAYS, so one failure no longer hides every later port: a board with no SD card still gets its ethernet, USB, relay and analog results in the same run. Steps left on the default PASS are the ones whose immediate predecessor is a genuine precondition - stressing SDRAM whose buses failed, or checking the integrity of a card that is not there, measures nothing.",
   "steps": [
     {
@@ -99,6 +99,25 @@
           "field": "failed",
           "op": "eq",
           "value": "0"
+        }
+      ]
+    },
+    {
+      "id": "sd-detect",
+      "type": "PtSession",
+      "_note": "The detect switch on PE6, watched rather than sampled once. It exists as a session so an insertion shows on the panel as it happens; this step is what gives that session a criterion, without which the panel reports the port unjudged forever - the same hole eth's session half had. detected=1 only: a fixture has a card in the slot. changes/in/out are recorded and NOT judged here, because how many times a card was moved during a production run is not something a passing board has to satisfy - the hot-plug walk is a bench exercise, and case H4 decides the counting.",
+      "port": "sd",
+      "params": {
+        "period": 300
+      },
+      "frames": 3,
+      "timeout_ms": 8000,
+      "execute_condition": "ALWAYS",
+      "checks": [
+        {
+          "field": "detected",
+          "op": "eq",
+          "value": "1"
         }
       ]
     },

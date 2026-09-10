@@ -1210,6 +1210,13 @@ function sessionCard(p) {
         " Hz 是共用的，由最快的那一路定 —— 慢的那几路因此分辨得更细，不会更粗。" +
         "频率栏显示的是板子实际落到的值，不是你敲进去的值"));
     }
+    // duty / freq 是什么，写在它们旁边。用户 2026-09-10 直接问了「freq 是什么」——
+    // 一个没有单位、没有说明的数字框，等于要人去猜。
+    if (p.name === "dout") {
+      c.appendChild(el("div","sub",
+        "duty = 占空比，0–100 %。100 就是常通，0 就是关断，中间是 PWM。 " +
+        "freq = 那一路 PWM 的频率，单位 Hz。只调通断的话把 freq 放着不管就行"));
+    }
     if (anyFloating) {
       c.appendChild(el("div","sub warn",
         "⚠ 有通道落在悬空带（引脚 300–450 mV）。出厂九个跳线全开路，此时 MCU 引脚彻底悬空 —— 先确认 JP5/JP6/JP8/JP9 焊了没有"));
@@ -1220,6 +1227,41 @@ function sessionCard(p) {
     if (extra) c.appendChild(el("div","sub", extra));
   } else {
     c.appendChild(el("div","hint", p.running ? "启动了，等第一帧数据…" : "还没启动。"));
+  }
+
+  // 通道复选。和左边树里那组共用同一份 picked 状态 —— 两处显示的永远是同一件事。
+  //
+  // *** 也放在这里，是因为只放在树里等于没放：每路的值就在这张卡上，勾哪几路
+  // *** 却要跑到另一个面板去，中间还隔着「哪个数字对应哪个端子」这一层。
+  if (p.kind === "session" && p.channels > 1) {
+    const pick = el("div","chvals");
+    pick.appendChild(el("div","st","测哪几路 —— 不勾的路这次不动"));
+    const pg = el("div","chgrid");
+    for (let i = 1; i <= p.channels; i++) {
+      const lb = el("label");
+      const cb = el("input"); cb.type = "checkbox"; cb.checked = chanSet(p).has(i);
+      cb.onchange = () => {
+        cb.checked ? chanSet(p).add(i) : chanSet(p).delete(i);
+        renderTree(); renderPanel();
+      };
+      lb.appendChild(cb);
+      const t = el("span","t");
+      t.appendChild(el("b", null, p.name + i));
+      const term = labelFor(p, i);
+      if (term) { t.appendChild(document.createTextNode(" " + term)); }
+      lb.appendChild(t);
+      pg.appendChild(lb);
+    }
+    pick.appendChild(pg);
+    const all = el("button", null, "全选 / 全不选");
+    all.onclick = () => {
+      const set = chanSet(p);
+      if (set.size === p.channels) { set.clear(); }
+      else { for (let i = 1; i <= p.channels; i++) set.add(i); }
+      renderTree(); renderPanel();
+    };
+    pick.appendChild(all);
+    c.appendChild(pick);
   }
 
   // parameters, straight from what the board says it accepts
@@ -1235,13 +1277,24 @@ function sessionCard(p) {
     // back in that shape, so a new one needs no change to this page.
     if ((p.perChannel || {})[name]) {
       const box = el("div","chvals");
-      box.appendChild(el("div","st", name + " —— 每路一个"));
+      // 参数名后面跟上板子自己报的取值范围。范围出自 limits= 行，不是写死的，
+      // 所以固件改了上下限这里跟着变。
+      const spec = ((p.limits || {})[name] || {}).spec;
+      box.appendChild(el("div","st",
+        name + " —— 每路一个" + (spec ? "（" + spec + "）" : "")));
       const grid = el("div","chgrid");
       perCh[name] = {};
       const want = planPerCh(p, name);
       for (const i of [...chanSet(p)].sort((a,b)=>a-b)) {
         const lb = el("label");
-        lb.appendChild(el("span","t", labelFor(p,i) || (p.name+i)));
+        // ⚠️ 通道号和端子号必须同时出现。这两套编号是错开的 —— dout 的第 3 路
+        // 是端子 A05，只写 A03 的人会去调第 1 路。用户 2026-09-10 就是这么问的
+        // 「我想开 do3 怎么做」，而卡片上第一个格子写着 A03。
+        const t = el("span","t");
+        t.appendChild(el("b", null, p.name + i));
+        const term = labelFor(p, i);
+        if (term) { t.appendChild(document.createTextNode(" " + term)); }
+        lb.appendChild(t);
         const inp = el("input"); inp.type = "number"; inp.min = 0;
         applyLimit(p, name, inp);
         inp.value = want[i] ?? p.perChannel[name][i] ?? 0;
@@ -1288,7 +1341,7 @@ function sessionCard(p) {
     }
     lb.appendChild(inp); inputs[name] = inp; row.appendChild(lb);
   }
-  if (p.channels > 1) row.appendChild(el("span","hint","通道在左边勾：" + (chList(p) || "一个都没选")));
+  if (p.channels > 1) row.appendChild(el("span","hint","这次要动：" + (chList(p) || "一个都没选")));
   c.appendChild(row);
 
   // What the port reported as events, newest first. Generic on purpose: the

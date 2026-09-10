@@ -1097,6 +1097,14 @@ func TestStation6PlanRuns(t *testing.T) {
 				"!eth t=3 seq=3 rx=2 miss=0 ip=192.168.0.30 link=1 conn=1 mode=echo port=5000 rx_bytes=4 tx_bytes=6 kbps=0",
 				"!eth t=4 seq=4 rx=3 miss=0 ip=192.168.0.30 link=1 conn=1 mode=echo port=5000 rx_bytes=6 tx_bytes=8 kbps=0",
 			}
+		// 手写假板子，加端口/加步骤都要跟一次。sd 2026-09-10 变成会话之后
+		// station6 多了 sd-detect 这一步。
+		case cmd == "pt.start sd period=300":
+			return []string{"OK sd started"}, []string{
+				"!sd t=1 seq=1 rx=0 miss=0 detected=1 changes=0 in=0 out=0",
+				"!sd t=2 seq=2 rx=1 miss=0 detected=1 changes=0 in=0 out=0",
+				"!sd t=3 seq=3 rx=2 miss=0 detected=1 changes=0 in=0 out=0",
+			}
 		case cmd == "pt.start usb mode=echo period=500":
 			return []string{"OK usb started"}, []string{
 				"!usb t=1 seq=1 rx=0 miss=0 state=cfg enum=0 mode=echo rx_bytes=0 tx_bytes=2 kbps=0 busy=0",

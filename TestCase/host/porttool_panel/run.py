@@ -292,6 +292,88 @@ def main():
     os._exit(code)
 
 
+def check_channel_labels(page):
+    """Every per-channel control says which channel AND which terminal.
+
+    The two numberings are offset: dout's channel 3 is terminal A05. A box
+    labelled only A03 is the first channel, and somebody who wants DO3 will
+    reach for it - which is exactly what happened on 2026-09-10.
+
+    And the channel checkboxes have to be on the card next to the values. They
+    were only in the left tree, which is a different panel with a different
+    numbering in front of it.
+    """
+    Section("channel labels and the channel picker")
+
+    page.locator('.tab[data-tab="manual"]').click()
+    page.wait_for_selector(".prow")
+    rows = page.locator(".prow")
+    picked = False
+    for i in range(rows.count()):
+        if rows.nth(i).locator(".key").inner_text().strip() == "dout":
+            rows.nth(i).click()
+            page.wait_for_timeout(300)
+            picked = True
+            break
+    if not check(picked, "dout is in the port list"):
+        return
+
+    card = page.locator(".card", has_text="Klemmblock A")
+    if not check(card.count() > 0, "the dout card is up"):
+        return
+    text = card.first.inner_text()
+
+    # The pairing that matters: channel 3 sits beside terminal A05, not A03.
+    flat = " ".join(text.split())
+    check("dout3 A05" in flat,
+          "a control names both the channel and its terminal, and pairs them right",
+          str([l for l in text.splitlines() if "A05" in l][:2]))
+    check("dout1 A03" in flat,
+          "and the first channel is the one on A03",
+          str([l for l in text.splitlines() if "A03" in l][:2]))
+
+    check("测哪几路" in text,
+          "the channel picker is on the card, not only in the tree")
+
+    # A parameter with no unit and no range is one the reader has to guess at.
+    check("占空比" in text and "Hz" in text,
+          "duty and freq say what they are, in units", text[:400])
+    check("0..100" in text,
+          "and the range comes from the board's own limits line", text[:400])
+
+    # Ticking a box on the card has to move the same state the tree shows.
+    boxes = card.first.locator(".chvals input[type=checkbox]")
+    if check(boxes.count() >= 8, "there is one checkbox per channel",
+             "%d boxes" % boxes.count()):
+        # Scoped to the duty grid, not the whole card: the picker lists every
+        # channel whether it is selected or not, so its own labels would make
+        # this assertion pass for the wrong reason.
+        def duty_labels():
+            box = page.locator(".card", has_text="Klemmblock A").first \
+                      .locator(".chvals", has_text="duty").first
+            return " ".join(box.inner_text().split())
+
+        check("dout3 A05" in duty_labels(),
+              "the duty grid has a box for channel 3 to start with", duty_labels())
+
+        boxes.nth(2).uncheck()
+        page.wait_for_timeout(400)
+        check("dout3 A05" not in duty_labels(),
+              "unticking a channel on the card drops its value box too",
+              duty_labels())
+
+        # The tree is the other place the same state is shown; both read the
+        # same picked set, so a tick in one has to be a tick in the other.
+        tree = page.locator("#treebody").inner_text()
+        check("dout" in tree, "the tree is still there to agree with")
+
+        page.locator(".card", has_text="Klemmblock A").first \
+            .locator(".chvals input[type=checkbox]").nth(2).check()
+        page.wait_for_timeout(400)
+        check("dout3 A05" in duty_labels(),
+              "and ticking it back brings the value box in again", duty_labels())
+
+
 def check_aout_walk(page):
     """The multi-point analog-output walk, with the meter reading typed in.
 
@@ -903,6 +985,7 @@ def run_checks(page, com):
           "no limit is editable on the port tab")
 
     check_limits_are_readonly(page)
+    check_channel_labels(page)
     check_aout_walk(page)
 
     # -------------------------------------------------- DO -> DI cross-check

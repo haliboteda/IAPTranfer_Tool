@@ -1,7 +1,7 @@
 {
   "schema": 1,
   "name": "Station 6 - PCBA power-on test (relaxed limits)",
-  "limit_version": "2026-09-10-a-relaxed",
+  "limit_version": "2026-09-10-b-relaxed",
   "_note": "Same steps as station6-poweron.json, with the ANALOG limits widened. It exists so a bench or a line can run against a looser limit set without editing the strict one - and so the report says which was used: every report carries plan and limit_version, so a board passed on relaxed limits is distinguishable from one passed on strict limits forever after. ⚠️ Only readings that are actually MEASURED are widened here. aout's mV is the DAC setting read back, not a measurement, so widening it would mean nothing - the board has no channel that can read its own analog output, and the fixture's meter is the only real verdict. ⚠️ The 0.1% / 0.3% question (PRODUCTION-TEST-GAP.md Q2) is NOT settled by this file. Until the JP1-JP9 range jumpers are known, the terminal-to-pin factor is unknown and no percentage limit can be written at all - both files can only say 'not floating'. When that factor is known, the analog-in and analog-out steps are where the percentage goes, and these two files are where strict and relaxed part company. Each independent group's first step is ALWAYS, so one failure no longer hides every later port: a board with no SD card still gets its ethernet, USB, relay and analog results in the same run. Steps left on the default PASS are the ones whose immediate predecessor is a genuine precondition - stressing SDRAM whose buses failed, or checking the integrity of a card that is not there, measures nothing.",
   "steps": [
     {
@@ -99,6 +99,25 @@
           "field": "failed",
           "op": "eq",
           "value": "0"
+        }
+      ]
+    },
+    {
+      "id": "sd-detect",
+      "type": "PtSession",
+      "_note": "The detect switch on PE6, watched rather than sampled once. It exists as a session so an insertion shows on the panel as it happens; this step is what gives that session a criterion, without which the panel reports the port unjudged forever - the same hole eth's session half had. detected=1 only: a fixture has a card in the slot. changes/in/out are recorded and NOT judged here, because how many times a card was moved during a production run is not something a passing board has to satisfy - the hot-plug walk is a bench exercise, and case H4 decides the counting.",
+      "port": "sd",
+      "params": {
+        "period": 300
+      },
+      "frames": 3,
+      "timeout_ms": 8000,
+      "execute_condition": "ALWAYS",
+      "checks": [
+        {
+          "field": "detected",
+          "op": "eq",
+          "value": "1"
         }
       ]
     },
