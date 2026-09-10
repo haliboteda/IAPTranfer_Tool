@@ -186,6 +186,18 @@ int main(void)
     run("pt.run rtc.read");
     test_rtc_calendar_initialised = 1;
 
+    /* clk= has to come out of RCC_BDCR and not out of this file's opinion.
+     * It was the literal "lsi" until 2026-09-10, and on the day the project
+     * moved to LSE the reply went on saying lsi against a board with a
+     * crystal. Moving the register is the only way to tell a field that reads
+     * the hardware from one that describes it. */
+    test_rcc.BDCR = (2ul << RCC_BDCR_RTCSEL_Pos);   /* LSI */
+    run("pt.run rtc.read");
+    test_rcc.BDCR = (0ul << RCC_BDCR_RTCSEL_Pos);   /* no clock at all */
+    run("pt.run rtc.read");
+    test_rcc.BDCR = (1ul << RCC_BDCR_RTCSEL_Pos);   /* back to LSE */
+    run("pt.run rtc.read");
+
     /* The two SD one-shots. A card that mounts and writes but reads back wrong
      * is a different fault from a card that was never there, and the reply has
      * to say which - a single pass/fail bit would not. */

@@ -565,6 +565,22 @@ def main():
               "refused with the reason: %s" % cmd,
               " / ".join(got)[:160])
 
+    # ------------------------------------------- which clock the RTC counts
+    #
+    # This field was the literal "lsi" until the project moved to LSE, at which
+    # point it went on saying lsi against a board with a crystal. A field that
+    # cannot disagree with the hardware is not a reading, and the only way to
+    # tell the two apart is to move the register and watch.
+    Section("rtc.read names the oscillator it actually found")
+    rtcs = [dict(parse_kv(l)) for _, body in sections for l in body
+            if l.startswith("OK rtc.read ")]
+    seen = [f.get("clk") for f in rtcs]
+    for want in ("lse", "lsi", "none"):
+        check(want in seen, "RTCSEL=%s comes back as clk=%s" % (want, want), str(seen))
+    check(seen and seen[-1] == "lse",
+          "and it follows the register back, not just away from the default",
+          str(seen))
+
     # ------------------------------------------------ the card detect switch
     #
     # Hot-plug is the one thing about the SD slot that normally needs a person
@@ -910,14 +926,14 @@ def main():
     # The RTC is not up in this image either, so the target has to bring it up
     # before it can read anything.
     rtc_bodies = [b for c, b in sections if c == "pt.run rtc.read"]
-    check(len(rtc_bodies) == 2, "pt.run rtc.read answered twice",
+    check(len(rtc_bodies) >= 2, "pt.run rtc.read answered at least twice",
           "%d section(s)" % len(rtc_bodies))
     inits = [l for _, body in sections for l in body
              if l.startswith("TEST rtc_init_count=")]
     check(inits and inits[0].endswith("=1"),
           "rtc.read brought the RTC up itself, exactly once",
           inits[0] if inits else "(no observation)")
-    if len(rtc_bodies) == 2:
+    if len(rtc_bodies) >= 2:
         for label, body, want_init in (("a set calendar", rtc_bodies[0], "1"),
                                        ("a calendar nobody set", rtc_bodies[1], "0")):
             ok = [l for l in body if l.startswith("OK ")]
@@ -928,7 +944,9 @@ def main():
             check(f.get("init") == want_init,
                   "%s: init=%s" % (label, want_init), str(f.get("init")))
             # The clock source is a fact the PC has to know to judge drift.
-            check(f.get("clk") == "lsi",
+            # Which oscillator it names is checked where the register is moved;
+            # here all that matters is that the field is there and populated.
+            check(f.get("clk") in ("lse", "lsi", "hse", "none"),
                   "%s: names the clock source" % label, str(f.get("clk")))
             check("time" in f and "date" in f,
                   "%s: reports a date and a time" % label, ok[0])

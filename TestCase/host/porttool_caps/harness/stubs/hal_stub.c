@@ -60,6 +60,11 @@ static uint32_t fake_tick_ms = 1000u;
 /* Test-visible state. */
 int      test_relay_energised[RELAY_COUNT];
 int      test_relay_init_count;
+/* Starts on LSE, the way the board has been since 2026-09-10. A test moves it
+ * to prove rtc.read follows the register rather than describing it. */
+RCC_TypeDef        test_rcc = { .BDCR = (1ul << RCC_BDCR_RTCSEL_Pos) };
+RCC_TypeDef *const RCC      = &test_rcc;
+
 int      test_din_init_count;
 uint8_t  test_din_bits = 0x16u;
 

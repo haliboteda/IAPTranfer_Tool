@@ -174,10 +174,16 @@ OK sdram.probe base=0xC0000000 size=67108864 ready=0 databus=0 addrbus=0
 TEST sdram_probe_count=2
 >>> pt.run rtc.read
 RTC_TEST: not up yet, running MX_RTC_Init()
-OK rtc.read init=1 clk=lsi date=26-09-07 time=13:45:07
+OK rtc.read init=1 clk=lse date=26-09-07 time=13:45:07
 TEST rtc_init_count=1
 >>> pt.run rtc.read
-OK rtc.read init=0 clk=lsi date=26-09-07 time=13:45:07
+OK rtc.read init=0 clk=lse date=26-09-07 time=13:45:07
+>>> pt.run rtc.read
+OK rtc.read init=1 clk=lsi date=26-09-07 time=13:45:07
+>>> pt.run rtc.read
+OK rtc.read init=1 clk=none date=26-09-07 time=13:45:07
+>>> pt.run rtc.read
+OK rtc.read init=1 clk=lse date=26-09-07 time=13:45:07
 >>> pt.run sd.probe
 SDCARD_TEST: probing (stub)
 OK sd.probe detected=1 ready=1 blocks=62333952 block_size=512 mib=30436 v2x=1 class=1461 fs=fat32 err=0x00000000

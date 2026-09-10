@@ -147,6 +147,22 @@ extern int test_led_writes;   /* every WritePin on PE2, high and low alike */
 extern int test_led_high;     /* how many of those drove it high */
 extern int test_led_configured;
 
+/* ---- RCC's backup-domain register -------------------------------------
+ *
+ * Only BDCR, and only because rtc.read reports which oscillator the calendar
+ * is counting by reading RTCSEL out of it. It used to report the literal
+ * "lsi", which went stale the day the project moved to LSE - so the field
+ * reads the register now, and a test can move the register to check that it
+ * really follows.
+ */
+typedef struct { uint32_t BDCR; } RCC_TypeDef;
+
+#define RCC_BDCR_RTCSEL_Pos  8u
+#define RCC_BDCR_RTCSEL      (3ul << RCC_BDCR_RTCSEL_Pos)
+
+extern RCC_TypeDef  test_rcc;      /* a test writes BDCR through this */
+extern RCC_TypeDef *const RCC;     /* the firmware reads it through this */
+
 /* ---- RTC, for pt.run rtc.read ----------------------------------------- */
 typedef enum { HAL_RTC_STATE_RESET = 0, HAL_RTC_STATE_READY } HAL_RTCStateTypeDef;
 
