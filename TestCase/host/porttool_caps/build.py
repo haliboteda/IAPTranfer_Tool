@@ -501,10 +501,63 @@ def main():
           "the receive ring did not overflow",
           fed_reply)
 
+    # ------------------------------------------------------- the encoders
+    #
+    # Four encoders on the eight digital-in pins. The transcript drives the A/B
+    # states directly, so what is being judged is the decoding: direction,
+    # that the pairs are independent, and that a transition with no direction
+    # in it is reported rather than guessed at.
+    Section("quadrature decoding")
+    QUAD_START = "pt.start din ch=1,2,3,4,5,6,7,8 mode=quad period=1000"
+    qat = next((i for i, (cmd, _) in enumerate(sections) if cmd == QUAD_START), None)
+    if check(qat is not None, "the transcript drives the encoders"):
+        quad = []
+        for _, body in sections[qat:]:
+            for l in body:
+                if l.startswith("!din ") and "mode=quad" in l:
+                    quad.append(dict(parse_kv(l)))
+        # d1 is the last direction seen, not the direction right now, so it
+        # stays where it was through frames that moved nothing.
+        want = [
+            ("0", "0", "0", "0", "a session that just started has counted nothing"),
+            ("4", "1", "0", "0", "four states forward is four counts up"),
+            ("0", "-1", "0", "0", "and the same four back is four down, not eight more"),
+            ("0", "-1", "0", "1", "both phases at once has no direction, so it is a miss"),
+            # err is 2 by then, not 1: coming back out of the state that was
+            # jumped into is a jump as well, and pretending otherwise would
+            # mean a decoder that reports half the steps it missed.
+            ("0", "-1", "4", "2", "encoder 2 moves on its own pins, encoder 1 stays put"),
+        ]
+        check(len(quad) >= len(want),
+              "the transcript produced %d encoder frames" % len(want),
+              "got %d" % len(quad))
+        for i, (g1, d1, g2, err, why) in enumerate(want):
+            if i >= len(quad):
+                break
+            f = quad[i]
+            got = (f.get("g1"), f.get("d1"), f.get("g2"), f.get("err"))
+            check(got == (g1, d1, g2, err), "encoder frame %d - %s" % (i + 1, why),
+                  "g1/d1/g2/err = %s, want %s" % ("/".join(map(str, got)),
+                                                  "/".join((g1, d1, g2, err))))
+        check(all("v" in f for f in quad),
+              "an encoder frame still carries the raw pins as v=")
+        # The per-channel pairs are deliberately absent here: with all eight of
+        # them next to four counters the line runs past PORTTOOL_LINE_MAX and
+        # gets truncated into something no parser can read. v= loses nothing.
+        check(not any(k.startswith("ch") for f in quad for k in f),
+              "and does NOT repeat them one per channel - the line would not fit")
+
     # ------------------------------------------------------------ echo loop
     Section("echo loop")
+    # From the command that starts that section onwards, not from the top of
+    # the transcript: din frames appear elsewhere too, and taking "the first
+    # six" made this section fail the moment another test in front of it
+    # started one - a break in a check that had nothing to do with the change.
+    ECHO_START = "pt.start din ch=1 period=200"
+    at = next((i for i, (cmd, _) in enumerate(sections) if cmd == ECHO_START), None)
+    check(at is not None, "the echo section still starts with " + ECHO_START)
     frames = []
-    for _, body in sections:
+    for _, body in sections[at if at is not None else 0:]:
         for l in body:
             if l.startswith("!din "):
                 frames.append(dict(parse_kv(l)))

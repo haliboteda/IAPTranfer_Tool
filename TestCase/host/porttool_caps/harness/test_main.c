@@ -414,6 +414,64 @@ int main(void)
     run("pt.stop all");
     run("pt.caps");
 
+    /* ---- the four encoders ---------------------------------------------
+     *
+     * The same eight pins as the digital inputs, read as four A/B pairs. What
+     * is decidable here and nowhere else is the decoding itself: which way a
+     * transition counts, that the four pairs do not disturb each other, and
+     * that a transition where both phases moved at once is reported as a miss
+     * rather than guessed at. What is NOT decidable here is whether a real
+     * encoder turns fast enough for this loop to keep up - that needs one.
+     *
+     * Every advance() is one pass of the superloop, so the pin state is
+     * sampled once per call. The period is long enough that a frame only comes
+     * out at the end of each sequence, which is what makes the count readable.
+     */
+    /* All eight channels selected on purpose: that is the widest this frame
+     * ever gets, and the line-length check above is what it has to survive. */
+    run("pt.start din ch=1,2,3,4,5,6,7,8 mode=quad period=1000");
+
+    /* Encoder 1 is bit 0 (A) and bit 1 (B), so the state is (A<<1)|B and the
+     * forward order 00 -> 01 -> 11 -> 10 is written 0x00, 0x02, 0x03, 0x01. */
+    test_din_bits = 0x00u; advance(10);   /* the first sample primes, never counts */
+    test_din_bits = 0x02u; advance(10);
+    test_din_bits = 0x03u; advance(10);
+    test_din_bits = 0x01u; advance(10);
+    test_din_bits = 0x00u; advance(10);
+    advance(1000);                        /* g1 must be +4, d1 +1, err 0 */
+
+    /* Back the other way, over the same four states in reverse. The count has
+     * to come back to zero: a decoder that counted turns instead of steps
+     * would end at 8. */
+    test_din_bits = 0x01u; advance(10);
+    test_din_bits = 0x03u; advance(10);
+    test_din_bits = 0x02u; advance(10);
+    test_din_bits = 0x00u; advance(10);
+    advance(1000);                        /* g1 back to 0, d1 now -1 */
+
+    /* Both phases changing between two samples. There is no direction in it,
+     * so it must land in err and leave the count alone. */
+    test_din_bits = 0x03u; advance(10);
+    advance(1000);                        /* err 1, g1 still 0 */
+
+    /* Encoder 2 is bits 2 and 3 - the same pattern shifted up. Encoder 1 is
+     * held still through it, so a decoder that mixed the pairs up would show
+     * it moving. */
+    test_din_bits = 0x00u; advance(10);
+    test_din_bits = 0x08u; advance(10);
+    test_din_bits = 0x0Cu; advance(10);
+    test_din_bits = 0x04u; advance(10);
+    test_din_bits = 0x00u; advance(10);
+    advance(1000);                        /* g2 +4, g1 still 0 */
+
+    /* And the level mode is unchanged by any of it. */
+    run("pt.start din ch=1,2,3,4 mode=level period=1000");
+    test_din_bits = 0x16u;
+    advance(1000);
+
+    run("pt.stop all");
+    test_din_bits = 0x16u;
+
     /* ---- the echo loop -------------------------------------------------
      *
      * The board sends a number, the PC sends it back, the board counts on from

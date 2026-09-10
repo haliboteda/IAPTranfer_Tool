@@ -117,9 +117,9 @@ func standardReplies(cmd string) ([]string, bool) {
 // cross-check for both shapes a plan step can name.
 func capsReply() []string {
 	body := []string{
-		"OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0",
-		"OK vals=din ch=1,2,3,4,5,6,7,8 period=200",
-		"OK limits=din ch:1..8 period:50..",
+		"OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0",
+		"OK vals=din ch=1,2,3,4,5,6,7,8 mode=level period=200",
+		"OK limits=din ch:1..8 mode:level|quad period:50..",
 		"OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0",
 		"OK vals=rs485 baud=115200 period=3000",
 		"OK terms=rs485 C09+C10",

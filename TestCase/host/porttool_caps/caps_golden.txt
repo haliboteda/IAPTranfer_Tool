@@ -1,8 +1,8 @@
 >>> pt.caps
 OK porttool=0.9.0 ports=19 lines=53
-OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
-OK vals=din ch=1,2,3,4,5,6,7,8 period=200
-OK limits=din ch:1..8 period:50..
+OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
+OK vals=din ch=1,2,3,4,5,6,7,8 mode=level period=200
+OK limits=din ch:1..8 mode:level|quad period:50..
 OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0
 OK vals=dout ch=1,2,3,4,5,6,7,8 mode=hold duty=1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0 freq=1000 period=1000
 OK limits=dout ch:1..8 mode:hold|blink duty:0..100 freq:1..2000 period:50..
@@ -68,9 +68,9 @@ OK running=din
 OK running=relay
 >>> pt.caps
 OK porttool=0.9.0 ports=19 lines=53
-OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=1
-OK vals=din ch=1,3,5 period=200
-OK limits=din ch:1..8 period:50..
+OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=1
+OK vals=din ch=1,3,5 mode=level period=200
+OK limits=din ch:1..8 mode:level|quad period:50..
 OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0
 OK vals=dout ch=1,2,3,4,5,6,7,8 mode=hold duty=1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0 freq=1000 period=1000
 OK limits=dout ch:1..8 mode:hold|blink duty:0..100 freq:1..2000 period:50..
@@ -355,9 +355,9 @@ TEST led_configured=1 led_writes=12 led_high=6
 OK stopped all
 >>> pt.caps
 OK porttool=0.9.0 ports=19 lines=53
-OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
-OK vals=din ch=2,4 period=200
-OK limits=din ch:1..8 period:50..
+OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
+OK vals=din ch=2,4 mode=level period=200
+OK limits=din ch:1..8 mode:level|quad period:50..
 OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0
 OK vals=dout ch=1,2,3,4,5,6,7,8 mode=hold duty=1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0 freq=1000 period=1000
 OK limits=dout ch:1..8 mode:hold|blink duty:0..100 freq:1..2000 period:50..
@@ -408,28 +408,60 @@ OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.prob
 OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention targets=sdram.capacity,sdram.retention.soak,sdram.crc
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
+>>> pt.start din ch=1,2,3,4,5,6,7,8 mode=quad period=1000
+OK started din
+>>> (host) 10 ms later
+!din t=4710 seq=1 rx=0 miss=0 v=0x00 mode=quad g1=0 d1=0 g2=0 d2=0 g3=0 d3=0 g4=0 d4=0 err=0
+>>> (host) 10 ms later
+>>> (host) 10 ms later
+>>> (host) 10 ms later
+>>> (host) 10 ms later
+>>> (host) 1000 ms later
+!din t=5750 seq=1 rx=0 miss=1 v=0x00 mode=quad g1=4 d1=1 g2=0 d2=0 g3=0 d3=0 g4=0 d4=0 err=0
+>>> (host) 10 ms later
+>>> (host) 10 ms later
+>>> (host) 10 ms later
+>>> (host) 10 ms later
+>>> (host) 1000 ms later
+!din t=6790 seq=1 rx=0 miss=2 v=0x00 mode=quad g1=0 d1=-1 g2=0 d2=0 g3=0 d3=0 g4=0 d4=0 err=0
+>>> (host) 10 ms later
+>>> (host) 1000 ms later
+!din t=7800 seq=1 rx=0 miss=3 v=0x03 mode=quad g1=0 d1=-1 g2=0 d2=0 g3=0 d3=0 g4=0 d4=0 err=1
+>>> (host) 10 ms later
+>>> (host) 10 ms later
+>>> (host) 10 ms later
+>>> (host) 10 ms later
+>>> (host) 10 ms later
+>>> (host) 1000 ms later
+!din t=8850 seq=1 rx=0 miss=4 v=0x00 mode=quad g1=0 d1=-1 g2=4 d2=1 g3=0 d3=0 g4=0 d4=0 err=2
+>>> pt.start din ch=1,2,3,4 mode=level period=1000
+OK started din
+>>> (host) 1000 ms later
+!din t=9850 seq=1 rx=0 miss=0 v=0x16 mode=level ch1=0 ch2=1 ch3=1 ch4=0
+>>> pt.stop all
+OK stopped all
 >>> pt.stop all
 OK stopped all
 >>> pt.start din ch=1 period=200
 OK started din
 >>> (host) 200 ms later
-!din t=4900 seq=1 rx=0 miss=0 v=0x16 ch1=0
+!din t=10050 seq=1 rx=0 miss=0 v=0x16 mode=level ch1=0
 >>> pt.echo din 1
 OK echo din 1
 >>> (host) 200 ms later
-!din t=5100 seq=2 rx=1 miss=0 v=0x16 ch1=0
+!din t=10250 seq=2 rx=1 miss=0 v=0x16 mode=level ch1=0
 >>> pt.echo din 2
 OK echo din 2
 >>> (host) 200 ms later
-!din t=5300 seq=3 rx=2 miss=0 v=0x16 ch1=0
+!din t=10450 seq=3 rx=2 miss=0 v=0x16 mode=level ch1=0
 >>> (host) 200 ms later
-!din t=5500 seq=3 rx=2 miss=1 v=0x16 ch1=0
+!din t=10650 seq=3 rx=2 miss=1 v=0x16 mode=level ch1=0
 >>> (host) 200 ms later
-!din t=5700 seq=3 rx=2 miss=2 v=0x16 ch1=0
+!din t=10850 seq=3 rx=2 miss=2 v=0x16 mode=level ch1=0
 >>> pt.echo din 99
 OK echo din 99
 >>> (host) 200 ms later
-!din t=5900 seq=3 rx=2 miss=3 v=0x16 ch1=0
+!din t=11050 seq=3 rx=2 miss=3 v=0x16 mode=level ch1=0
 >>> pt.echo relay 1
 ERR relay is not running
 >>> pt.echo nosuch 1
@@ -444,9 +476,9 @@ OK stopped all
 OK started relay
 >>> pt.caps
 OK porttool=0.9.0 ports=19 lines=53
-OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
-OK vals=din ch=1 period=200
-OK limits=din ch:1..8 period:50..
+OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
+OK vals=din ch=1 mode=level period=200
+OK limits=din ch:1..8 mode:level|quad period:50..
 OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0
 OK vals=dout ch=1,2,3,4,5,6,7,8 mode=hold duty=1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0 freq=1000 period=1000
 OK limits=dout ch:1..8 mode:hold|blink duty:0..100 freq:1..2000 period:50..
@@ -501,9 +533,9 @@ OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.bli
 OK set relay
 >>> pt.caps
 OK porttool=0.9.0 ports=19 lines=53
-OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
-OK vals=din ch=1 period=200
-OK limits=din ch:1..8 period:50..
+OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
+OK vals=din ch=1 mode=level period=200
+OK limits=din ch:1..8 mode:level|quad period:50..
 OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0
 OK vals=dout ch=1,2,3,4,5,6,7,8 mode=hold duty=1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0 freq=1000 period=1000
 OK limits=dout ch:1..8 mode:hold|blink duty:0..100 freq:1..2000 period:50..
@@ -564,9 +596,9 @@ ERR relay start refused: on="1:1,1:0" must be like 1:1,2:0 - relays 1..6, level 
 ERR relay start refused: on="1:" must be like 1:1,2:0 - relays 1..6, level 0 or 1, each relay named at most once
 >>> pt.caps
 OK porttool=0.9.0 ports=19 lines=53
-OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
-OK vals=din ch=1 period=200
-OK limits=din ch:1..8 period:50..
+OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
+OK vals=din ch=1 mode=level period=200
+OK limits=din ch:1..8 mode:level|quad period:50..
 OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0
 OK vals=dout ch=1,2,3,4,5,6,7,8 mode=hold duty=1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0 freq=1000 period=1000
 OK limits=dout ch:1..8 mode:hold|blink duty:0..100 freq:1..2000 period:50..
@@ -623,9 +655,9 @@ OK stopped all
 ERR din start refused: period="nonsense" is not a number
 >>> pt.caps
 OK porttool=0.9.0 ports=19 lines=53
-OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
-OK vals=din ch=1 period=200
-OK limits=din ch:1..8 period:50..
+OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
+OK vals=din ch=1 mode=level period=200
+OK limits=din ch:1..8 mode:level|quad period:50..
 OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0
 OK vals=dout ch=1,2,3,4,5,6,7,8 mode=hold duty=1:0,2:0,3:0,4:0,5:0,6:0,7:0,8:0 freq=1000 period=1000
 OK limits=dout ch:1..8 mode:hold|blink duty:0..100 freq:1..2000 period:50..
@@ -680,9 +712,9 @@ OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.bli
 OK started dout
 >>> pt.caps
 OK porttool=0.9.0 ports=19 lines=53
-OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
-OK vals=din ch=1 period=200
-OK limits=din ch:1..8 period:50..
+OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
+OK vals=din ch=1 mode=level period=200
+OK limits=din ch:1..8 mode:level|quad period:50..
 OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=1
 OK vals=dout ch=1,5 mode=hold duty=1:20,5:75 freq=1000 period=1000
 OK limits=dout ch:1..8 mode:hold|blink duty:0..100 freq:1..2000 period:50..
@@ -734,18 +766,18 @@ OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdra
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> (host) 1000 ms later
-!dout t=6900 seq=1 rx=0 miss=0 mode=hold freq=1000 ch1=20 ch5=75
+!dout t=12050 seq=1 rx=0 miss=0 mode=hold freq=1000 ch1=20 ch5=75
 >>> (host) dout duties now
 TEST dout_duty=20,0,0,0,75,0,0,0
 >>> pt.start dout ch=1,2 mode=blink duty=100 period=200
 OK started dout
 >>> (host) 200 ms later
-!dout t=7100 seq=1 rx=0 miss=0 mode=blink freq=1000 ch1=0 ch2=0
+!dout t=12250 seq=1 rx=0 miss=0 mode=blink freq=1000 ch1=0 ch2=0
 >>> pt.caps
 OK porttool=0.9.0 ports=19 lines=53
-OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
-OK vals=din ch=1 period=200
-OK limits=din ch:1..8 period:50..
+OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
+OK vals=din ch=1 mode=level period=200
+OK limits=din ch:1..8 mode:level|quad period:50..
 OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=1
 OK vals=dout ch=1,2 mode=blink duty=1:100,2:100 freq=1000 period=200
 OK limits=dout ch:1..8 mode:hold|blink duty:0..100 freq:1..2000 period:50..
@@ -797,12 +829,12 @@ OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdra
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> (host) 200 ms later
-!dout t=7300 seq=1 rx=0 miss=1 mode=blink freq=1000 ch1=100 ch2=100
+!dout t=12450 seq=1 rx=0 miss=1 mode=blink freq=1000 ch1=100 ch2=100
 >>> pt.caps
 OK porttool=0.9.0 ports=19 lines=53
-OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
-OK vals=din ch=1 period=200
-OK limits=din ch:1..8 period:50..
+OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
+OK vals=din ch=1 mode=level period=200
+OK limits=din ch:1..8 mode:level|quad period:50..
 OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=1
 OK vals=dout ch=1,2 mode=blink duty=1:100,2:100 freq=1000 period=200
 OK limits=dout ch:1..8 mode:hold|blink duty:0..100 freq:1..2000 period:50..
@@ -881,9 +913,9 @@ OK started temp
 OK started aout
 >>> pt.caps
 OK porttool=0.9.0 ports=19 lines=53
-OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
-OK vals=din ch=1 period=200
-OK limits=din ch:1..8 period:50..
+OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
+OK vals=din ch=1 mode=level period=200
+OK limits=din ch:1..8 mode:level|quad period:50..
 OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0
 OK vals=dout ch=1,2 mode=blink duty=1:100,2:100 freq=1000 period=200
 OK limits=dout ch:1..8 mode:hold|blink duty:0..100 freq:1..2000 period:50..
@@ -935,9 +967,9 @@ OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdra
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> (host) 1000 ms later
-!ain t=8300 seq=1 rx=0 miss=0 vdda=3287 ok=1 ch1=21850/2071 ch2=530/50
-!aout t=8300 seq=1 rx=0 miss=0 ch1=500/499/4873 ch2=1500/1499/14638
-!temp t=8300 seq=1 rx=0 miss=0 vdda=3287 ok=1 ch1=738/238 ch2=751/251
+!ain t=13450 seq=1 rx=0 miss=0 vdda=3287 ok=1 ch1=21850/2071 ch2=530/50
+!aout t=13450 seq=1 rx=0 miss=0 ch1=500/499/4873 ch2=1500/1499/14638
+!temp t=13450 seq=1 rx=0 miss=0 vdda=3287 ok=1 ch1=738/238 ch2=751/251
 >>> (host) DAC outputs now
 TEST dac_mv=500,1500 vref_enables=7
 >>> pt.start aout mv=9999
@@ -953,13 +985,13 @@ TEST dac_after_stop=0,0
 >>> pt.start rs485 baud=115200 period=200
 OK started rs485
 >>> (host) 200 ms later
-!rs485 t=8500 seq=1 rx=0 miss=0 baud=115200 rxbytes=0 junk=0 overrun=0
+!rs485 t=13650 seq=1 rx=0 miss=0 baud=115200 rxbytes=0 junk=0 overrun=0
 >>> (host) 200 ms later
-!rs485 t=8700 seq=2 rx=1 miss=0 baud=115200 rxbytes=2 junk=0 overrun=0
+!rs485 t=13850 seq=2 rx=1 miss=0 baud=115200 rxbytes=2 junk=0 overrun=0
 >>> (host) 200 ms later
-!rs485 t=8900 seq=2 rx=1 miss=1 baud=115200 rxbytes=2 junk=0 overrun=0
+!rs485 t=14050 seq=2 rx=1 miss=1 baud=115200 rxbytes=2 junk=0 overrun=0
 >>> (host) 200 ms later
-!rs485 t=9100 seq=2 rx=1 miss=2 baud=115200 rxbytes=10 junk=1 overrun=0
+!rs485 t=14250 seq=2 rx=1 miss=2 baud=115200 rxbytes=10 junk=1 overrun=0
 >>> (host) what went out on the pair
 TEST rs485_sent=1|2|2|2| driving=0 baud=115200
 >>> pt.echo rs485 2
@@ -971,16 +1003,16 @@ OK stopped all
 >>> pt.start rs232 period=200
 OK started rs232
 >>> (host) 200 ms later
-!rs232 t=9300 seq=1 rx=0 miss=0 rxlines=0
+!rs232 t=14450 seq=1 rx=0 miss=0 rxlines=0
 >>> pt.echo rs232 1
 OK echo rs232 1
 >>> (host) 200 ms later
-!rs232 t=9500 seq=2 rx=1 miss=0 rxlines=0
+!rs232 t=14650 seq=2 rx=1 miss=0 rxlines=0
 >>> pt.caps
 OK porttool=0.9.0 ports=19 lines=53
-OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
-OK vals=din ch=1 period=200
-OK limits=din ch:1..8 period:50..
+OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
+OK vals=din ch=1 mode=level period=200
+OK limits=din ch:1..8 mode:level|quad period:50..
 OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0
 OK vals=dout ch=1,2 mode=blink duty=1:100,2:100 freq=1000 period=200
 OK limits=dout ch:1..8 mode:hold|blink duty:0..100 freq:1..2000 period:50..
