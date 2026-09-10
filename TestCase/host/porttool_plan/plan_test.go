@@ -10,6 +10,8 @@ package testcase
 
 import (
 	"encoding/json"
+	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +27,18 @@ import (
 )
 
 func f64(v float64) *float64 { return &v }
+
+// refusePeer is what a plan's peer= gets in these tests.
+//
+// ⚠️ The fake board is a Go type answering the protocol in memory - it has no
+// TCP listener, no CDC pipe and nothing on an RS485 pair. Letting the runner
+// use the real opener made it grab whatever COM16 happened to be on the
+// machine running the test, so the result depended on what was plugged into
+// somebody's bench. The frames the fake board sends already describe a healthy
+// link, which is what these steps are meant to be judged on.
+func refusePeer(kind, addr string, baud int) (io.ReadWriteCloser, error) {
+	return nil, fmt.Errorf("no %s peer on this bench (%s)", kind, addr)
+}
 
 // ---------- limits ----------
 
@@ -244,7 +258,7 @@ func runPlan(t *testing.T, planJSON string, handler func(cmd string, nth int) ([
 	board := ptboard.New(fake, 0)
 	t.Cleanup(func() { board.Close() })
 
-	runner := &ptseq.Runner{
+	runner := &ptseq.Runner{OpenPeer: refusePeer,
 		Board:       board,
 		Sleep:       func(time.Duration) {},
 		ToolVersion: "test",
@@ -517,7 +531,7 @@ func TestToolStepIsJudgedByWhatItPrintedOrReturned(t *testing.T) {
 	board := ptboard.New(fake, 0)
 	t.Cleanup(func() { board.Close() })
 
-	runner := &ptseq.Runner{
+	runner := &ptseq.Runner{OpenPeer: refusePeer,
 		Board: board, Sleep: func(time.Duration) {}, ToolVersion: "test",
 		RunTool: func(name string, args []string, dir string, timeout time.Duration) (string, int, error) {
 			called = append(called, append([]string{name}, args...))
@@ -586,7 +600,7 @@ func TestOperatorAnswerIsTheVerdict(t *testing.T) {
 			})
 			board := ptboard.New(fake, 0)
 			t.Cleanup(func() { board.Close() })
-			runner := &ptseq.Runner{
+			runner := &ptseq.Runner{OpenPeer: refusePeer,
 				Board: board, Sleep: func(time.Duration) {},
 				ToolVersion: "test", Confirm: tc.confirm,
 			}
@@ -623,7 +637,7 @@ func TestSerialNumberComesFromOutsideAndReachesTheReport(t *testing.T) {
 	})
 	board := ptboard.New(fake, 0)
 	t.Cleanup(func() { board.Close() })
-	runner := &ptseq.Runner{
+	runner := &ptseq.Runner{OpenPeer: refusePeer,
 		Board: board, Sleep: func(time.Duration) {},
 		ToolVersion: "test", BaseDir: dir,
 	}
@@ -664,7 +678,7 @@ func TestMissingSerialNumberFailsRatherThanPassingEmpty(t *testing.T) {
 	})
 	board := ptboard.New(fake, 0)
 	t.Cleanup(func() { board.Close() })
-	runner := &ptseq.Runner{Board: board, Sleep: func(time.Duration) {}, ToolVersion: "test"}
+	runner := &ptseq.Runner{OpenPeer: refusePeer, Board: board, Sleep: func(time.Duration) {}, ToolVersion: "test"}
 	rep, err := runner.Run(plan)
 	if err != nil {
 		t.Fatalf("run: %v", err)
@@ -687,7 +701,7 @@ func runWithTool(t *testing.T, planJSON string,
 	})
 	board := ptboard.New(fake, 0)
 	t.Cleanup(func() { board.Close() })
-	runner := &ptseq.Runner{
+	runner := &ptseq.Runner{OpenPeer: refusePeer,
 		Board: board, Sleep: func(time.Duration) {}, ToolVersion: "test", RunTool: tool,
 	}
 	rep, err := runner.Run(p)
@@ -720,7 +734,7 @@ func TestBenchSmokePlanRuns(t *testing.T) {
 	// One caps reply carrying every port the plan names, with the loop types
 	// the firmware really reports.
 	caps := []string{
-		"OK porttool=0.8.0 ports=2 lines=5",
+		"OK porttool=0.9.0 ports=2 lines=5",
 		"OK port=temp board=lower kind=session blk=- term=- channels=2 loop=ctrl params=ch,period running=0",
 		"OK vals=temp ch=1,2 period=1000",
 		"OK terms=temp SC-protect,HS-switch",
@@ -734,7 +748,7 @@ func TestBenchSmokePlanRuns(t *testing.T) {
 		case cmd == "pt.caps":
 			return caps, nil
 		case cmd == "pt.id":
-			return []string{"OK uid=003400413135511439303538 porttool=0.8.0"}, nil
+			return []string{"OK uid=003400413135511439303538 porttool=0.9.0"}, nil
 		case cmd == "pt.run sdram.probe":
 			return []string{
 				"SDRAM_TEST: controller not up yet, running MX_FMC_Init()",
@@ -788,7 +802,7 @@ func TestBenchSmokePlanRuns(t *testing.T) {
 		t.Fatalf("caps fixture: %v", err)
 	}
 
-	runner := &ptseq.Runner{
+	runner := &ptseq.Runner{OpenPeer: refusePeer,
 		Board: board, Caps: &parsed,
 		Sleep: func(time.Duration) {}, ToolVersion: "test",
 	}
@@ -898,7 +912,7 @@ func TestPlanRunTargetsCheckedAgainstWhatTheBoardReports(t *testing.T) {
 }
 
 func TestPlanRunTargetsUncheckedAgainstOlderFirmware(t *testing.T) {
-	// Firmware before 0.8.0 sent no run rows. Reporting every PtRun step as
+	// Firmware before 0.9.0 sent no run rows. Reporting every PtRun step as
 	// unknown then would bury the findings that are real, so silence is the
 	// honest answer - the plan may well be correct.
 	caps, err := ptproto.ParseCaps([]string{
@@ -939,7 +953,7 @@ func TestStation6PlanRuns(t *testing.T) {
 	}
 
 	caps := []string{
-		"OK porttool=0.8.0 ports=17 lines=30",
+		"OK porttool=0.9.0 ports=17 lines=30",
 		"OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0",
 		"OK vals=din ch=1,2,3,4,5,6,7,8 period=200",
 		"OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0",
@@ -961,7 +975,7 @@ func TestStation6PlanRuns(t *testing.T) {
 		"OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0",
 		"OK vals=knx mode=loopback period=1000",
 		"OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention",
-		"OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress",
+		"OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress,sd.speed",
 		// A session with a one-shot on the same row: the TCP server and the PHY
 		// probe are one RJ45 (DECISIONS.md 28).
 		"OK port=eth board=bridge kind=session blk=- term=J1 channels=1 loop=link params=mode,port,ip,period running=0 runs=eth.link",
@@ -979,7 +993,7 @@ func TestStation6PlanRuns(t *testing.T) {
 		case cmd == "pt.caps":
 			return caps, nil
 		case cmd == "pt.id":
-			return []string{"OK uid=003400413135511439303538 porttool=0.8.0"}, nil
+			return []string{"OK uid=003400413135511439303538 porttool=0.9.0"}, nil
 
 		case cmd == "pt.run sdram.probe":
 			return []string{"OK sdram.probe base=0xC0000000 size=67108864 ready=1 databus=1 addrbus=1"}, nil
@@ -997,11 +1011,19 @@ func TestStation6PlanRuns(t *testing.T) {
 			}, nil
 		case cmd == "pt.run sd.probe":
 			return []string{"OK sd.probe detected=1 ready=1 blocks=62333952 block_size=512 " +
-				"mib=30436 v2x=1 class=1461"}, nil
-		case cmd == "pt.run sd.integrity":
+				"mib=30436 v2x=1 class=1461 fs=fat32 err=0x00000000"}, nil
+		case cmd == "pt.run sd.integrity bytes=1048576":
 			return []string{
 				"OK sd.integrity mounted=1 wrote=1 read_back=1 identical=1 " +
-					"bytes=4096 write_crc=0xDEADBEEF read_crc=0xDEADBEEF fresult=0",
+					"bytes=1048576 write_crc=0xDEADBEEF read_crc=0xDEADBEEF fresult=0",
+			}, nil
+		// ⚠️ Rate only, and the plan records rather than judges it - there is
+		// no measured threshold yet. Answering with a plausible number keeps
+		// the step exercised without asserting a limit nobody has set.
+		case cmd == "pt.run sd.speed bytes=1048576":
+			return []string{
+				"OK sd.speed mounted=1 bytes=1048576 write_ms=2000 read_ms=1000 " +
+					"write_bps=524288 read_bps=1048576 fresult=0",
 			}, nil
 		case cmd == "pt.run sd.stress":
 			return []string{
@@ -1062,6 +1084,17 @@ func TestStation6PlanRuns(t *testing.T) {
 				"!rs232 t=3 seq=3 rx=2 miss=0 rxlines=6",
 				"!rs232 t=4 seq=4 rx=3 miss=0 rxlines=7",
 			}
+		// The eth session, answered: conn=1 and the counter closing.
+		// ⚠️ The parameter order is the one the runner sends, alphabetical - a
+		// mismatch reads as "unexpected command" and looks like a firmware
+		// fault rather than a stale fake.
+		case cmd == "pt.start eth ip=dhcp mode=echo period=500 port=5000":
+			return []string{"OK eth started"}, []string{
+				"!eth t=1 seq=1 rx=0 miss=0 ip=192.168.0.30 link=1 conn=1 mode=echo port=5000 rx_bytes=0 tx_bytes=2 kbps=0",
+				"!eth t=2 seq=2 rx=1 miss=0 ip=192.168.0.30 link=1 conn=1 mode=echo port=5000 rx_bytes=2 tx_bytes=4 kbps=0",
+				"!eth t=3 seq=3 rx=2 miss=0 ip=192.168.0.30 link=1 conn=1 mode=echo port=5000 rx_bytes=4 tx_bytes=6 kbps=0",
+				"!eth t=4 seq=4 rx=3 miss=0 ip=192.168.0.30 link=1 conn=1 mode=echo port=5000 rx_bytes=6 tx_bytes=8 kbps=0",
+			}
 		case cmd == "pt.start usb mode=echo period=500":
 			return []string{"OK usb started"}, []string{
 				"!usb t=1 seq=1 rx=0 miss=0 state=cfg enum=0 mode=echo rx_bytes=0 tx_bytes=2 kbps=0 busy=0",
@@ -1069,12 +1102,12 @@ func TestStation6PlanRuns(t *testing.T) {
 				"!usb t=3 seq=3 rx=2 miss=0 state=cfg enum=0 mode=echo rx_bytes=4 tx_bytes=6 kbps=0 busy=0",
 				"!usb t=4 seq=4 rx=3 miss=0 state=cfg enum=0 mode=echo rx_bytes=6 tx_bytes=8 kbps=0 busy=0",
 			}
-		case cmd == "pt.start rs485 baud=115200 period=500":
+		case cmd == "pt.start rs485 baud=115200 period=2000":
 			return []string{"OK rs485 started"}, []string{
-				"!rs485 t=1 seq=1 rx=0 miss=0 baud=115200 rxbytes=8 junk=0",
-				"!rs485 t=2 seq=2 rx=1 miss=0 baud=115200 rxbytes=16 junk=0",
-				"!rs485 t=3 seq=3 rx=2 miss=0 baud=115200 rxbytes=24 junk=0",
-				"!rs485 t=4 seq=4 rx=3 miss=0 baud=115200 rxbytes=32 junk=0",
+				"!rs485 t=1 seq=1 rx=0 miss=0 baud=115200 rxbytes=8 junk=0 overrun=0",
+				"!rs485 t=2 seq=2 rx=1 miss=0 baud=115200 rxbytes=16 junk=0 overrun=0",
+				"!rs485 t=3 seq=3 rx=2 miss=0 baud=115200 rxbytes=24 junk=0 overrun=0",
+				"!rs485 t=4 seq=4 rx=3 miss=0 baud=115200 rxbytes=32 junk=0 overrun=0",
 			}
 		// Exactly what the board printed in mode=extloop on 2026-09-08:
 		// seq advancing every period with rx_frames tracking tx, which is
@@ -1113,7 +1146,7 @@ func TestStation6PlanRuns(t *testing.T) {
 	// A production run has an operator, so the indicator step gets an answer.
 	// Leaving Confirm nil is what a headless run does, and that turns the step
 	// into an error rather than a silent pass - covered elsewhere.
-	runner := &ptseq.Runner{
+	runner := &ptseq.Runner{OpenPeer: refusePeer,
 		Board: board, Caps: &parsed,
 		Sleep:       func(time.Duration) {},
 		ToolVersion: "test",
@@ -1141,11 +1174,6 @@ func TestStation6PlanRuns(t *testing.T) {
 		// runs it. The step is in this file so the panel has criteria for the
 		// port - see internal/ptpanel/judge.go.
 		"soak": true,
-		// Carrying frames needs something at the other end of the cable
-		// holding an address, which the line does not have yet. Here, off, so
-		// the panel has criteria for the session half of eth - without it the
-		// port reports unjudged however healthy it is.
-		"eth-throughput": true,
 	}
 
 	for _, s := range rep.Steps {

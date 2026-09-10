@@ -15,6 +15,7 @@ import (
 	"bufio"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -24,6 +25,7 @@ import (
 
 	"IAPTool/internal/ptboard"
 	"IAPTool/internal/ptcheck"
+	"IAPTool/internal/ptecho"
 	"IAPTool/internal/ptplan"
 	"IAPTool/internal/ptproto"
 	"IAPTool/internal/ptreport"
@@ -47,6 +49,15 @@ type Runner struct {
 
 	// RunTool starts an external program. Nil uses os/exec.
 	RunTool func(name string, args []string, dir string, timeout time.Duration) (output string, exit int, err error)
+
+	// OpenPeer opens the far end of a link=loop session - a serial port or a
+	// TCP connection. Nil uses the real ones.
+	//
+	// ⚠️ A test MUST inject this. Without it a plan naming peer.com "COM16"
+	// opens whatever COM16 happens to be on the machine running the test,
+	// which is how a unit test starts depending on what is plugged into the
+	// bench. kind is "serial" or "tcp".
+	OpenPeer func(kind, addr string, baud int) (io.ReadWriteCloser, error)
 
 	// ReadSN and WriteReport are the two ends of the "interfaces only"
 	// boundary. Nil uses the file and stdin handling below.
@@ -295,18 +306,47 @@ func (r *Runner) doSession(step ptplan.Step, timeout time.Duration, att *ptrepor
 		return
 	}
 
+	// Peers are opened from inside the collect loop, once per frame until they
+	// are up.
+	//
+	// ⚠️ Not once before, and not once on the first frame. A board that has
+	// just been powered on has no DHCP address for several seconds and has not
+	// finished enumerating its CDC pipe - and "just powered on" is exactly
+	// when a production station tests it. Trying once and giving up made every
+	// link port fail on the first run after a reset, which is the run that
+	// matters.
+	var peers []*ptecho.Peer
+	defer func() {
+		for _, p := range peers {
+			p.Stop()
+		}
+	}()
+	open := r.OpenPeer
+	if open == nil {
+		open = realPeerOpener
+	}
+	pending := newPeerPlan(step, open, r.now())
+
 	want := step.FrameCount()
 	var last ptproto.Frame
 	got := 0
 	linkGone := false
 
 collect:
-	for got < want {
+	for got < want || pending.outstanding(r.now()) {
 		remaining := deadline.Sub(r.now())
 		if remaining <= 0 {
 			break
 		}
-		timer := time.NewTimer(remaining)
+		// Capped while a peer is still missing, so the loop can re-check
+		// whether the peer came up or its budget ran out. Without the cap the
+		// select blocks until the step's own deadline the moment the frames
+		// stop, and the budget never gets spent.
+		wait := remaining
+		if pending.outstanding(r.now()) && wait > 500*time.Millisecond {
+			wait = 500 * time.Millisecond
+		}
+		timer := time.NewTimer(wait)
 		select {
 		case ev, ok := <-events:
 			timer.Stop()
@@ -321,10 +361,36 @@ collect:
 			got++
 			att.Raw = append(att.Raw, ev.Line)
 			r.answerEcho(step.Port, ev.Frame, att)
+
+			// Every frame is another chance to get the peers up: this one
+			// may be the first that carries a DHCP address, or the CDC port
+			// may have finished enumerating since the last one.
+			if opened := pending.tryOpen(ev.Frame, att); len(opened) > 0 {
+				peers = append(peers, opened...)
+				// The frames before a peer existed went unanswered, so the
+				// board's miss is already non-zero through no fault of the
+				// link. Restarting the count is the difference between judging
+				// the link and judging how fast this program got ready.
+				got = 0
+			}
 		case <-timer.C:
-			break collect
+			// Only the real deadline ends the collection. A short wait above
+			// is a re-check tick for the peer, not a timeout - treating it as
+			// one cut the frame count short and reported a timeout on a board
+			// that was still sending.
+			if !r.now().Before(deadline) {
+				break collect
+			}
 		}
 	}
+
+	// Peers stop before the port does, so nothing is still writing at a board
+	// that has been told to stop.
+	recordPeerStats(peers, att)
+	for _, p := range peers {
+		p.Stop()
+	}
+	peers = nil
 
 	r.stopQuietly(step.Port, att)
 

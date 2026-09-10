@@ -35,6 +35,8 @@ func main() {
 		os.Exit(cmdValidate(flag.Args()[1:]))
 	case "run":
 		os.Exit(cmdRun(flag.Args()[1:]))
+	case "answer":
+		os.Exit(cmdAnswer(flag.Args()[1:]))
 	case "version":
 		fmt.Printf("PortTool %s\n", version)
 	case "":
@@ -61,6 +63,10 @@ By hand:
 On a line:
   porttool validate PLAN   read a plan file without a board
   porttool run PLAN --port P [--sn S] [--json F] [--csv F]
+
+  porttool answer --tcp HOST:PORT --com COM16 --usb
+                           be the far end of the link ports, so eth, usb and
+                           rs485 have someone to answer them
 
   porttool version
 

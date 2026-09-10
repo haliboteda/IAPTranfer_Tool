@@ -104,6 +104,38 @@ func (p *Params) UnmarshalJSON(data []byte) error {
 	return nil
 }
 
+// Peer says what has to answer a session on the far side of the link.
+//
+// A loop=link port - eth, usb, rs485 - is judged on whether the number it put
+// on the link came back unchanged, and the firmware refuses to answer such a
+// port over the control channel on purpose: doing so would let the counter
+// climb with the link under test already dead (DECISIONS.md 9). So the station
+// PC has to be the far end, and this is where a plan says which cable that is.
+//
+// Without it those ports can only ever fail, which is why eth's session step
+// shipped disabled: there was nowhere to say "and something has to answer it".
+//
+// The JSON names are the file format.
+type Peer struct {
+	// TCP is "auto" to take the address from the session's own ip= and port=
+	// fields, or an explicit "host:port". Auto is the useful one: the board's
+	// address comes from DHCP, so a plan cannot know it in advance.
+	TCP string `json:"tcp,omitempty"`
+
+	// COM is a serial port on this machine, e.g. "COM16" for the adapter on
+	// the RS485 terminal.
+	COM string `json:"com,omitempty"`
+
+	// USB finds the board's own CDC port by its USB ids. ⚠️ That port only
+	// exists once the usb session has started, because that is when the board
+	// initialises its USB stack - so it is looked up after pt.start, not
+	// before.
+	USB bool `json:"usb,omitempty"`
+
+	// Baud for a serial peer. Zero means the default.
+	Baud int `json:"baud,omitempty"`
+}
+
 // Step is one entry in a plan. The JSON names are the file format.
 type Step struct {
 	ID      string `json:"id"`
@@ -125,6 +157,7 @@ type Step struct {
 	Port   string `json:"port,omitempty"`
 	Params Params `json:"params,omitempty"`
 	Frames int    `json:"frames,omitempty"`
+	Peer   *Peer  `json:"peer,omitempty"`
 
 	// PtRun.
 	Target string `json:"target,omitempty"`

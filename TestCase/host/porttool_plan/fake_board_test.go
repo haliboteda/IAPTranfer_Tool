@@ -126,6 +126,6 @@ func capsReply() []string {
 		"OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..",
 		"OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention targets=sdram.capacity,sdram.crc",
 	}
-	header := fmt.Sprintf("OK porttool=0.8.0 ports=3 lines=%d", len(body))
+	header := fmt.Sprintf("OK porttool=0.9.0 ports=3 lines=%d", len(body))
 	return append([]string{header}, body...)
 }

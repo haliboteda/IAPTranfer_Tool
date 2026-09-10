@@ -22,13 +22,59 @@ import (
 	"IAPTool/internal/simboard"
 )
 
+// takesValue says whether a flag consumes the next argument. Boolean flags do
+// not, and neither does one already written as --name=value.
+func takesValue(fs *flag.FlagSet, arg string) bool {
+	name := strings.TrimLeft(arg, "-")
+	if strings.Contains(name, "=") {
+		return false
+	}
+	f := fs.Lookup(name)
+	if f == nil {
+		return false
+	}
+	b, ok := f.Value.(interface{ IsBoolFlag() bool })
+	return !(ok && b.IsBoolFlag())
+}
+
+// flagsFirst moves the positional arguments to the end so flags may be written
+// on either side of them.
+//
+// Go's flag package stops parsing at the first positional argument, so
+// `porttool run plan.json --port COM7` left --port unset and printed usage -
+// and that was the order the tool's own help text documented. Silently doing
+// nothing to a command copied from the help is the worst of both, so rather
+// than rewrite the help to demand one order, both orders now work. fs is asked
+// which flags take a value instead of guessing from the spelling.
+func flagsFirst(fs *flag.FlagSet, args []string) []string {
+	var flags, pos []string
+
+	for i := 0; i < len(args); i++ {
+		a := args[i]
+		if a == "--" {
+			pos = append(pos, args[i+1:]...)
+			break
+		}
+		if !strings.HasPrefix(a, "-") || a == "-" {
+			pos = append(pos, a)
+			continue
+		}
+		flags = append(flags, a)
+		if takesValue(fs, a) && i+1 < len(args) {
+			i++
+			flags = append(flags, args[i])
+		}
+	}
+	return append(flags, pos...)
+}
+
 // cmdValidate reads a plan and says what is wrong with it, without a board.
 func cmdValidate(args []string) int {
 	fs := flag.NewFlagSet("validate", flag.ContinueOnError)
 	fs.Usage = func() {
 		fmt.Fprint(os.Stderr, "porttool validate <plan.json>\n")
 	}
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(flagsFirst(fs, args)); err != nil {
 		return 2
 	}
 	if fs.NArg() != 1 {
@@ -74,9 +120,11 @@ func cmdRun(args []string) int {
   --yes            answer operator prompts with pass, for an unattended run
 
 Exit code: 0 every step passed, 1 something failed, 2 could not run.
+
+The plan file and the flags may be written in either order.
 `)
 	}
-	if err := fs.Parse(args); err != nil {
+	if err := fs.Parse(flagsFirst(fs, args)); err != nil {
 		return 2
 	}
 	if fs.NArg() != 1 || *port == "" {
