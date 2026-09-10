@@ -957,7 +957,7 @@ func TestStation6PlanRuns(t *testing.T) {
 		"OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0",
 		"OK vals=din ch=1,2,3,4,5,6,7,8 period=200",
 		"OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0",
-		"OK vals=dout ch=1 mode=hold duty=1:0 freq=1000 period=500",
+		"OK vals=dout ch=1 mode=hold duty=1:0 freq=1:1000,2:1000,3:1000,4:1000,5:1000,6:1000,7:1000,8:1000 period=500",
 		"OK port=relay board=lower kind=session blk=B term=B01-B12 channels=6 loop=ctrl params=ch,mode,on,period running=0",
 		"OK vals=relay ch=1 mode=hold on=1:0 period=1000",
 		"OK port=temp board=lower kind=session blk=- term=- channels=2 loop=ctrl params=ch,period running=0",
@@ -1052,8 +1052,8 @@ func TestStation6PlanRuns(t *testing.T) {
 			}
 		case strings.HasPrefix(cmd, "pt.start dout "):
 			return []string{"OK dout started"}, []string{
-				"!dout t=1 seq=1 rx=0 miss=0 mode=hold freq=1000 ch1=100 ch8=100",
-				"!dout t=2 seq=2 rx=1 miss=0 mode=hold freq=1000 ch1=100 ch8=100",
+				"!dout t=1 seq=1 rx=0 miss=0 mode=hold tick=100000 ch1=100 ch8=100",
+				"!dout t=2 seq=2 rx=1 miss=0 mode=hold tick=100000 ch1=100 ch8=100",
 			}
 		case strings.HasPrefix(cmd, "pt.start relay "):
 			return []string{"OK relay started"}, []string{

@@ -544,9 +544,40 @@ int main(void)
     advance(200);
     run("pt.caps");
 
+    /* ---- a frequency per channel ----------------------------------------
+     *
+     * Added 2026-09-10. Eight independent frequencies is what the timer
+     * channels behind these pins physically cannot give: they pair up on four
+     * compare units, and each pair is complementary. The software PWM can,
+     * because every channel carries its own phase accumulator.
+     *
+     * The frame reports duty@frequency per channel, and the frequency in it is
+     * the one the channel really landed on - both the interrupt rate and the
+     * increment are quantised, and echoing the request back would hide that. */
+    run("pt.stop all");
+    run("pt.start dout ch=1,2,3 mode=hold duty=50 freq=1:2000,2:1000,3:250");
+    run("pt.caps");
+    advance(1000);
+
+    /* The widest spread the parameter allows, which is where the rounding is
+     * worst: the slow channel's increment is the smallest number the maths
+     * produces. Truncating instead of rounding reported this pair as 1999 and
+     * 0 Hz on the board on 2026-09-10 - and a channel that says 0 Hz while it
+     * is switching reads as a dead output. */
+    run("pt.set dout freq=1:2000,2:1");
+    run("pt.caps");
+
+    /* One value with no colon still means "all of them", so the two shapes of
+     * the parameter do not diverge. */
+    run("pt.set dout freq=500");
+    run("pt.caps");
+    advance(1000);
+
     run("pt.start dout duty=1:150");     /* over 100 percent */
     run("pt.start dout duty=9:50");      /* output 9 does not exist */
     run("pt.start dout freq=99999");     /* past what the timer will take */
+    run("pt.start dout freq=1:99999");   /* same, in the per-channel form */
+    run("pt.start dout freq=9:500");     /* output 9 does not exist */
     run("pt.start dout mode=sideways");
 
     run("pt.stop all");

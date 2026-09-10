@@ -173,11 +173,16 @@ func TestPanelSplitsPerChannelValues(t *testing.T) {
 		t.Errorf("relay on= did not arrive per channel: %v", relayPer)
 	}
 
+	// freq became per channel on 2026-09-10, when the software PWM gained a
+	// phase accumulator per output. It has to arrive split for the same reason
+	// duty does: eight independent frequencies need eight controls.
+	freq, _ := per["freq"].(map[string]any)
+	if len(freq) != 8 {
+		t.Errorf("dout freq split into %d channels, want 8: %v", len(freq), per)
+	}
+
 	// A parameter that is one value for the whole port must NOT be split, or
 	// the page would draw eight controls for something with one setting.
-	if _, ok := per["freq"]; ok {
-		t.Error("freq is one value for the port but arrived per channel")
-	}
 	if _, ok := per["period"]; ok {
 		t.Error("period is one value for the port but arrived per channel")
 	}

@@ -501,6 +501,69 @@ def main():
           "the receive ring did not overflow",
           fed_reply)
 
+    # ------------------------------------------- a frequency per DO channel
+    #
+    # The timer channels these eight pins sit on pair up on four compare units,
+    # and each pair is complementary - hardware PWM could never give eight
+    # independent frequencies. The software PWM does, and this is where that
+    # claim is decided.
+    Section("Digital Out: a frequency per channel")
+    # caps carries the per-channel frequency, not the frame: a frame with both
+    # for eight channels runs past the line limit, and a plan's "ch1 eq 100"
+    # would have to know the frequency to still pass.
+    dvals = [l for _, body in sections for l in body
+             if l.startswith("OK vals=dout ")]
+    three = [l for l in dvals if "freq=1:2000,2:1000,3:250" in l]
+    check(three, "caps reports three different frequencies at once",
+          " / ".join(dvals[-3:])[:200])
+    check(any("freq=1:500,2:500,3:500" in l for l in dvals),
+          "one value with no colon still sets every selected channel",
+          " / ".join(dvals[-3:])[:200])
+
+    # The widest spread the parameter allows, and where the reported frequency
+    # is quantised hardest. 1999 and 0 is what truncation produced on the board
+    # on 2026-09-10; a channel reporting 0 Hz while it switches reads as dead.
+    check(any("freq=1:2000,2:1," in l for l in dvals),
+          "2000 Hz beside 1 Hz comes back as 2000 and 1, not 1999 and 0",
+          " / ".join(l for l in dvals if "2:1," in l or "1999" in l)[:200])
+
+    # The interrupt rate is the fastest channel times the duty resolution, and
+    # it is the resolution behind every frequency above - so the frame says it
+    # rather than leaving it to be inferred.
+    dframes = [dict(parse_kv(l)) for _, body in sections for l in body
+               if l.startswith("!dout ") and "ch1=50 " in (l + " ")]
+    ticks = [f.get("tick") for f in dframes]
+    check("200000" in ticks,
+          "and the interrupt rate follows the fastest of them", str(ticks))
+    check("50000" in ticks,
+          "then drops with them - it is not left at the peak", str(ticks))
+    # A duty stays a plain number, or every existing criterion on it breaks.
+    check(all("@" not in (f.get("ch1") or "") for f in dframes),
+          "the duty in a frame is still a plain number",
+          str([f.get("ch1") for f in dframes]))
+
+    # Every channel, not only the selected ones. The panel fills one control
+    # per channel from this line, and a channel missing from it becomes a zero
+    # - which is below the frequency floor, so the next command the panel sends
+    # after somebody ticks that channel is refused outright. Caught against the
+    # board by case H5 on 2026-09-10.
+    short = [l for l in dvals if dict(parse_kv(l)).get("freq", "").count(":") != 8]
+    check(not short,
+          "caps lists a frequency for all eight outputs, whatever is selected",
+          (short[0] if short else "")[:170])
+
+    # A per-channel frequency has to be refused the same way a per-channel duty
+    # is: naming an output that does not exist, or a rate the timer will not
+    # take, must take the whole line down rather than half-applying.
+    for cmd, expect in (
+        ("pt.start dout freq=1:99999", "1..2000 Hz"),
+        ("pt.start dout freq=9:500", "outputs 1..8"),
+    ):
+        got = [l for c, body in sections if c == cmd for l in body]
+        check(any(l.startswith("ERR") and expect in l for l in got),
+              "refused with the reason: %s" % cmd,
+              " / ".join(got)[:160])
+
     # ------------------------------------------------------- the encoders
     #
     # Four encoders on the eight digital-in pins. The transcript drives the A/B

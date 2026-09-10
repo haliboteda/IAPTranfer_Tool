@@ -625,10 +625,19 @@ const AIN_RANGE = [
   { unit: "mA", scale: 1 / 124,       digits: 3 },   // 端子 µA = 引脚 mV × 1000/124
 ];
 
-// 出厂九个跳线全开路，此时 MCU 引脚彻底悬空，读到的是约 380 mV 的噪声。
-// 实测抖动落在 200–650 LSB —— 落进这一带就提示，因为「数看着像真的」正是
-// 这个故障最贵的地方。
-const AIN_FLOAT_MIN = 200, AIN_FLOAT_MAX = 650;
+// 出厂九个跳线全开路，此时 MCU 引脚彻底悬空，读到的不是端子上的信号。
+//
+// ⚠️ 判据用**毫伏**，不用 raw。原来写的是 raw 200–650，那是一个 12 位的数，
+// 而固件报的 raw 是 16 位的（`ADC_RESOLUTION_16B`，满量程 65535）。380 mV
+// 在 16 位下是 raw ≈ 10000，所以那条判据**一次都不可能命中**；反过来 raw
+// 200–650 在 16 位下只有 8–25 mV，是「引脚贴着地」，会把另一种故障误报成
+// 悬空。换成毫伏之后，固件改分辨率也不会再把它带偏。
+//
+// ⚠️ 这条带子本身还没定论：2026-08-27 在 bring-up 固件上测到约 380 mV，
+// 2026-09-10 在工装镜像上同样两路读到的却是 0–12 raw（≈0 mV）。两次对不上，
+// 所以真正的判据仍然是「有没有人确认那四处锡桥焊了」——
+// 见 $BOOT/docs/test/AIN-JUMPER-REQUEST.md。
+const AIN_FLOAT_MIN_MV = 300, AIN_FLOAT_MAX_MV = 450;
 
 // formatReading 把一路读数变成 {text, hint}。text 顶替原来那串生数，
 // hint 是补充说明；两者都拿不准就原样显示，绝不猜。
@@ -640,11 +649,11 @@ function formatReading(portName, ch, v) {
     const raw = Number(parts[0]), mv = Number(parts[1]);
     if (!isFinite(raw) || !isFinite(mv)) return null;
     const r = AIN_RANGE[ch - 1];
-    const floating = raw >= AIN_FLOAT_MIN && raw <= AIN_FLOAT_MAX;
+    const floating = mv >= AIN_FLOAT_MIN_MV && mv <= AIN_FLOAT_MAX_MV;
     const out = { text: r ? (mv * r.scale).toFixed(r.digits) + " " + r.unit : v,
                   hint: "引脚 " + mv + " mV，raw " + raw };
     if (floating) {
-      out.hint = "⚠ 落在悬空带（raw " + raw + "，约 380 mV）—— 跳线可能没焊，这个数不是端子上的信号";
+      out.hint = "⚠ 落在悬空带（引脚 " + mv + " mV，raw " + raw + "）—— 跳线可能没焊，这个数不是端子上的信号";
       out.warn = true;
     }
     return out;
@@ -1168,9 +1177,17 @@ function sessionCard(p) {
       c.appendChild(el("div","sub",
         "毫安是按 Iout = Vin × 10 / 1024 算的，**不是实测** —— 板上没有回读通道，万用表才是判据"));
     }
+    // 八路频率互相独立，但中断率是共用的 —— 这一句是为了让「我把一路调快了，
+    // 别的路怎么也跟着变了 tick」不被当成 bug。
+    if (p.name === "dout" && fr.fields.tick !== undefined) {
+      c.appendChild(el("div","sub",
+        "八路占空比和频率各自独立。中断率 " + fr.fields.tick +
+        " Hz 是共用的，由最快的那一路定 —— 慢的那几路因此分辨得更细，不会更粗。" +
+        "频率栏显示的是板子实际落到的值，不是你敲进去的值"));
+    }
     if (anyFloating) {
       c.appendChild(el("div","sub warn",
-        "⚠ 有通道落在悬空带（raw 200–650）。出厂九个跳线全开路，此时 MCU 引脚彻底悬空 —— 先确认 JP5/JP6/JP8/JP9 焊了没有"));
+        "⚠ 有通道落在悬空带（引脚 300–450 mV）。出厂九个跳线全开路，此时 MCU 引脚彻底悬空 —— 先确认 JP5/JP6/JP8/JP9 焊了没有"));
     }
     const extra = Object.entries(fr.fields)
       .filter(([k]) => !/^ch\d+$/.test(k) && !["seq","rx","miss"].includes(k))
