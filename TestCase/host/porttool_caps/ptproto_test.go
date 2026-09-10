@@ -54,8 +54,8 @@ func TestParseGoldenCaps(t *testing.T) {
 		t.Fatalf("ParseCaps: %v", err)
 	}
 
-	if caps.Version != "0.8.0" {
-		t.Errorf("version = %q, want 0.8.0", caps.Version)
+	if caps.Version != "0.9.0" {
+		t.Errorf("version = %q, want 0.9.0", caps.Version)
 	}
 	// Deliberately not a hard port count: adding a port to the firmware is
 	// meant to cost nothing here, and ParseCaps already refuses a reply whose

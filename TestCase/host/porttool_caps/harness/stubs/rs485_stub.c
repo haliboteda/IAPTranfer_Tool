@@ -83,6 +83,21 @@ int PortRs485_Send(const uint8_t *data, uint16_t len)
     return rc;
 }
 
+/* Overruns the real driver would have counted. Settable so a test can assert
+ * that a lost byte shows up in the frame instead of being hidden - on a board
+ * an unreported overrun is what made the pair look dead. */
+uint32_t test_rs485_overruns;
+
+uint32_t PortRs485_Overruns(void)
+{
+    return test_rs485_overruns;
+}
+
+void PortRs485_ResetOverruns(void)
+{
+    test_rs485_overruns = 0;
+}
+
 int PortRs485_RecvByte(uint8_t *out)
 {
     if (rx_head >= rx_tail) {

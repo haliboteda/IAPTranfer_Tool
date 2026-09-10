@@ -1,5 +1,5 @@
 >>> pt.caps
-OK porttool=0.8.0 ports=19 lines=53
+OK porttool=0.9.0 ports=19 lines=53
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
 OK vals=din ch=1,2,3,4,5,6,7,8 period=200
 OK limits=din ch:1..8 period:50..
@@ -34,10 +34,10 @@ OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link par
 OK vals=can baud=500000 mode=normal period=1000
 OK terms=can C07+C08
 OK limits=can baud:125000|250000|500000|1000000 mode:normal|listen|loopback|extloop period:50..
-OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0 targets=knx
-OK vals=knx mode=loopback period=1000
+OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period,ga,src,val running=0 targets=knx
+OK vals=knx mode=loopback period=1000 ga=31/7/255 src=15.15.250 val=toggle
 OK terms=knx C03+C04
-OK limits=knx mode:loopback|listen period:50..
+OK limits=knx mode:loopback|listen|frames period:50.. val:toggle|0|1
 OK port=eth board=bridge kind=session blk=- term=J1 channels=1 loop=link params=mode,port,ip,period running=0 runs=eth.link
 OK vals=eth mode=echo port=5000 ip=dhcp period=1000
 OK limits=eth mode:echo|sink|source port:1..65535 period:50..
@@ -49,12 +49,12 @@ OK vals=soak minutes=120 period=5000
 OK limits=soak minutes:1..600 period:50..
 OK port=bringup board=whole kind=handover blk=- term=- channels=1 loop=none targets=bringup
 OK port=pwm board=lower kind=handover blk=A term=A08 channels=1 loop=ctrl targets=pwm
-OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress targets=sd.info,sd.integrity.soak
+OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress,sd.speed targets=sd.info,sd.integrity.soak
 OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention targets=sdram.capacity,sdram.retention.soak,sdram.crc
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> pt.id
-OK uid=003400413135511439303538 porttool=0.8.0 rx_errors=0 rx_dropped=0
+OK uid=003400413135511439303538 porttool=0.9.0 rx_errors=0 rx_dropped=0
 >>> pt.list
 OK running=none
 >>> pt.start din ch=1,3,5 period=200
@@ -67,7 +67,7 @@ ERR relay start refused: period=100 is below 1000 ms - these are mechanical rela
 OK running=din
 OK running=relay
 >>> pt.caps
-OK porttool=0.8.0 ports=19 lines=53
+OK porttool=0.9.0 ports=19 lines=53
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=1
 OK vals=din ch=1,3,5 period=200
 OK limits=din ch:1..8 period:50..
@@ -102,10 +102,10 @@ OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link par
 OK vals=can baud=500000 mode=normal period=1000
 OK terms=can C07+C08
 OK limits=can baud:125000|250000|500000|1000000 mode:normal|listen|loopback|extloop period:50..
-OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0 targets=knx
-OK vals=knx mode=loopback period=1000
+OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period,ga,src,val running=0 targets=knx
+OK vals=knx mode=loopback period=1000 ga=31/7/255 src=15.15.250 val=toggle
 OK terms=knx C03+C04
-OK limits=knx mode:loopback|listen period:50..
+OK limits=knx mode:loopback|listen|frames period:50.. val:toggle|0|1
 OK port=eth board=bridge kind=session blk=- term=J1 channels=1 loop=link params=mode,port,ip,period running=0 runs=eth.link
 OK vals=eth mode=echo port=5000 ip=dhcp period=1000
 OK limits=eth mode:echo|sink|source port:1..65535 period:50..
@@ -117,7 +117,7 @@ OK vals=soak minutes=120 period=5000
 OK limits=soak minutes:1..600 period:50..
 OK port=bringup board=whole kind=handover blk=- term=- channels=1 loop=none targets=bringup
 OK port=pwm board=lower kind=handover blk=A term=A08 channels=1 loop=ctrl targets=pwm
-OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress targets=sd.info,sd.integrity.soak
+OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress,sd.speed targets=sd.info,sd.integrity.soak
 OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention targets=sdram.capacity,sdram.retention.soak,sdram.crc
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
@@ -152,6 +152,7 @@ OK handover=sdram.crc        CRC32 against what CubeProgrammer wrote
 OK run=sd.probe         detect pin, card identification, capacity and class
 OK run=sd.integrity     one write/read/verify round through FatFs; reports both CRCs
 OK run=sd.stress        64 write/read/verify rounds; reports rounds passed and elapsed time
+OK run=sd.speed         how fast the card moves data each way; does not verify content
 OK run=sdram.probe      FMC bring-up, data bus and address bus; reports the window and three flags
 OK run=sdram.sweep      all 64 MiB, four patterns; reports mismatches and where the first was
 OK run=sdram.retention  one write/wait-5s/read-back cycle over 64 random addresses
@@ -175,7 +176,7 @@ TEST rtc_init_count=1
 OK rtc.read init=0 clk=lsi date=26-09-07 time=13:45:07
 >>> pt.run sd.probe
 SDCARD_TEST: probing (stub)
-OK sd.probe detected=1 ready=1 blocks=62333952 block_size=512 mib=30436 v2x=1 class=1461
+OK sd.probe detected=1 ready=1 blocks=62333952 block_size=512 mib=30436 v2x=1 class=1461 fs=fat32 err=0x00000000
 >>> pt.run sd.integrity
 SDCARD_TEST: one integrity round (stub)
 OK sd.integrity mounted=1 wrote=1 read_back=1 identical=1 bytes=4096 write_crc=0xDEADBEEF read_crc=0xDEADBEEF fresult=0
@@ -184,7 +185,7 @@ SDCARD_TEST: one integrity round (stub)
 OK sd.integrity mounted=1 wrote=1 read_back=1 identical=0 bytes=4096 write_crc=0xDEADBEEF read_crc=0x11112222 fresult=0
 >>> pt.run sd.probe
 SDCARD_TEST: probing (stub)
-OK sd.probe detected=0 ready=0 blocks=0 block_size=0 mib=0 v2x=0 class=0
+OK sd.probe detected=0 ready=0 blocks=0 block_size=0 mib=0 v2x=0 class=0 fs=none err=0x00000000
 >>> pt.run sd.integrity
 SDCARD_TEST: one integrity round (stub)
 OK sd.integrity mounted=0 wrote=0 read_back=0 identical=0 bytes=4096 write_crc=0x00000000 read_crc=0x00000000 fresult=-1
@@ -353,7 +354,7 @@ TEST led_configured=1 led_writes=12 led_high=6
 >>> pt.stop all
 OK stopped all
 >>> pt.caps
-OK porttool=0.8.0 ports=19 lines=53
+OK porttool=0.9.0 ports=19 lines=53
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
 OK vals=din ch=2,4 period=200
 OK limits=din ch:1..8 period:50..
@@ -388,10 +389,10 @@ OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link par
 OK vals=can baud=250000 mode=listen period=100
 OK terms=can C07+C08
 OK limits=can baud:125000|250000|500000|1000000 mode:normal|listen|loopback|extloop period:50..
-OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0 targets=knx
-OK vals=knx mode=loopback period=1000
+OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period,ga,src,val running=0 targets=knx
+OK vals=knx mode=loopback period=1000 ga=31/7/255 src=15.15.250 val=toggle
 OK terms=knx C03+C04
-OK limits=knx mode:loopback|listen period:50..
+OK limits=knx mode:loopback|listen|frames period:50.. val:toggle|0|1
 OK port=eth board=bridge kind=session blk=- term=J1 channels=1 loop=link params=mode,port,ip,period running=0 runs=eth.link
 OK vals=eth mode=source port=5000 ip=192.168.9.9 period=100
 OK limits=eth mode:echo|sink|source port:1..65535 period:50..
@@ -403,7 +404,7 @@ OK vals=soak minutes=1 period=100
 OK limits=soak minutes:1..600 period:50..
 OK port=bringup board=whole kind=handover blk=- term=- channels=1 loop=none targets=bringup
 OK port=pwm board=lower kind=handover blk=A term=A08 channels=1 loop=ctrl targets=pwm
-OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress targets=sd.info,sd.integrity.soak
+OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress,sd.speed targets=sd.info,sd.integrity.soak
 OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention targets=sdram.capacity,sdram.retention.soak,sdram.crc
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
@@ -442,7 +443,7 @@ OK stopped all
 >>> pt.start relay ch=1,2,3 mode=hold on=1:1,2:0,3:1
 OK started relay
 >>> pt.caps
-OK porttool=0.8.0 ports=19 lines=53
+OK porttool=0.9.0 ports=19 lines=53
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
 OK vals=din ch=1 period=200
 OK limits=din ch:1..8 period:50..
@@ -477,10 +478,10 @@ OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link par
 OK vals=can baud=250000 mode=listen period=100
 OK terms=can C07+C08
 OK limits=can baud:125000|250000|500000|1000000 mode:normal|listen|loopback|extloop period:50..
-OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0 targets=knx
-OK vals=knx mode=loopback period=1000
+OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period,ga,src,val running=0 targets=knx
+OK vals=knx mode=loopback period=1000 ga=31/7/255 src=15.15.250 val=toggle
 OK terms=knx C03+C04
-OK limits=knx mode:loopback|listen period:50..
+OK limits=knx mode:loopback|listen|frames period:50.. val:toggle|0|1
 OK port=eth board=bridge kind=session blk=- term=J1 channels=1 loop=link params=mode,port,ip,period running=0 runs=eth.link
 OK vals=eth mode=source port=5000 ip=192.168.9.9 period=100
 OK limits=eth mode:echo|sink|source port:1..65535 period:50..
@@ -492,14 +493,14 @@ OK vals=soak minutes=1 period=100
 OK limits=soak minutes:1..600 period:50..
 OK port=bringup board=whole kind=handover blk=- term=- channels=1 loop=none targets=bringup
 OK port=pwm board=lower kind=handover blk=A term=A08 channels=1 loop=ctrl targets=pwm
-OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress targets=sd.info,sd.integrity.soak
+OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress,sd.speed targets=sd.info,sd.integrity.soak
 OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention targets=sdram.capacity,sdram.retention.soak,sdram.crc
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> pt.set relay on=2:1
 OK set relay
 >>> pt.caps
-OK porttool=0.8.0 ports=19 lines=53
+OK porttool=0.9.0 ports=19 lines=53
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
 OK vals=din ch=1 period=200
 OK limits=din ch:1..8 period:50..
@@ -534,10 +535,10 @@ OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link par
 OK vals=can baud=250000 mode=listen period=100
 OK terms=can C07+C08
 OK limits=can baud:125000|250000|500000|1000000 mode:normal|listen|loopback|extloop period:50..
-OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0 targets=knx
-OK vals=knx mode=loopback period=1000
+OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period,ga,src,val running=0 targets=knx
+OK vals=knx mode=loopback period=1000 ga=31/7/255 src=15.15.250 val=toggle
 OK terms=knx C03+C04
-OK limits=knx mode:loopback|listen period:50..
+OK limits=knx mode:loopback|listen|frames period:50.. val:toggle|0|1
 OK port=eth board=bridge kind=session blk=- term=J1 channels=1 loop=link params=mode,port,ip,period running=0 runs=eth.link
 OK vals=eth mode=source port=5000 ip=192.168.9.9 period=100
 OK limits=eth mode:echo|sink|source port:1..65535 period:50..
@@ -549,7 +550,7 @@ OK vals=soak minutes=1 period=100
 OK limits=soak minutes:1..600 period:50..
 OK port=bringup board=whole kind=handover blk=- term=- channels=1 loop=none targets=bringup
 OK port=pwm board=lower kind=handover blk=A term=A08 channels=1 loop=ctrl targets=pwm
-OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress targets=sd.info,sd.integrity.soak
+OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress,sd.speed targets=sd.info,sd.integrity.soak
 OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention targets=sdram.capacity,sdram.retention.soak,sdram.crc
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
@@ -562,7 +563,7 @@ ERR relay start refused: on="1:1,1:0" must be like 1:1,2:0 - relays 1..6, level 
 >>> pt.start relay on=1:
 ERR relay start refused: on="1:" must be like 1:1,2:0 - relays 1..6, level 0 or 1, each relay named at most once
 >>> pt.caps
-OK porttool=0.8.0 ports=19 lines=53
+OK porttool=0.9.0 ports=19 lines=53
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
 OK vals=din ch=1 period=200
 OK limits=din ch:1..8 period:50..
@@ -597,10 +598,10 @@ OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link par
 OK vals=can baud=250000 mode=listen period=100
 OK terms=can C07+C08
 OK limits=can baud:125000|250000|500000|1000000 mode:normal|listen|loopback|extloop period:50..
-OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0 targets=knx
-OK vals=knx mode=loopback period=1000
+OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period,ga,src,val running=0 targets=knx
+OK vals=knx mode=loopback period=1000 ga=31/7/255 src=15.15.250 val=toggle
 OK terms=knx C03+C04
-OK limits=knx mode:loopback|listen period:50..
+OK limits=knx mode:loopback|listen|frames period:50.. val:toggle|0|1
 OK port=eth board=bridge kind=session blk=- term=J1 channels=1 loop=link params=mode,port,ip,period running=0 runs=eth.link
 OK vals=eth mode=source port=5000 ip=192.168.9.9 period=100
 OK limits=eth mode:echo|sink|source port:1..65535 period:50..
@@ -612,7 +613,7 @@ OK vals=soak minutes=1 period=100
 OK limits=soak minutes:1..600 period:50..
 OK port=bringup board=whole kind=handover blk=- term=- channels=1 loop=none targets=bringup
 OK port=pwm board=lower kind=handover blk=A term=A08 channels=1 loop=ctrl targets=pwm
-OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress targets=sd.info,sd.integrity.soak
+OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress,sd.speed targets=sd.info,sd.integrity.soak
 OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention targets=sdram.capacity,sdram.retention.soak,sdram.crc
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
@@ -621,7 +622,7 @@ OK stopped all
 >>> pt.start din ch=2,4 period=nonsense
 ERR din start refused: period="nonsense" is not a number
 >>> pt.caps
-OK porttool=0.8.0 ports=19 lines=53
+OK porttool=0.9.0 ports=19 lines=53
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
 OK vals=din ch=1 period=200
 OK limits=din ch:1..8 period:50..
@@ -656,10 +657,10 @@ OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link par
 OK vals=can baud=250000 mode=listen period=100
 OK terms=can C07+C08
 OK limits=can baud:125000|250000|500000|1000000 mode:normal|listen|loopback|extloop period:50..
-OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0 targets=knx
-OK vals=knx mode=loopback period=1000
+OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period,ga,src,val running=0 targets=knx
+OK vals=knx mode=loopback period=1000 ga=31/7/255 src=15.15.250 val=toggle
 OK terms=knx C03+C04
-OK limits=knx mode:loopback|listen period:50..
+OK limits=knx mode:loopback|listen|frames period:50.. val:toggle|0|1
 OK port=eth board=bridge kind=session blk=- term=J1 channels=1 loop=link params=mode,port,ip,period running=0 runs=eth.link
 OK vals=eth mode=source port=5000 ip=192.168.9.9 period=100
 OK limits=eth mode:echo|sink|source port:1..65535 period:50..
@@ -671,14 +672,14 @@ OK vals=soak minutes=1 period=100
 OK limits=soak minutes:1..600 period:50..
 OK port=bringup board=whole kind=handover blk=- term=- channels=1 loop=none targets=bringup
 OK port=pwm board=lower kind=handover blk=A term=A08 channels=1 loop=ctrl targets=pwm
-OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress targets=sd.info,sd.integrity.soak
+OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress,sd.speed targets=sd.info,sd.integrity.soak
 OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention targets=sdram.capacity,sdram.retention.soak,sdram.crc
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> pt.start dout ch=1,5 mode=hold duty=1:20,5:75 freq=1000
 OK started dout
 >>> pt.caps
-OK porttool=0.8.0 ports=19 lines=53
+OK porttool=0.9.0 ports=19 lines=53
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
 OK vals=din ch=1 period=200
 OK limits=din ch:1..8 period:50..
@@ -713,10 +714,10 @@ OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link par
 OK vals=can baud=250000 mode=listen period=100
 OK terms=can C07+C08
 OK limits=can baud:125000|250000|500000|1000000 mode:normal|listen|loopback|extloop period:50..
-OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0 targets=knx
-OK vals=knx mode=loopback period=1000
+OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period,ga,src,val running=0 targets=knx
+OK vals=knx mode=loopback period=1000 ga=31/7/255 src=15.15.250 val=toggle
 OK terms=knx C03+C04
-OK limits=knx mode:loopback|listen period:50..
+OK limits=knx mode:loopback|listen|frames period:50.. val:toggle|0|1
 OK port=eth board=bridge kind=session blk=- term=J1 channels=1 loop=link params=mode,port,ip,period running=0 runs=eth.link
 OK vals=eth mode=source port=5000 ip=192.168.9.9 period=100
 OK limits=eth mode:echo|sink|source port:1..65535 period:50..
@@ -728,7 +729,7 @@ OK vals=soak minutes=1 period=100
 OK limits=soak minutes:1..600 period:50..
 OK port=bringup board=whole kind=handover blk=- term=- channels=1 loop=none targets=bringup
 OK port=pwm board=lower kind=handover blk=A term=A08 channels=1 loop=ctrl targets=pwm
-OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress targets=sd.info,sd.integrity.soak
+OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress,sd.speed targets=sd.info,sd.integrity.soak
 OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention targets=sdram.capacity,sdram.retention.soak,sdram.crc
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
@@ -741,7 +742,7 @@ OK started dout
 >>> (host) 200 ms later
 !dout t=7100 seq=1 rx=0 miss=0 mode=blink freq=1000 ch1=0 ch2=0
 >>> pt.caps
-OK porttool=0.8.0 ports=19 lines=53
+OK porttool=0.9.0 ports=19 lines=53
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
 OK vals=din ch=1 period=200
 OK limits=din ch:1..8 period:50..
@@ -776,10 +777,10 @@ OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link par
 OK vals=can baud=250000 mode=listen period=100
 OK terms=can C07+C08
 OK limits=can baud:125000|250000|500000|1000000 mode:normal|listen|loopback|extloop period:50..
-OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0 targets=knx
-OK vals=knx mode=loopback period=1000
+OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period,ga,src,val running=0 targets=knx
+OK vals=knx mode=loopback period=1000 ga=31/7/255 src=15.15.250 val=toggle
 OK terms=knx C03+C04
-OK limits=knx mode:loopback|listen period:50..
+OK limits=knx mode:loopback|listen|frames period:50.. val:toggle|0|1
 OK port=eth board=bridge kind=session blk=- term=J1 channels=1 loop=link params=mode,port,ip,period running=0 runs=eth.link
 OK vals=eth mode=source port=5000 ip=192.168.9.9 period=100
 OK limits=eth mode:echo|sink|source port:1..65535 period:50..
@@ -791,14 +792,14 @@ OK vals=soak minutes=1 period=100
 OK limits=soak minutes:1..600 period:50..
 OK port=bringup board=whole kind=handover blk=- term=- channels=1 loop=none targets=bringup
 OK port=pwm board=lower kind=handover blk=A term=A08 channels=1 loop=ctrl targets=pwm
-OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress targets=sd.info,sd.integrity.soak
+OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress,sd.speed targets=sd.info,sd.integrity.soak
 OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention targets=sdram.capacity,sdram.retention.soak,sdram.crc
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> (host) 200 ms later
 !dout t=7300 seq=1 rx=0 miss=1 mode=blink freq=1000 ch1=100 ch2=100
 >>> pt.caps
-OK porttool=0.8.0 ports=19 lines=53
+OK porttool=0.9.0 ports=19 lines=53
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
 OK vals=din ch=1 period=200
 OK limits=din ch:1..8 period:50..
@@ -833,10 +834,10 @@ OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link par
 OK vals=can baud=250000 mode=listen period=100
 OK terms=can C07+C08
 OK limits=can baud:125000|250000|500000|1000000 mode:normal|listen|loopback|extloop period:50..
-OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0 targets=knx
-OK vals=knx mode=loopback period=1000
+OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period,ga,src,val running=0 targets=knx
+OK vals=knx mode=loopback period=1000 ga=31/7/255 src=15.15.250 val=toggle
 OK terms=knx C03+C04
-OK limits=knx mode:loopback|listen period:50..
+OK limits=knx mode:loopback|listen|frames period:50.. val:toggle|0|1
 OK port=eth board=bridge kind=session blk=- term=J1 channels=1 loop=link params=mode,port,ip,period running=0 runs=eth.link
 OK vals=eth mode=source port=5000 ip=192.168.9.9 period=100
 OK limits=eth mode:echo|sink|source port:1..65535 period:50..
@@ -848,7 +849,7 @@ OK vals=soak minutes=1 period=100
 OK limits=soak minutes:1..600 period:50..
 OK port=bringup board=whole kind=handover blk=- term=- channels=1 loop=none targets=bringup
 OK port=pwm board=lower kind=handover blk=A term=A08 channels=1 loop=ctrl targets=pwm
-OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress targets=sd.info,sd.integrity.soak
+OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress,sd.speed targets=sd.info,sd.integrity.soak
 OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention targets=sdram.capacity,sdram.retention.soak,sdram.crc
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
@@ -879,7 +880,7 @@ OK started temp
 >>> pt.start aout ch=1,2 mv=1:500,2:1500
 OK started aout
 >>> pt.caps
-OK porttool=0.8.0 ports=19 lines=53
+OK porttool=0.9.0 ports=19 lines=53
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
 OK vals=din ch=1 period=200
 OK limits=din ch:1..8 period:50..
@@ -914,10 +915,10 @@ OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link par
 OK vals=can baud=250000 mode=listen period=100
 OK terms=can C07+C08
 OK limits=can baud:125000|250000|500000|1000000 mode:normal|listen|loopback|extloop period:50..
-OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0 targets=knx
-OK vals=knx mode=loopback period=1000
+OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period,ga,src,val running=0 targets=knx
+OK vals=knx mode=loopback period=1000 ga=31/7/255 src=15.15.250 val=toggle
 OK terms=knx C03+C04
-OK limits=knx mode:loopback|listen period:50..
+OK limits=knx mode:loopback|listen|frames period:50.. val:toggle|0|1
 OK port=eth board=bridge kind=session blk=- term=J1 channels=1 loop=link params=mode,port,ip,period running=0 runs=eth.link
 OK vals=eth mode=source port=5000 ip=192.168.9.9 period=100
 OK limits=eth mode:echo|sink|source port:1..65535 period:50..
@@ -929,7 +930,7 @@ OK vals=soak minutes=1 period=100
 OK limits=soak minutes:1..600 period:50..
 OK port=bringup board=whole kind=handover blk=- term=- channels=1 loop=none targets=bringup
 OK port=pwm board=lower kind=handover blk=A term=A08 channels=1 loop=ctrl targets=pwm
-OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress targets=sd.info,sd.integrity.soak
+OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress,sd.speed targets=sd.info,sd.integrity.soak
 OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention targets=sdram.capacity,sdram.retention.soak,sdram.crc
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
@@ -952,13 +953,13 @@ TEST dac_after_stop=0,0
 >>> pt.start rs485 baud=115200 period=200
 OK started rs485
 >>> (host) 200 ms later
-!rs485 t=8500 seq=1 rx=0 miss=0 baud=115200 rxbytes=0 junk=0
+!rs485 t=8500 seq=1 rx=0 miss=0 baud=115200 rxbytes=0 junk=0 overrun=0
 >>> (host) 200 ms later
-!rs485 t=8700 seq=2 rx=1 miss=0 baud=115200 rxbytes=2 junk=0
+!rs485 t=8700 seq=2 rx=1 miss=0 baud=115200 rxbytes=2 junk=0 overrun=0
 >>> (host) 200 ms later
-!rs485 t=8900 seq=2 rx=1 miss=1 baud=115200 rxbytes=2 junk=0
+!rs485 t=8900 seq=2 rx=1 miss=1 baud=115200 rxbytes=2 junk=0 overrun=0
 >>> (host) 200 ms later
-!rs485 t=9100 seq=2 rx=1 miss=2 baud=115200 rxbytes=10 junk=1
+!rs485 t=9100 seq=2 rx=1 miss=2 baud=115200 rxbytes=10 junk=1 overrun=0
 >>> (host) what went out on the pair
 TEST rs485_sent=1|2|2|2| driving=0 baud=115200
 >>> pt.echo rs485 2
@@ -976,7 +977,7 @@ OK echo rs232 1
 >>> (host) 200 ms later
 !rs232 t=9500 seq=2 rx=1 miss=0 rxlines=0
 >>> pt.caps
-OK porttool=0.8.0 ports=19 lines=53
+OK porttool=0.9.0 ports=19 lines=53
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0
 OK vals=din ch=1 period=200
 OK limits=din ch:1..8 period:50..
@@ -1011,10 +1012,10 @@ OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link par
 OK vals=can baud=250000 mode=listen period=100
 OK terms=can C07+C08
 OK limits=can baud:125000|250000|500000|1000000 mode:normal|listen|loopback|extloop period:50..
-OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0 targets=knx
-OK vals=knx mode=loopback period=1000
+OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period,ga,src,val running=0 targets=knx
+OK vals=knx mode=loopback period=1000 ga=31/7/255 src=15.15.250 val=toggle
 OK terms=knx C03+C04
-OK limits=knx mode:loopback|listen period:50..
+OK limits=knx mode:loopback|listen|frames period:50.. val:toggle|0|1
 OK port=eth board=bridge kind=session blk=- term=J1 channels=1 loop=link params=mode,port,ip,period running=0 runs=eth.link
 OK vals=eth mode=source port=5000 ip=192.168.9.9 period=100
 OK limits=eth mode:echo|sink|source port:1..65535 period:50..
@@ -1026,7 +1027,7 @@ OK vals=soak minutes=1 period=100
 OK limits=soak minutes:1..600 period:50..
 OK port=bringup board=whole kind=handover blk=- term=- channels=1 loop=none targets=bringup
 OK port=pwm board=lower kind=handover blk=A term=A08 channels=1 loop=ctrl targets=pwm
-OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress targets=sd.info,sd.integrity.soak
+OK port=sd board=bridge kind=run blk=- term=J6 channels=1 loop=none runs=sd.probe,sd.integrity,sd.stress,sd.speed targets=sd.info,sd.integrity.soak
 OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention targets=sdram.capacity,sdram.retention.soak,sdram.crc
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
@@ -1040,4 +1041,4 @@ TEST rx_before=0 isr_raised=0x8
 TEST rx_after=1 icr_written=0xE state=32 error_code=0
 >>> (host) a command delivered one byte at a time through the ISR
 TEST fed=6
-OK uid=003400413135511439303538 porttool=0.8.0 rx_errors=7 rx_dropped=0
+OK uid=003400413135511439303538 porttool=0.9.0 rx_errors=7 rx_dropped=0

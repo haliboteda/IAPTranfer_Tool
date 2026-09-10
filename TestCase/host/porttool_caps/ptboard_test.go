@@ -108,8 +108,8 @@ func TestBoardReadsCapsOverAFakeLink(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Caps: %v", err)
 	}
-	if caps.Version != "0.8.0" {
-		t.Fatalf("caps version = %s, want 0.8.0", caps.Version)
+	if caps.Version != "0.9.0" {
+		t.Fatalf("caps version = %s, want 0.9.0", caps.Version)
 	}
 	if _, ok := caps.Port("din"); !ok {
 		t.Fatalf("caps came back without din: %d ports", len(caps.Ports))

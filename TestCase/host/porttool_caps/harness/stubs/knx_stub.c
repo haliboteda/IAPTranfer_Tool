@@ -67,6 +67,99 @@ int KNX_Test_SessionPollChar(uint8_t *out, uint8_t *framing_ok)
     return 1;
 }
 
+/* --- Frame layer -------------------------------------------------------- */
+
+/* One frame deep, which is all a tick uses. test_knx_frame_which lets a test
+ * pick which reading of the octets is meant to pass, because the whole point
+ * of crc= is that the session reports that answer rather than assuming one. */
+int      test_knx_frames_sent;
+uint8_t  test_knx_last_frame[KNX_FRAME_MAX];
+uint8_t  test_knx_last_frame_len;
+int      test_knx_frame_which = KNX_FRAME_CRC_RAW;
+int      test_knx_bus_idle = 1;
+int      test_knx_ack_after_frame = 1;   /* model a peer that acknowledges */
+uint32_t test_knx_partials;
+
+static uint8_t f_pending;        /* 0 none, 1 the frame, 2 the ack octet */
+
+void KNX_Test_SessionFrameReset(void)
+{
+    f_pending = 0;
+    test_knx_partials = 0;
+}
+
+uint8_t KNX_Test_AckKind(uint8_t octet)
+{
+    if ((octet & 0x33u) != 0x00u)                            { return KNX_ACK_NONE; }
+    if (((octet & 0x0Cu) != 0u) && ((octet & 0xC0u) != 0u))  { return KNX_ACK_ACK; }
+    if ((octet & 0xC0u) == 0u)                               { return KNX_ACK_NAK; }
+    return KNX_ACK_BUSY;
+}
+
+int KNX_Test_SessionPollFrame(uint8_t *out, uint8_t *out_len, uint8_t cap,
+                              uint8_t *which, uint8_t *bad_chars)
+{
+    if (bad_chars != NULL) { *bad_chars = 0; }
+
+    if (f_pending == 1u) {
+        uint8_t n = test_knx_last_frame_len;
+        f_pending = test_knx_ack_after_frame ? 2u : 0u;
+        if (n > cap) { n = cap; }
+        for (uint8_t i = 0; i < n; i++) { out[i] = test_knx_last_frame[i]; }
+        if (out_len != NULL) { *out_len = n; }
+        if (which != NULL)   { *which = (uint8_t)test_knx_frame_which; }
+        return 1;
+    }
+    if (f_pending == 2u) {
+        f_pending = 0;
+        out[0] = 0xCCu;                    /* L_Ack ACK */
+        if (out_len != NULL) { *out_len = 1u; }
+        if (which != NULL)   { *which = KNX_FRAME_CRC_BAD; }
+        return 1;
+    }
+    return 0;
+}
+
+uint32_t KNX_Test_SessionPartialFrames(void)
+{
+    return test_knx_partials;
+}
+
+uint8_t KNX_Test_SessionSendGroupWrite(uint16_t src, uint16_t ga, uint8_t value,
+                                       uint8_t *out, uint8_t cap,
+                                       uint8_t *bus_was_idle)
+{
+    uint8_t f[9];
+    uint8_t x = 0u;
+
+    if (cap < sizeof(f)) {
+        return 0u;
+    }
+    /* The same layout the real builder produces, so a test reading the octets
+     * is reading what a board would have sent. */
+    f[0] = 0xBCu;
+    f[1] = (uint8_t)(src >> 8);
+    f[2] = (uint8_t)(src & 0xFFu);
+    f[3] = (uint8_t)(ga >> 8);
+    f[4] = (uint8_t)(ga & 0xFFu);
+    f[5] = 0xE1u;
+    f[6] = 0x00u;
+    f[7] = (uint8_t)(0x80u | (value & 0x3Fu));
+    for (uint8_t i = 0; i < 8u; i++) { x ^= f[i]; }
+    f[8] = (uint8_t)~x;
+
+    for (uint8_t i = 0; i < sizeof(f); i++) {
+        out[i] = f[i];
+        test_knx_last_frame[i] = f[i];
+    }
+    test_knx_last_frame_len = (uint8_t)sizeof(f);
+    test_knx_frames_sent++;
+    test_knx_pulses += 40u;
+    if (bus_was_idle != NULL) { *bus_was_idle = (uint8_t)(test_knx_bus_idle ? 1 : 0); }
+    if (test_knx_loopback) { f_pending = 1u; }
+    return (uint8_t)sizeof(f);
+}
+
 void KNX_Test_SessionStats(knx_session_stats_t *out)
 {
     if (out == NULL) {

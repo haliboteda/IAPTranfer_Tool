@@ -68,14 +68,22 @@ void SD_Test_Probe(sd_probe_t *out)
     out->card_type    = 1u;
     out->version_2x   = (uint8_t)(out->ready ? 1 : 0);
     out->card_class   = out->ready ? 1461u : 0u;
+    /* The simulated board stands for a correctly prepared one, and station 6
+     * requires FAT32 - an exFAT card is a real failure the plan is meant to
+     * catch, so the fixture must not be the thing producing it. */
+    out->fs_type      = out->ready ? SD_FS_FAT32 : SD_FS_NONE;
+    out->hal_error    = 0u;
 }
 
-int SD_Test_IntegrityOnce(sd_integrity_t *out)
+int SD_Test_IntegrityOnce(uint32_t bytes, sd_integrity_t *out)
 {
     test_sd_integrity_count++;
     printf("SDCARD_TEST: one integrity round (stub)\r\n");
 
-    out->bytes = 4096u;
+    /* Echo back what was asked for, so the contract test can assert that a
+     * plan's bytes= actually reached the target rather than being dropped on
+     * the way. */
+    out->bytes = (bytes != 0u) ? bytes : 4096u;
     out->fresult = 0;
     if (!test_sd_detected || !test_sd_ready) {
         out->mounted = 0; out->wrote = 0; out->read_back = 0; out->identical = 0;
@@ -138,13 +146,42 @@ int test_sd_stress_count = 0;
 
 #define TEST_SD_STRESS_PASSES 64u
 
-int SD_Test_StressOnce(sd_stress_t *out)
+/* Rates a test can steer. Fixed millisecond counts rather than a real clock:
+ * the contract test asserts that bytes= reached the target and that the fields
+ * come out in the frame, not how fast this PC is. */
+uint32_t test_sd_write_ms = 2000u;
+uint32_t test_sd_read_ms  = 1000u;
+
+int SD_Test_Speed(uint32_t bytes, sd_speed_t *out)
+{
+    if (out == NULL) {
+        return 0;
+    }
+    memset(out, 0, sizeof(*out));
+    out->bytes = (bytes != 0u) ? bytes : 4096u;
+
+    if (!test_sd_detected || !test_sd_ready) {
+        out->fresult = -1;
+        return 0;
+    }
+    out->mounted   = 1;
+    out->write_ms  = test_sd_write_ms;
+    out->read_ms   = test_sd_read_ms;
+    out->write_bps = (out->write_ms != 0u)
+                   ? (uint32_t)(((uint64_t)out->bytes * 1000ull) / out->write_ms) : 0u;
+    out->read_bps  = (out->read_ms != 0u)
+                   ? (uint32_t)(((uint64_t)out->bytes * 1000ull) / out->read_ms) : 0u;
+    printf("SDCARD_TEST: speed (stub)\r\n");
+    return 1;
+}
+
+int SD_Test_StressOnce(uint32_t bytes, uint32_t passes, sd_stress_t *out)
 {
     test_sd_stress_count++;
     printf("SDCARD_TEST: stress (stub)\r\n");
 
-    out->bytes_each = 4096u;
-    out->passes = TEST_SD_STRESS_PASSES;
+    out->bytes_each = (bytes != 0u) ? bytes : 4096u;
+    out->passes = (passes != 0u) ? passes : TEST_SD_STRESS_PASSES;
     out->passed = 0;
     out->bytes_total = 0;
     out->elapsed_ms = 1234u;
@@ -169,7 +206,7 @@ int SD_Test_StressOnce(sd_stress_t *out)
         return 0;
     }
 
-    out->passed = TEST_SD_STRESS_PASSES;
+    out->passed = out->passes;
     out->bytes_total = out->passed * out->bytes_each;
     return 1;
 }
