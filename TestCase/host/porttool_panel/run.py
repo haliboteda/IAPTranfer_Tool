@@ -310,7 +310,7 @@ def check_channel_labels(page):
     rows = page.locator(".prow")
     picked = False
     for i in range(rows.count()):
-        if rows.nth(i).locator(".key").inner_text().strip() == "dout":
+        if rows.nth(i).get_attribute("data-port") == "dout":
             rows.nth(i).click()
             page.wait_for_timeout(300)
             picked = True
@@ -318,19 +318,20 @@ def check_channel_labels(page):
     if not check(picked, "dout is in the port list"):
         return
 
-    card = page.locator(".card", has_text="Klemmblock A")
+    card = page.locator('.card[data-port="dout"]')
     if not check(card.count() > 0, "the dout card is up"):
         return
     text = card.first.inner_text()
 
-    # The pairing that matters: channel 3 sits beside terminal A05, not A03.
+    # The name the engineer uses, not the terminal number (user 2026-09-11).
+    # The terminal range still rides on the card header for whoever wires it.
     flat = " ".join(text.split())
-    check("dout3 A05" in flat,
-          "a control names both the channel and its terminal, and pairs them right",
-          str([l for l in text.splitlines() if "A05" in l][:2]))
-    check("dout1 A03" in flat,
-          "and the first channel is the one on A03",
-          str([l for l in text.splitlines() if "A03" in l][:2]))
+    check("DO3" in flat and "dout3" not in flat,
+          "a control names the channel the way the engineer does",
+          str([l for l in text.splitlines() if "DO3" in l][:2]))
+    check("端子排 A" in flat and "A03-A10" in flat,
+          "and the card header still says where to wire it",
+          str([l for l in text.splitlines() if "A03-A10" in l][:2]))
 
     check("测哪几路" in text,
           "the channel picker is on the card, not only in the tree")
@@ -349,29 +350,324 @@ def check_channel_labels(page):
         # channel whether it is selected or not, so its own labels would make
         # this assertion pass for the wrong reason.
         def duty_labels():
-            box = page.locator(".card", has_text="Klemmblock A").first \
-                      .locator(".chvals", has_text="duty").first
+            box = page.locator('.card[data-port="dout"]').first \
+                      .locator('.chvals[data-param="duty"]').first
             return " ".join(box.inner_text().split())
 
-        check("dout3 A05" in duty_labels(),
+        check("DO3" in duty_labels(),
               "the duty grid has a box for channel 3 to start with", duty_labels())
 
         boxes.nth(2).uncheck()
         page.wait_for_timeout(400)
-        check("dout3 A05" not in duty_labels(),
+        check("DO3" not in duty_labels(),
               "unticking a channel on the card drops its value box too",
               duty_labels())
 
         # The tree is the other place the same state is shown; both read the
         # same picked set, so a tick in one has to be a tick in the other.
         tree = page.locator("#treebody").inner_text()
-        check("dout" in tree, "the tree is still there to agree with")
+        check('data-port="dout"' in page.locator("#treebody").inner_html(),
+              "the tree is still there to agree with")
 
-        page.locator(".card", has_text="Klemmblock A").first \
+        page.locator('.card[data-port="dout"]').first \
             .locator(".chvals input[type=checkbox]").nth(2).check()
         page.wait_for_timeout(400)
-        check("dout3 A05" in duty_labels(),
+        check("DO3" in duty_labels(),
               "and ticking it back brings the value box in again", duty_labels())
+
+
+def pick_port(page, name):
+    """Clicks the row for one port. The rows read in Chinese, so the port is
+    identified by its data attribute rather than by what is printed."""
+    page.locator('.tab[data-tab="manual"]').click()
+    page.wait_for_selector(".prow")
+    rows = page.locator(".prow")
+    for i in range(rows.count()):
+        if rows.nth(i).get_attribute("data-port") == name:
+            rows.nth(i).click()
+            page.wait_for_timeout(300)
+            return True
+    return False
+
+
+def check_off_plan_params(page):
+    """Changing a parameter has to withdraw the verdict, not fail the board.
+
+    The criteria come from the plan and were written for the plan's parameters.
+    Pick one channel out of eight and halve its duty, and ch1/ch8 are no longer
+    in the frame at all - so every criterion misses and a healthy board reads
+    as failed. That is what a user hit on 2026-09-11: DO3 at 50 %, one press,
+    1.4 s, 失败. Nothing in this suite had ever pressed the button with
+    anything other than the plan's own parameters, which is why it survived.
+    """
+    Section("changing a parameter withdraws the verdict")
+
+    if not check(pick_port(page, "dout"), "dout is in the port list"):
+        return
+    card = page.locator('.card[data-port="dout"]').first
+    row0 = page.locator(".startrow").first.inner_text()
+    check("单发" in row0 and "连续" in row0,
+          "the card offers 单发 / 连续 and says what each is for", " ".join(row0.split())[:120])
+    check(page.locator(".startrow button").first.inner_text().strip() == "开始",
+          "one button, not two pairs of them")
+
+    # The user's own case: one channel out of eight, at half duty.
+    boxes = card.locator('.chvals input[type=checkbox]')
+    for i in range(boxes.count()):
+        if i != 2 and boxes.nth(i).is_checked():
+            boxes.nth(i).uncheck()
+            page.wait_for_timeout(120)
+    # By channel, not by position: unticking a channel rebuilds the grid, so
+    # ".first" can land on the box that was there a render ago - and the 50
+    # then goes to DO1 while DO3 keeps the plan's 100. That is a test bug, but
+    # it is the kind that reads as a product bug.
+    sel = ('.card[data-port="dout"] .chvals[data-param="duty"] '
+           'input[type=number][data-ch="3"]')
+    for _ in range(50):
+        if page.locator(sel).count() == 1:
+            break
+        page.wait_for_timeout(100)
+    page.locator(sel).fill("50")
+    page.wait_for_timeout(500)
+    check(page.locator(sel).input_value() == "50",
+          "the duty box for DO3 holds what was typed",
+          page.locator(sel).input_value())
+
+    row = page.locator(".startrow").first.inner_text()
+    check("不给结论" in row, "the card says up front that it will not judge",
+          " ".join(row.split())[:140])
+    check("恢复方案参数" in row, "and offers to put the plan's parameters back", row)
+    # 细节写在卡片顶上的说明块里（按钮旁边只留一句短的，免得同一段话印两遍）
+    note = page.locator(".startrow .note").first.inner_text()
+    check("DO3" in note and "50" in note, "and names what was changed",
+          " ".join(note.split())[-200:] +
+          "  |  edited=" + str(page.evaluate("JSON.stringify(edited)")))
+
+    # Press it. The board is fine, so the one thing that must not happen is 失败.
+    page.locator(".startrow button.primary").first.click()
+    for _ in range(400):
+        if "跑着" not in page.locator(".startrow").first.inner_text():
+            break
+        page.wait_for_timeout(100)
+    page.wait_for_timeout(600)
+    stat = page.locator('.prow[data-port="dout"] .stat').inner_text().strip()
+    check(stat != "失败", "a healthy board is not reported as failed", stat)
+    check("不给结论" in page.locator(".startrow").first.inner_text(),
+          "and the card says why there is no verdict",
+          page.locator(".startrow").first.inner_text())
+
+    # And it has to be one click back to a state that does judge.
+    for b in range(page.locator(".startrow button").count()):
+        if "恢复" in page.locator(".startrow button").nth(b).inner_text():
+            page.locator(".startrow button").nth(b).click()
+            break
+    page.wait_for_timeout(600)
+    check("不给结论" not in page.locator(".startrow").first.inner_text(),
+          "restoring the plan's parameters makes it judge again",
+          " ".join(page.locator(".startrow").first.inner_text().split())[:120])
+
+
+# What must never be printed on a card again. Every one of these was on screen
+# on 2026-09-11, when the user said: 页面上英文的地方没有翻译成中文.
+#
+# *** Not a general "no ASCII" rule on purpose. Terminal numbers (A03-A10),
+# *** part numbers (LAN8742A, ISO1044, LM50) and units (Hz, mV) are what the
+# *** engineer reads off the board and the schematic - translating those would
+# *** make the panel harder to use, not easier.
+BANNED_ON_CARDS = [
+    "Klemmblock", "duty", "freq", "period", "miss", "seq=", "rxlines",
+    "hold", "blink", "extloop", "loopback", "autoneg", "mismatches",
+    "observed", "detected", "Digital Out", "AOUT", "SD Karte", "SDram",
+    "temp1", "temperature",
+]
+
+
+def check_nothing_in_english(page):
+    """Every port card, swept for the protocol words a person should not meet.
+
+    The panel is read in Chinese (user 2026-09-11). Nothing enforced that, so
+    a field name added to the firmware arrived on screen in English and stayed
+    there until somebody complained.
+    """
+    Section("no protocol words left on the cards")
+
+    page.locator('.tab[data-tab="manual"]').click()
+    page.wait_for_selector(".prow")
+    rows = page.locator(".prow")
+    ports = [rows.nth(i).get_attribute("data-port") for i in range(rows.count())]
+    bad = {}
+    for name in ports:
+        if not name or not pick_port(page, name):
+            continue
+        body = page.locator("#panelbody").inner_text()
+        # The card prints the protocol name once, in a row labelled 协议名.
+        body = "\n".join(l for l in body.splitlines() if l.strip() != name)
+        for w in BANNED_ON_CARDS:
+            if w in body:
+                bad.setdefault(w, []).append(name)
+    check(not bad, "no card prints a protocol word at a person",
+          "; ".join("%s on %s" % (w, ",".join(ps)) for w, ps in sorted(bad.items())))
+
+
+def check_run_one_target(page):
+    """The 「单独跑」 button next to a single pt.run target.
+
+    The one-button test runs a port's targets too, so this button was never
+    pressed by anything - and it is the one somebody reaches for when they want
+    just the SD speed figure or just the PHY probe, without driving the rest of
+    the port.
+    """
+    Section("running one target on its own")
+
+    if not check(pick_port(page, "eth"), "eth is in the port list"):
+        return
+    rows = page.locator("#panelbody .tgt")
+    if not check(rows.count() >= 1, "eth offers a target that can be pressed alone",
+                 "%d rows" % rows.count()):
+        return
+    name = rows.first.locator(".n").inner_text().strip()
+    check(name == "以太网 PHY 探测", "the target is named in plain Chinese", name)
+
+    page.fill("#raw", "")           # so the log assertion below cannot match an echo
+    rows.first.locator("button").click()
+    page.wait_for_timeout(3000)
+
+    stat = page.locator('.prow[data-port="eth"] .stat').inner_text().strip()
+    check(stat != "未测", "pressing it alone reaches a verdict", stat)
+    log = page.locator("#log").inner_text()
+    check("pt.run eth.link" in log,
+          "and the command that went out is the one the row names",
+          " ".join(log.split())[-160:])
+
+
+def check_autoecho_toggle(page):
+    """The 自动回环应答 box in the header.
+
+    Only the API had ever been exercised. The box is what a bench turns off
+    when a second tool wants the control port, and a box that silently does
+    nothing would look exactly like a board that stopped answering.
+    """
+    Section("the auto-echo box")
+
+    box = page.locator("#autoecho")
+    if not check(box.count() == 1, "the box is there once connected"):
+        return
+    was = box.is_checked()
+    box.set_checked(not was)
+    page.wait_for_timeout(600)
+    check(box.is_checked() != was, "it toggles")
+    stat = page.locator("#echostat").inner_text().strip()
+    check(stat != "", "and says what state it is in now", stat)
+    box.set_checked(was)
+    page.wait_for_timeout(600)
+    check(box.is_checked() == was, "and toggles back")
+
+
+def check_peer_binding(page):
+    """The 绑上 / 解开 pair on a loop=link port.
+
+    ⚠️ What this can and cannot prove on the simulated board:
+      - CAN prove: the control is there, it lists this machine's serial ports,
+        binding reaches the server and comes back either bound or with a
+        readable reason, and 解开 undoes it.
+      - CANNOT prove: that binding the right adapter is what closes the loop.
+        The simulated board answers its own link ports (its stimulate() plays
+        every peer), so a bench cable is the only thing that can show that.
+        Left to a real board on purpose rather than faked here.
+    """
+    Section("binding a peer serial port")
+
+    if not check(pick_port(page, "rs485"), "rs485 is in the port list"):
+        return
+    sel = page.locator("#panelbody .chvals select")
+    if not check(sel.count() >= 1, "the card offers a peer port to bind"):
+        return
+    options = sel.first.locator("option")
+    n = options.count()
+    check(n >= 1, "the list is filled from this machine's serial ports", "%d" % n)
+    if n == 0:
+        return
+
+    com = options.first.get_attribute("value")
+    sel.first.select_option(com)
+    page.locator("#panelbody .chvals button", has_text="绑上").first.click()
+    page.wait_for_timeout(1500)
+
+    body = page.locator("#panelbody").inner_text()
+    msg = page.locator("#panelbody .msg")
+    if msg.count() and msg.first.inner_text().strip():
+        # A refusal is a legitimate outcome here - the port may be in use by
+        # something else on this machine. What matters is that it says so in
+        # words rather than leaving the card looking bound.
+        said = msg.first.inner_text().strip()
+        check("绑上" not in body or "解开" not in body,
+              "a refused binding does not leave the card looking bound", said)
+        check(said != "", "and the refusal is stated in words", said)
+        return
+
+    check("解开" in body, "a bound peer offers to be unbound",
+          " ".join(body.split())[:160])
+    page.locator("#panelbody .chvals button", has_text="解开").first.click()
+    page.wait_for_timeout(1000)
+    body = page.locator("#panelbody").inner_text()
+    check("绑上" in body, "and unbinding puts the chooser back")
+
+
+def check_plan_runs_from_the_page(page):
+    """Pressing 运行 on the plan tab.
+
+    The plan tab is the production path - one press, every step, one report -
+    and nothing in a browser had ever pressed it. Only the HTTP API was
+    covered, which cannot see that the button is wired to it or that the
+    per-step verdicts land back on the steps.
+
+    bench-smoke is used because it needs nothing but the control cable and has
+    no UserConfirm step to stop on.
+    """
+    Section("running a plan from the plan tab")
+
+    page.locator('.tab[data-tab="plan"]').click()
+    page.wait_for_timeout(600)
+    buttons = page.locator("#planlist button")
+    picked = False
+    for i in range(buttons.count()):
+        if "bench-smoke" in buttons.nth(i).inner_text():
+            buttons.nth(i).click()
+            picked = True
+            break
+    if not check(picked, "bench-smoke.json is offered on the plan tab"):
+        return
+    page.wait_for_selector("#planbody .plansteps .st")
+    steps = page.locator("#planbody .plansteps .st")
+    want = steps.count()
+    check(want >= 5, "its steps are drawn", "%d steps" % want)
+
+    run = page.locator("#planbody .card .hd button").first
+    check(run.inner_text().strip() == "运行", "the run button is the first one",
+          run.inner_text())
+    run.click()
+
+    # Every step judged, or the run is not finished. bench-smoke on the
+    # simulated board is about half a minute; the wait is generous on purpose
+    # because a slow run and a broken button look identical until it lands.
+    got = 0
+    for _ in range(180):
+        got = page.locator("#planbody .plansteps .vd").count()
+        if got >= want:
+            break
+        page.wait_for_timeout(1000)
+    if not check(got >= want, "pressing 运行 runs every step",
+                 "%d of %d steps came back" % (got, want)):
+        return
+
+    marks = page.locator("#planbody .plansteps .vd")
+    outcomes = [marks.nth(i).inner_text().strip() for i in range(marks.count())]
+    check(all(o in ("PASS", "SKIPPED") for o in outcomes),
+          "and every step of the smoke plan passes on the simulated board",
+          " ".join(outcomes))
+
+    page.locator('.tab[data-tab="manual"]').click()
+    page.wait_for_timeout(400)
 
 
 def check_aout_walk(page):
@@ -392,7 +688,7 @@ def check_aout_walk(page):
     rows = page.locator(".prow")
     picked = False
     for i in range(rows.count()):
-        if rows.nth(i).locator(".key").inner_text().strip() == "aout":
+        if rows.nth(i).get_attribute("data-port") == "aout":
             rows.nth(i).click()
             page.wait_for_timeout(300)
             picked = True
@@ -400,7 +696,7 @@ def check_aout_walk(page):
     if not check(picked, "aout is in the port list"):
         return
 
-    card = page.locator(".card", has_text="AOUT 多点测量")
+    card = page.locator('.card', has_text="模拟输出多点测量")
     if not check(card.count() > 0, "the multi-point card appears under aout"):
         return
 
@@ -449,7 +745,7 @@ def check_aout_walk(page):
     page.locator("#meterok").click()
     page.wait_for_timeout(1500)
 
-    card = page.locator(".card", has_text="AOUT 多点测量")
+    card = page.locator('.card', has_text="模拟输出多点测量")
     body = card.inner_text()
     check("过" in body and "不过" in body,
           "the table shows one point passing and one failing", body[-300:])
@@ -778,7 +1074,7 @@ def run_checks(page, com):
     prows = page.locator(".prow")
     tested = []
     for i in range(prows.count()):
-        key = prows.nth(i).locator(".key").inner_text().strip()
+        key = prows.nth(i).get_attribute("data-port")
         want, want_why = EXPECT.get(key, ("either", None))
 
         if not page.locator("#afterconn.live").count():
@@ -805,7 +1101,7 @@ def run_checks(page, com):
         # countdown is what the page shows.
         if key == "soak":
             page.wait_for_function(
-                "() => { const s = document.querySelector('.startrow .sub');"
+                "() => { const s = document.querySelector('.startrow .note');"
                 " return s && s.textContent.indexOf('还剩') >= 0; }",
                 timeout=25000)
             Ok("PASS  soak shows the board's own countdown while it runs")
@@ -986,6 +1282,12 @@ def run_checks(page, com):
 
     check_limits_are_readonly(page)
     check_channel_labels(page)
+    check_off_plan_params(page)
+    check_nothing_in_english(page)
+    check_run_one_target(page)
+    check_autoecho_toggle(page)
+    check_peer_binding(page)
+    check_plan_runs_from_the_page(page)
     check_aout_walk(page)
 
     # -------------------------------------------------- DO -> DI cross-check
@@ -1009,7 +1311,7 @@ def run_checks(page, com):
         def pick(name):
             prows = page.locator(".prow")
             for i in range(prows.count()):
-                if prows.nth(i).locator(".key").inner_text().strip() == name:
+                if prows.nth(i).get_attribute("data-port") == name:
                     prows.nth(i).click()
                     return True
             return False
@@ -1076,7 +1378,7 @@ def run_checks(page, com):
     def pick_port(name):
         rows = page.locator(".prow")
         for i in range(rows.count()):
-            if rows.nth(i).locator(".key").inner_text().strip() == name:
+            if rows.nth(i).get_attribute("data-port") == name:
                 rows.nth(i).click()
                 page.wait_for_timeout(200)
                 return True
@@ -1087,23 +1389,26 @@ def run_checks(page, com):
     else:
         # The address controls exist because the board advertised them as
         # parameters - nothing about knx is written into the page.
-        labels = page.locator(".card .row label")
-        names = [labels.nth(i).inner_text().strip().split()[0]
-                 for i in range(labels.count())]
+        # A parameter is either a typed field (in .row) or a set of choices
+        # (its own block). Both carry data-param, so this does not care which.
+        holders = page.locator("#panelbody [data-param]")
+        names = [holders.nth(i).get_attribute("data-param")
+                 for i in range(holders.count())]
         for want in ("ga", "src", "val"):
             check(want in names,
                   "the card offers %s, straight from what the board accepts" % want,
-                  " ".join(names))
+                  " ".join(n for n in names if n))
 
-        # val is advertised as a set of values, so it has to be a dropdown -
+        # val is advertised as a set of values, so it is offered as choices -
         # a typo in a field would be refused by the board after the fact.
-        val_ctl = page.locator(".card .row label", has_text="val").locator("select")
-        check(val_ctl.count() > 0,
-              "val is a dropdown, because the board declares it as a value set")
+        val_ctl = page.locator('#panelbody [data-param="val"] input[type=radio]')
+        check(val_ctl.count() >= 2,
+              "val is a set of choices, because the board declares it as one",
+              "%d choices" % val_ctl.count())
         # ga is NOT: an address is neither a range nor a set, so it must stay
         # typeable. A vertical bar in its limits line would have made the panel
         # offer the format words as choices instead of an address field.
-        ga_sel = page.locator(".card .row label", has_text="ga").locator("select")
+        ga_sel = page.locator('.card .row label[data-param="ga"]').locator('select')
         check(ga_sel.count() == 0, "ga stays typeable - an address is not a menu")
 
         page.fill("#raw", "pt.start knx mode=frames period=1000")
@@ -1127,12 +1432,12 @@ def run_checks(page, com):
             Ok("PASS  received frames appear on the card as events")
             text = box.first.inner_text()
             seen = " ".join(text.split())[:180]
-            check("crc=raw" in text or "crc=inv" in text,
+            check("原样就对" in text or "取反才对" in text,
                   "the card says which reading of the octets passed the check octet",
                   seen)
-            check("crc=ack" in text,
+            check("单字节应答" in text,
                   "a lone acknowledge octet reads as ack, not as a bad frame", seen)
-            check("dst=31/7/255" in text,
+            check("目标组地址 31/7/255" in text,
                   "and which group address the frame carried", seen)
         page.fill("#raw", "pt.stop knx")
         page.click("#send")

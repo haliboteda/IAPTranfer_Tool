@@ -56,6 +56,11 @@ type Result struct {
 	Got   string `json:"got"`
 	Pass  bool   `json:"pass"`
 	Why   string `json:"why,omitempty"`
+	// Missing says the board never reported the field, as opposed to
+	// reporting a value that failed. The panel says those two differently,
+	// and Got cannot carry the difference: a field reported empty and a
+	// field not reported at all both leave Got "".
+	Missing bool `json:"missing,omitempty"`
 }
 
 // Validate reports a check that could never pass, or never fail, because of
@@ -129,6 +134,7 @@ func (c Check) Eval(look Lookup) Result {
 	name, idx, _ := splitField(c.Field)
 	raw, ok := look(name)
 	if !ok {
+		res.Missing = true
 		res.Why = fmt.Sprintf("no field %q in what the board reported", name)
 		return res
 	}

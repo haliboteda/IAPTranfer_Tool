@@ -222,10 +222,17 @@ func (s *Server) handleJudge(w http.ResponseWriter, r *http.Request) {
 	out := make([]map[string]any, 0, len(results))
 	for _, res := range results {
 		out = append(out, map[string]any{
-			"what": res.Check.Describe(),
-			"got":  res.Got,
-			"pass": res.Pass,
-			"why":  res.Why,
+			// The check itself, not only a sentence about it: the panel is
+			// read in Chinese (user 2026-09-11) and composes its own wording
+			// from these. Describe() and Why stay English and stay here -
+			// they are what the CLI and the CSV report say, and those are
+			// English by convention.
+			"check":   res.Check,
+			"missing": res.Missing,
+			"what":    res.Check.Describe(),
+			"got":     res.Got,
+			"pass":    res.Pass,
+			"why":     res.Why,
 		})
 	}
 	writeJSON(w, 200, map[string]any{
