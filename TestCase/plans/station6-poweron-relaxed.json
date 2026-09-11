@@ -141,8 +141,8 @@
         },
         {
           "field": "fs",
-          "op": "eq",
-          "value": "fat32"
+          "op": "ne",
+          "value": "none"
         }
       ]
     },
