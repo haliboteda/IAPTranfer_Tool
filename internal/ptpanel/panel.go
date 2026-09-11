@@ -281,9 +281,14 @@ func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 
 	l, err := s.bindLink(body.Port, body.COM, body.Baud)
 	if err != nil {
-		writeErr(w, 400, fmt.Sprintf(
+		// 200, not 400: a port that is busy or unplugged is an ordinary thing
+		// to run into at a bench, not a malformed request. The page already
+		// says so in words - answering 4xx only adds a red line to the
+		// browser console for a case that is handled. The checks above stay
+		// 4xx: those are requests the panel itself cannot produce.
+		writeJSON(w, 200, map[string]any{"error": fmt.Sprintf(
 			"打不开 %s：%v。看看是不是别的程序占着它，或者适配器没插好。",
-			body.COM, err))
+			body.COM, err)})
 		return
 	}
 
