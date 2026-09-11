@@ -968,7 +968,7 @@ func TestStation6PlanRuns(t *testing.T) {
 		"OK vals=aout ch=1 mv=1:0 period=500",
 		"OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self params=period running=0",
 		"OK vals=rs232 period=3000",
-		"OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0",
+		"OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0",
 		"OK vals=rs485 baud=115200 period=3000",
 		"OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0",
 		"OK vals=can baud=500000 mode=extloop period=1000",

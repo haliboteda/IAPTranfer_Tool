@@ -26,9 +26,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=3000
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=3000
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=500000 mode=normal period=1000
@@ -96,9 +96,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=3000
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=3000
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=500000 mode=normal period=1000
@@ -391,9 +391,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=3000
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=3000
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=250000 mode=listen period=100
@@ -536,9 +536,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=3000
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=3000
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=250000 mode=listen period=100
@@ -595,9 +595,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=3000
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=3000
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=250000 mode=listen period=100
@@ -660,9 +660,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=3000
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=3000
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=250000 mode=listen period=100
@@ -721,9 +721,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=3000
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=3000
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=250000 mode=listen period=100
@@ -780,9 +780,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=3000
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=3000
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=250000 mode=listen period=100
@@ -845,9 +845,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=3000
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=3000
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=250000 mode=listen period=100
@@ -904,9 +904,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=3000
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=3000
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=250000 mode=listen period=100
@@ -965,9 +965,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=3000
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=3000
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=250000 mode=listen period=100
@@ -1026,9 +1026,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=3000
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=3000
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=250000 mode=listen period=100
@@ -1085,9 +1085,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=3000
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=3000
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=250000 mode=listen period=100
@@ -1174,9 +1174,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=3000
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=3000
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=250000 mode=listen period=100
@@ -1273,9 +1273,9 @@ OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self p
 OK vals=rs232 period=200
 OK terms=rs232 C05+C06
 OK limits=rs232 period:50..
-OK port=rs485 board=upper kind=session blk=C term=C09,C10 channels=1 loop=link params=baud,period running=0 targets=rs485
+OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 targets=rs485
 OK vals=rs485 baud=115200 period=200
-OK terms=rs485 C09+C10
+OK terms=rs485 C10+C11
 OK limits=rs485 baud:9600|19200|38400|57600|115200 period:50..
 OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0 targets=can,can.soak,can.scope,can.echo
 OK vals=can baud=250000 mode=listen period=100
