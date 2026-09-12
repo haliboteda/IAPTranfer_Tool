@@ -406,8 +406,8 @@ def check_off_plan_params(page):
         return
     card = page.locator('.card[data-port="dout"]').first
     row0 = page.locator(".startrow").first.inner_text()
-    check("单发" in row0 and "连续" in row0,
-          "the card offers 单发 / 连续 and says what each is for", " ".join(row0.split())[:120])
+    check("单次" in row0 and "持续" in row0,
+          "the card offers 单次 / 持续 and says what each is for", " ".join(row0.split())[:120])
     check(page.locator(".startrow button").first.inner_text().strip() == "开始",
           "one button, not two pairs of them")
 
@@ -538,6 +538,99 @@ def check_run_one_target(page):
     check("pt.run eth.link" in log,
           "and the command that went out is the one the row names",
           " ".join(log.split())[-160:])
+
+
+def check_continuous_run(page):
+    """持续测试：选时长、勾多个端口一起跑、看门狗续期。
+
+    The board no longer times anything - the PC does, and it keeps the board's
+    deadman renewed while it runs (DECISIONS.md 37). None of that is visible in
+    a single command, so it is exercised here: the duration picker only appears
+    under 持续, several ports start from one press, and pt.hold really goes out.
+    """
+    Section("continuous runs: duration, multi-select, the deadman")
+
+    if not check(pick_port(page, "din"), "din is in the port list"):
+        return
+
+    # 单次 is the default, and the duration picker has no business there: a run
+    # that lasts seconds does not need to be asked how many hours it should last.
+    check(page.locator('.startrow input[data-mode="once"]').is_checked(),
+          "单次 is the default mode")
+    check(page.locator(".startrow .hours").count() == 0,
+          "no duration picker under 单次")
+
+    page.locator('.startrow input[data-mode="loop"]').check()
+    page.wait_for_timeout(400)
+    hours = page.locator(".startrow .hours input[data-hours]")
+    check(hours.count() == 5,
+          "持续 1/2/3/4 小时 and 一直跑 are the five choices",
+          "%d choices" % hours.count())
+    check(page.locator('.startrow input[data-hours="0"]').count() == 1,
+          "一直跑 is one of them")
+
+    # The multi-select bar. Two ports, one press.
+    page.locator('.prow[data-port="din"] input[data-pick]').check()
+    page.locator('.prow[data-port="temp"] input[data-pick]').check()
+    page.wait_for_timeout(400)
+    bar = page.locator("#batchbar")
+    check(bar.is_visible(), "the batch bar shows once something is ticked")
+    txt = bar.inner_text()
+    check("数字量输入" in txt or "din" in txt or "一起跑" in txt,
+          "and it names what was ticked", " ".join(txt.split())[:120])
+
+    # 一直跑 so the run does not end while the assertions below are still going.
+    bar.locator('input[data-hours="0"]').check()
+    page.wait_for_timeout(300)
+    page.fill("#raw", "")
+    bar.locator('button[data-batch="start"]').click()
+
+    page.wait_for_function(
+        "() => { const b = document.querySelector('#batchbar button[data-batch=\\'stop\\']');"
+        " return !!b; }", timeout=15000)
+    Ok("PASS  one press started them and the bar turned into a stop button")
+
+    log = page.locator("#log").inner_text()
+    check("pt.start din" in log and "pt.start temp" in log,
+          "both ports were actually started", " ".join(log.split())[-200:])
+    # The deadman is the whole reason the board survives the PC dying.
+    # ⚠️ Asserted on the board's REPLY: the server sends pt.hold on the serial
+    # port itself, not through /api/command, so the outgoing line never reaches
+    # the page's log - only what came back does.
+    check("OK hold=" in log, "the deadman was armed",
+          " ".join(log.split())[-200:])
+
+    # The page's own buffer holds about four and a half minutes of a five-port
+    # run. A burn-in has to leave something behind that outlives it, so the
+    # server writes the run to a file as it goes - and the bar has to say where,
+    # or nobody looks for it until after the four hours are gone.
+    bartxt = page.locator("#batchbar").inner_text()
+    check("run-" in bartxt and ".log" in bartxt,
+          "the bar names the file the run is being written to",
+          " ".join(bartxt.split())[:160])
+
+    # Renewal: the span is 6 s and the server renews every 2 s, so a second
+    # acknowledgement has to appear inside this wait. A run that armed it once and
+    # then forgot would drop the outputs mid-test on a real bench.
+    before = page.locator("#log").inner_text().count("OK hold=")
+    page.wait_for_timeout(5000)
+    after = page.locator("#log").inner_text().count("OK hold=")
+    check(after > before, "and it is being renewed, not armed once",
+          "%d -> %d" % (before, after))
+
+    page.locator('#batchbar button[data-batch="stop"]').click()
+    page.wait_for_timeout(1500)
+    log = page.locator("#log").inner_text()
+    check("OK stopped all" in log, "stopping the run stopped every port",
+          " ".join(log.split())[-200:])
+    check("OK hold=off" in log, "and disarmed the deadman",
+          " ".join(log.split())[-200:])
+
+    for name in ("din", "temp"):
+        box = page.locator('.prow[data-port="%s"] input[data-pick]' % name)
+        if box.count():
+            box.uncheck()
+    page.wait_for_timeout(300)
 
 
 def check_autoecho_toggle(page):
@@ -1040,10 +1133,6 @@ def run_checks(page, com):
         # rs232 got criteria on 2026-09-08 after this sweep found it had none.
         "rs232": ("pass", None),
         "aout":  ("pass", None),        # judged on the DAC value, not current
-        # The burn-in, at the one minute the plan starts it with. Slow on
-        # purpose and worth the minute: it is the only port whose test ends
-        # when the board says done=1 rather than after a few frames.
-        "soak":  ("pass", None),
         # One-way handovers. They print prose for a person and take the board
         # with them, so the page offers no button and says 人工判 rather than
         # 未测 - "nobody can judge this from here" is not "nobody has yet".
@@ -1096,20 +1185,7 @@ def run_checks(page, com):
 
         btn.first.click()
 
-        # A test that runs for minutes has to say how far it has got, or a
-        # person cannot tell it apart from one that has hung. The board's own
-        # countdown is what the page shows.
-        if key == "soak":
-            page.wait_for_function(
-                "() => { const s = document.querySelector('.startrow .note');"
-                " return s && s.textContent.indexOf('还剩') >= 0; }",
-                timeout=25000)
-            Ok("PASS  soak shows the board's own countdown while it runs")
-            check(page.locator(".startrow button").nth(1).inner_text().strip() == "中止",
-                  "a long run can be stopped from where it was started")
-
-        # The burn-in times itself; everything else answers in seconds.
-        budget = 150000 if key == "soak" else 90000
+        budget = 90000
         page.wait_for_function(
             "() => { const b = document.querySelector('.startrow button');"
             " return b && b.textContent.indexOf('跑着') < 0; }", timeout=budget)
@@ -1153,7 +1229,6 @@ def run_checks(page, com):
             ("on=1:1", "relay is told to close its contacts, not just to hold"),
             ("mv=1:1000", "the analog outputs are told which voltage to produce"),
             ("duty=1:100", "the high-side outputs are told to drive"),
-            ("minutes=1", "the burn-in is started with the plan's duration"),
             ("mode=extloop", "can is started in the mode its criteria assume")):
         check(want in sent, "%s (%s)" % (want, why))
 
@@ -1285,6 +1360,7 @@ def run_checks(page, com):
     check_off_plan_params(page)
     check_nothing_in_english(page)
     check_run_one_target(page)
+    check_continuous_run(page)
     check_autoecho_toggle(page)
     check_peer_binding(page)
     check_plan_runs_from_the_page(page)

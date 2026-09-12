@@ -197,6 +197,11 @@ main>section{background:var(--bg);overflow-y:auto;padding:14px}
 .prow{display:flex;align-items:center;gap:7px;padding:5px 6px;border-radius:4px;
   cursor:pointer;border:1px solid transparent}
 .prow:hover{background:var(--line2)}
+.prow .pick{margin:0;flex:none}
+.batchbar{border:1px solid var(--accent);background:var(--accent-bg);border-radius:4px;
+  padding:7px 8px;margin-bottom:8px;display:flex;flex-direction:column;gap:6px}
+.batchbar .hours{flex-wrap:wrap}
+.batchbar button{align-self:flex-start}
 .prow.on{background:var(--accent-bg);border-color:var(--accent)}
 .prow .ico{font-size:12px;line-height:1}
 .prow .nm{font:12.5px var(--sans);color:var(--ink)}
@@ -280,6 +285,7 @@ details summary:hover{color:var(--ink2)}
         <button class="tab on" data-tab="manual">端口</button>
         <button class="tab" data-tab="plan">方案</button>
       </div>
+      <div id="batchbar" class="batchbar" hidden></div>
       <div id="treebody"></div>
       <div id="planlist" hidden>
         <!-- Said once, here, because "方案" means nothing on its own and a
@@ -784,9 +790,6 @@ const PORT_HELP = {
   led: {wiring:"不用接，眼睛盯着板子",
          how:"状态灯闪六次，每次半秒",
          pass:"**回复里「脉冲数」是 6，可是灯亮没亮只有你能判** —— 这个脚没有回读，板子回的「看到了吗」永远是「不知道」"},
-  soak: {wiring:"不用接（接了负载更真实）",
-         how:"高边轮转、继电器慢速翻转、温度和基准一直盯着，板子自己计时",
-         pass:"**「跑完了」1、「故障数」全程 0、参考电压 2400–2600 毫伏、最高温不超过 70.0 ℃**。\n⚠️ 继电器 30 秒才翻一次是刻意的，不是卡住了"},
   pwm: {wiring:"DO6（端子 A08）",
          how:"交权入口：呼吸灯。⚠️ 进去就不回来，只能复位板子",
          pass:"**看到亮度平滑地渐亮渐暗**"},
@@ -804,7 +807,7 @@ const PORT_LABEL = {
   rs232: "RS232", rs485: "RS485", can: "CAN", knx: "KNX",
   sdram: "SDRAM", sd: "SD 卡", eth: "以太网", usb: "USB 口",
   rtc: "实时钟", led: "指示灯",
-  pwm: "呼吸灯（DO6）", soak: "老化", bringup: "五项同跑",
+  pwm: "呼吸灯（DO6）", bringup: "五项同跑",
 };
 
 function portLabel(name) { return PORT_LABEL[name] || name; }
@@ -1316,9 +1319,86 @@ function renderTree() {
       row.dataset.port = p.name;
       row.appendChild(el("span","stat", st.text));
       row.onclick = () => { selected = p.name; renderTree(); renderPanel(); };
+
+      // 勾一个就是「这一轮带上它」。只有会话能勾 —— 交权那类一去不回，
+      // 拉它一起跑就是把命令口交出去，剩下的端口全哑。
+      if (p.kind === "session") {
+        const c = el("input","pick"); c.type = "checkbox";
+        c.checked = picked2.has(p.name);
+        c.dataset.pick = p.name;
+        c.title = "勾上，和别的端口一起跑";
+        c.onclick = (e) => {
+          e.stopPropagation();
+          c.checked ? picked2.add(p.name) : picked2.delete(p.name);
+          renderBatchBar();
+        };
+        row.insertBefore(c, row.firstChild);
+      }
       host.appendChild(row);
     }
   }
+  renderBatchBar();
+}
+
+// 勾了哪几个端口要一起跑。和 picked（通道选择）不是一回事，所以另起一个名字。
+const picked2 = new Set();
+
+// 左边列表顶上的那一条：勾了几个、跑多久、一个「开始」。
+//
+// *** 这里没有「单次 / 持续」的选择 —— 一次点好几个端口，要的就是让它们一起跑
+// *** 着。要单跑一轮拿结论，去那个端口自己的卡片上点，那里才有判据。
+function renderBatchBar() {
+  const bar = $("#batchbar");
+  if (!bar) { return; }
+  bar.textContent = "";
+  if (!state.connected) { bar.hidden = true; return; }
+  bar.hidden = false;
+
+  const live = state.run;
+  if (live) {
+    const left = live.left_s;
+    bar.appendChild(richText("div","note",
+      "**持续测试跑着**：" + (live.ports || []).map(portLabel).join("、") +
+      "\n" + (left === null || left === undefined
+        ? "不限时长，点停止才结束。"
+        : "还剩 " + Math.floor(left / 60) + " 分 " + (left % 60) + " 秒。") +
+      // 页面的日志窗只留最后几分钟，跑几小时的那部分靠这个文件。说出来，
+      // 否则人跑完四小时才发现要找的东西早滚没了。
+      (live.log ? "\n全程日志边跑边写进：**" + live.log + "**" : "")));
+    const stop = el("button","primary","停止");
+    stop.dataset.batch = "stop";
+    stop.onclick = () => stopContinuous();
+    bar.appendChild(stop);
+    return;
+  }
+
+  const names = [...picked2];
+  const head = el("div","note");
+  head.appendChild(el("b", null, "一起跑：" + (names.length
+    ? names.map(portLabel).join("、") : "还没勾端口")));
+  bar.appendChild(head);
+  if (!names.length) {
+    bar.appendChild(el("div","sub","在下面的端口前面打勾，可以勾多个。"));
+    return;
+  }
+
+  bar.appendChild(hoursPicker(renderBatchBar, false));
+
+  const warn = bandwidthWarning(names);
+  if (warn) { bar.appendChild(richText("div","sub warn", warn)); }
+
+  const go = el("button","primary","开始");
+  go.dataset.batch = "start";
+  go.disabled = !!warn;
+  go.onclick = async () => {
+    const cmds = [];
+    for (const name of names) {
+      const p = (state.ports || []).find(x => x.name === name);
+      if (p) { cmds.push(startCommandFor(p)); }
+    }
+    await startContinuous(names, cmds);
+  };
+  bar.appendChild(go);
 }
 
 // The old expandable tree, kept for the channel checkboxes the cards need.
@@ -2441,6 +2521,128 @@ function refreshStartRow(p, cmdFor) {
 // *** 出去的命令。
 let runMode = {};
 
+// 「持续」跑多久，小时。0 = 一直。
+//
+// *** 计时在上位机，不在板子上。板子那边只有一个看门狗：上位机每 2 秒续一次期，
+// *** 6 秒没续上它就自己把输出放了。所以这个数字只决定上位机什么时候发停止，
+// *** 而「上位机死了怎么办」由看门狗回答，不由这个数字回答。
+let runHours = 1;
+
+const HOUR_CHOICES = [
+  [1, "1 小时"], [2, "2 小时"], [3, "3 小时"], [4, "4 小时"],
+  [0, "一直跑"],
+];
+
+// 一个会话端口每帧要占多少字节。板子推一帧、上位机回一条 pt.echo、板子再回一个
+// OK —— 三趟都走同一条 115200 的线。
+//
+// *** 这不是估着玩的：线一堵，printf 是阻塞的，超循环就慢下来，于是所有端口的
+// *** 采样周期一起失准，而且没有任何东西会报错。人只会看到数据变怪。
+const LINE_BYTES_PER_SEC = 11520;   // 115200 8N1
+const FRAME_BYTES = 90, ECHO_BYTES = 16, OK_BYTES = 20;
+
+function portPeriodMs(p) {
+  const v = (edited[p.name] && edited[p.name].period) ||
+            (p.values && p.values.period);
+  const n = Number(v);
+  return (n >= 50) ? n : 200;
+}
+
+// 勾中的这些端口一起跑，会占这条线多少。
+function bandwidthOf(names) {
+  let bytes = 0;
+  for (const name of names) {
+    const p = (state.ports || []).find(x => x.name === name);
+    if (!p || p.kind !== "session") { continue; }
+    const per = (p.loop === "ctrl" || p.loop === "self")
+      ? FRAME_BYTES + ECHO_BYTES + OK_BYTES
+      : FRAME_BYTES;
+    bytes += per * 1000 / portPeriodMs(p);
+  }
+  return bytes;
+}
+
+// 时长一组单选。卡片上和左边的批量启动共用同一个 runHours，所以两处永远一致 ——
+// 两个地方各记一份，人换了一边另一边不动，那是个必然会咬人的坑。
+function hoursPicker(onChange, disabled) {
+  const box = el("div","runhow hours");
+  box.appendChild(el("span","sub","跑多久："));
+  for (const [h, nm] of HOUR_CHOICES) {
+    const lb = el("label");
+    const r = el("input"); r.type = "radio"; r.name = "runhours";
+    r.value = String(h); r.checked = (runHours === h); r.disabled = !!disabled;
+    r.dataset.hours = String(h);
+    r.onchange = () => { runHours = h; onChange(); };
+    lb.appendChild(r);
+    lb.appendChild(el("b", null, nm));
+    box.appendChild(lb);
+  }
+  return box;
+}
+
+// 从左边批量启动时，这个端口该发哪条命令。
+//
+// *** 不能用卡片上那个 build()：它读的是屏幕上的输入框，而中间那一列一次只画
+// *** 一个端口的卡。批量启动要发的端口，多数一个输入框都不在文档里。所以这里
+// *** 读的是同一组页面状态（方案参数 + 改过的值 + 勾中的通道），和 offPlan()
+// *** 判「改没改」读的是同一处 —— 两处读不同的地方，迟早会一个说改了一个说没改。
+function startCommandFor(p) {
+  let cmd = "pt.start " + p.name;
+  if (p.channels > 1) { cmd += " ch=" + chList(p); }
+
+  const planned = (planParams[p.name] || {}).params || {};
+  const keys = (p.params || []).filter(k => k !== "ch");
+
+  for (const k of keys) {
+    if ((p.perChannel || {})[k]) {
+      const was = planPerCh(p, k);
+      const parts = [];
+      for (const i of [...chanSet(p)].sort((a,b) => a-b)) {
+        parts.push(i + ":" + String(editedCh(p, k, i) ?? was[i] ??
+                                    (p.perChannel[k] || {})[i] ?? 0));
+      }
+      if (parts.length) { cmd += " " + k + "=" + parts.join(","); }
+      continue;
+    }
+    const v = editedVal(p, k) ?? planned[k] ?? (p.values || {})[k];
+    if (v !== undefined && v !== "") { cmd += " " + k + "=" + v; }
+  }
+  return cmd;
+}
+
+// 一条线的余量够不够。够就回空串，不够就回一句能照着改的话。
+function bandwidthWarning(names) {
+  const used = bandwidthOf(names);
+  if (used <= LINE_BYTES_PER_SEC * 0.8) { return ""; }
+  const pct = Math.round(used * 100 / LINE_BYTES_PER_SEC);
+  return "这些端口一起跑要占控制口 " + pct + "%（" + Math.round(used) +
+         " 字节/秒，线只有 " + LINE_BYTES_PER_SEC + "）。**把周期调大一点，或者少勾几个。**" +
+         "\n线一堵，板子的主循环就慢下来，所有端口的采样周期会一起失准，而且不会有任何报错。";
+}
+
+// 起一轮持续测试：先把每个端口发起来，再交给服务端计时和续期。
+//
+// *** 续期由服务端做，不由这个页面做 —— 页面关了、笔记本睡了，24 V 不能还开着。
+// *** 服务端的进程在，续期才在；进程没了，板子 6 秒内自己关。
+async function startContinuous(names, cmds) {
+  const warn = bandwidthWarning(names);
+  if (warn) { showMessage(warn.replace(/\n/g, " "), true); return false; }
+
+  for (const cmd of cmds) { await run(cmd); }
+  const j = await api("/api/hold", {ports: names, hours: runHours});
+  if (j.error) { showMessage(j.error, true); return false; }
+  applyState(j);
+  renderTree(); renderPanel();
+  return true;
+}
+
+async function stopContinuous() {
+  const j = await api("/api/hold", {stop: true});
+  if (j.error) { showMessage(j.error, true); return; }
+  applyState(j);
+  renderTree(); renderPanel();
+}
+
 function startRow(p, cmdFor) {
   const row = el("div","startrow");
   const busy = testing[p.name];
@@ -2452,12 +2654,13 @@ function startRow(p, cmdFor) {
   if (session) {
     const box = el("div","runhow");
     for (const [v, nm, why] of [
-      ["once", "单发", "跑一轮，跑完自动停下，给一个结论 —— 验收用"],
-      ["loop", "连续", "一直发，直到你点「停止」；不自动给结论 —— 调波形、量电压用"],
+      ["once", "单次", "跑一轮，跑完自动停下，给一个结论 —— 验收用"],
+      ["loop", "持续", "一直跑到时长用完；不自动给结论 —— 老化、调波形、量电压用"],
     ]) {
       const lb = el("label");
       const r = el("input"); r.type = "radio"; r.name = "run-" + p.name;
       r.value = v; r.checked = (mode === v); r.disabled = !!busy;
+      r.dataset.mode = v;
       r.onchange = () => { runMode[p.name] = v; refreshStartRow(p, cmdFor); };
       lb.appendChild(r);
       lb.appendChild(el("b", null, nm));
@@ -2465,6 +2668,11 @@ function startRow(p, cmdFor) {
       box.appendChild(lb);
     }
     row.appendChild(box);
+
+    // 时长只在「持续」下面出现：单次跑几秒钟，问它跑多久没有意义。
+    if (mode === "loop") {
+      row.appendChild(hoursPicker(() => refreshStartRow(p, cmdFor), busy));
+    }
   }
 
   const b = el("button","primary", busy ? "跑着…" : "开始");
@@ -2474,10 +2682,9 @@ function startRow(p, cmdFor) {
       showMessage("「" + portLabel(p.name) + "」一个通道都没勾，先勾上要测的那几路。", true);
       return;
     }
-    // 连续：发出去就不管了，停不停由人决定。
+    // 持续：发起来之后交给服务端计时，到点它发停止。
     if (session && (runMode[p.name] || "once") === "loop") {
-      await run(cmdFor());
-      renderTree(); renderPanel();
+      await startContinuous([p.name], [cmdFor()]);
       return;
     }
     testing[p.name] = "启动…";
@@ -2492,9 +2699,19 @@ function startRow(p, cmdFor) {
   };
   row.appendChild(b);
   // 一直跑着的会话，停它的按钮就在起它的地方。
+  //
+  // *** 一轮持续测试跑着的时候，这个按钮停的是整轮 —— 不是只停这一个端口。
+  // *** 判出故障要全停（DECISIONS 37 第 5 件），人点停止也一样：留着另外几个
+  // *** 端口在跑，而看门狗的续期已经停了，那是最难解释的一种状态。
   if (!busy && p.running) {
-    const stop = el("button",null,"停止");
-    stop.onclick = async () => { await run("pt.stop " + p.name); renderTree(); renderPanel(); };
+    const running = !!(state.run);
+    const stop = el("button",null, running ? "停止（整轮）" : "停止");
+    stop.dataset.stop = p.name;
+    stop.onclick = async () => {
+      if (running) { await stopContinuous(); return; }
+      await run("pt.stop " + p.name);
+      renderTree(); renderPanel();
+    };
     row.appendChild(stop);
   }
   // A burn-in can be told to run for ten hours, so a test in flight has to be

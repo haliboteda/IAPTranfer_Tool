@@ -734,7 +734,7 @@ func TestBenchSmokePlanRuns(t *testing.T) {
 	// One caps reply carrying every port the plan names, with the loop types
 	// the firmware really reports.
 	caps := []string{
-		"OK porttool=0.9.0 ports=2 lines=5",
+		"OK porttool=0.10.0 ports=2 lines=5",
 		"OK port=temp board=lower kind=session blk=- term=- channels=2 loop=ctrl params=ch,period running=0",
 		"OK vals=temp ch=1,2 period=1000",
 		"OK terms=temp SC-protect,HS-switch",
@@ -748,7 +748,7 @@ func TestBenchSmokePlanRuns(t *testing.T) {
 		case cmd == "pt.caps":
 			return caps, nil
 		case cmd == "pt.id":
-			return []string{"OK uid=003400413135511439303538 porttool=0.9.0"}, nil
+			return []string{"OK uid=003400413135511439303538 porttool=0.10.0"}, nil
 		case cmd == "pt.run sdram.probe":
 			return []string{
 				"SDRAM_TEST: controller not up yet, running MX_FMC_Init()",
@@ -953,7 +953,7 @@ func TestStation6PlanRuns(t *testing.T) {
 	}
 
 	caps := []string{
-		"OK porttool=0.9.0 ports=17 lines=32",
+		"OK porttool=0.10.0 ports=16 lines=30",
 		"OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0",
 		"OK vals=din ch=1,2,3,4,5,6,7,8 period=200",
 		"OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0",
@@ -986,8 +986,6 @@ func TestStation6PlanRuns(t *testing.T) {
 		"OK vals=usb mode=echo period=1000",
 		"OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read",
 		"OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink",
-		"OK port=soak board=whole kind=session blk=- term=- channels=1 loop=ctrl params=minutes,period running=0",
-		"OK vals=soak minutes=120 period=5000",
 	}
 
 	fake := newScriptBoard(t, func(cmd string, nth int) ([]string, []string) {
@@ -995,7 +993,7 @@ func TestStation6PlanRuns(t *testing.T) {
 		case cmd == "pt.caps":
 			return caps, nil
 		case cmd == "pt.id":
-			return []string{"OK uid=003400413135511439303538 porttool=0.9.0"}, nil
+			return []string{"OK uid=003400413135511439303538 porttool=0.10.0"}, nil
 
 		case cmd == "pt.run sdram.probe":
 			return []string{"OK sdram.probe base=0xC0000000 size=67108864 ready=1 databus=1 addrbus=1"}, nil
@@ -1180,10 +1178,6 @@ func TestStation6PlanRuns(t *testing.T) {
 		// PLACEHOLDER being replaced by a USB test inside the tool image, with
 		// selectable modes. See the step's own note.
 		"usb-enumerates": true,
-		// A burn-in has no place in a 30-second station; plans/soak-2h.json
-		// runs it. The step is in this file so the panel has criteria for the
-		// port - see internal/ptpanel/judge.go.
-		"soak": true,
 	}
 
 	for _, s := range rep.Steps {

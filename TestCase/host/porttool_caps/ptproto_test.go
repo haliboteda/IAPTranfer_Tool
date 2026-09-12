@@ -54,8 +54,8 @@ func TestParseGoldenCaps(t *testing.T) {
 		t.Fatalf("ParseCaps: %v", err)
 	}
 
-	if caps.Version != "0.9.0" {
-		t.Errorf("version = %q, want 0.9.0", caps.Version)
+	if caps.Version != "0.10.0" {
+		t.Errorf("version = %q, want 0.10.0", caps.Version)
 	}
 	// Deliberately not a hard port count: adding a port to the firmware is
 	// meant to cost nothing here, and ParseCaps already refuses a reply whose
@@ -65,7 +65,7 @@ func TestParseGoldenCaps(t *testing.T) {
 	// hardware got a session, and one piece of hardware gets one row. Their
 	// deep bring-up entries ride on that row as targets=.
 	wantSessions := []string{"din", "dout", "relay", "ain", "aout", "temp",
-		"rs232", "rs485", "can", "knx", "soak", "sd"}
+		"rs232", "rs485", "can", "knx", "sd"}
 	wantHandovers := []string{"bringup", "pwm"}
 	// sdram is here because its checks are pt.run targets: the chip's one-shot
 	// checks and its one-way soak entries are the same hardware, so they share

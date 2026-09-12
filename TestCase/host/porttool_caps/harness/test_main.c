@@ -77,9 +77,9 @@ static void run(const char *line)
     dispatch(line);
 }
 
-/* How much of the board a soak is holding on right now. Two numbers rather
- * than six, because what the check cares about is "anything still driven", and
- * which particular channel is the soak's business. */
+/* How much of the board is being driven right now. Two numbers rather than
+ * six, because what the checks care about is "anything still driven", not
+ * which particular channel. */
 static int relays_energised(void)
 {
     int n = 0;
@@ -109,6 +109,7 @@ static void advance(uint32_t ms)
     fake_now += ms;
     test_set_tick(fake_now);
     printf(">>> (host) %lu ms later\n", (unsigned long)ms);
+    hold_check(fake_now);
     tick_sessions(fake_now);
 }
 
@@ -397,25 +398,67 @@ int main(void)
     run("pt.start usb period=abc");
     run("pt.stop all");
 
-    /* ---- burn-in --------------------------------------------------------
+    /* ---- the deadman ----------------------------------------------------
      *
-     * A soak has to stop by itself and it has to leave the outputs it drove in
-     * a safe state. Both are checked here rather than on a rack, because the
-     * failure mode - a relay left energised by a run nobody is watching - is
-     * exactly what nobody would notice on a rack. */
+     * A timed run is timed by the PC, so the board has to survive the PC going
+     * away mid-run. That is checked here rather than on a rack, because the
+     * failure mode - outputs left driven by a run nobody is watching any more -
+     * is exactly what nobody would notice on a rack.
+     *
+     * Renewal has to be explicit: the session frames below keep flowing while
+     * the hold lapses, and a deadman that any traffic refreshed would never
+     * fire on a PC that is still echoing from a dead panel. */
     run("pt.stop all");
-    run("pt.start soak minutes=1 period=100");
+    run("pt.hold");
+    run("pt.hold abc");
+    run("pt.hold 999999999");
+
+    run("pt.start dout ch=1,2 duty=1:100,2:100 period=100");
+    run("pt.start relay ch=1 mode=hold on=1:1 period=1000");
+    run("pt.hold 500");
+    run("pt.hold");
     advance(100);
-    advance(100);
-    printf("TEST soak_driving=%d dout_duty_any=%d\n",
-           relays_energised(), dout_duty_any());
-    run("pt.start soak minutes=0");
-    run("pt.start soak minutes=9999");
-    run("pt.stop soak");
-    printf("TEST soak_after_stop=%d dout_duty_any=%d\n",
+    printf("TEST hold_live_driving=%d dout_duty_any=%d\n",
            relays_energised(), dout_duty_any());
 
-    /* Zeroed first: the soak above drives the same indicator, and the counters
+    /* Renewed once, so the original 500 ms deadline passes without firing. */
+    run("pt.hold 500");
+    advance(400);
+    printf("TEST hold_renewed_driving=%d dout_duty_any=%d\n",
+           relays_energised(), dout_duty_any());
+
+    test_led_writes = 0;
+    test_led_high = 0;
+    advance(600);
+    printf("TEST hold_expired_driving=%d dout_duty_any=%d led_high=%d\n",
+           relays_energised(), dout_duty_any(), test_led_high);
+    run("pt.list");
+    run("pt.hold");
+
+    /* Disarming leaves a session alone - it is the PC's clock that stopped
+     * mattering, not the run. */
+    run("pt.start dout ch=1 duty=1:100 period=100");
+    run("pt.hold 500");
+    run("pt.hold 0");
+    advance(900);
+    printf("TEST hold_disarmed_dout_duty_any=%d\n", dout_duty_any());
+    run("pt.stop all");
+
+    /* The indicator, driven from the PC rather than decided on the board. */
+    test_led_writes = 0;
+    test_led_high = 0;
+    run("pt.led fault=1");
+    printf("TEST led_fault_on=%d writes=%d\n", test_led_high, test_led_writes);
+    /* Zeroed again: these are counters of writes, not the pin's level, so
+     * "cleared it" means this command wrote the pin without writing it high. */
+    test_led_writes = 0;
+    test_led_high = 0;
+    run("pt.led fault=0");
+    printf("TEST led_fault_off=%d writes=%d\n", test_led_high, test_led_writes);
+    run("pt.led fault=2");
+    run("pt.led");
+
+    /* Zeroed first: the checks above drive the same indicator, and the counters
      * are global. What this checks is what led.blink alone did. */
     test_led_writes = 0;
     test_led_high = 0;

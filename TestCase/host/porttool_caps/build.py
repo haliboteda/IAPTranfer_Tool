@@ -148,7 +148,6 @@ def main():
         str(PORTTOOL / "porttool_knx.c"),
         str(PORTTOOL / "porttool_eth.c"),
         str(PORTTOOL / "porttool_usb.c"),
-        str(PORTTOOL / "porttool_soak.c"),
         str(PORTTOOL / "porttool_handover.c"),
         str(PORTTOOL / "porttool_run.c"),
         str(PORTTOOL / "porttool_sd.c"),
@@ -970,9 +969,9 @@ def main():
               "led.blink configured PE2 itself (MX_GPIO_Init leaves it alone)",
               drives[0])
         # Six pulses is twelve writes, half of them high. The counters are
-        # zeroed just before the run because the soak above drives the same
-        # indicator; PortLed_Init()'s one extra "known state" write already
-        # happened there, since the init is idempotent.
+        # zeroed just before the run because the pt.led checks above drive the
+        # same indicator; PortLed_Init()'s one extra "known state" write
+        # already happened there, since the init is idempotent.
         check(d.get("led_writes") == "12" and d.get("led_high") == "6",
               "led.blink drove the pin as many times as it reported", drives[0])
 
@@ -991,7 +990,7 @@ def main():
         return {}
 
     for port in ("din", "dout", "relay", "ain", "aout", "temp", "rs232",
-                 "rs485", "can", "soak"):
+                 "rs485", "can"):
         lim = limits_of(0, port)
         check(lim, "%s states its limits" % port)
         # Every parameter the port advertises has to be covered: a parameter
@@ -1321,44 +1320,81 @@ def main():
                 "pt.start eth port=70000", "pt.start eth ip=192.168.1"):
         check(reply_to(cmd).startswith("ERR "), "refused: %s" % cmd, reply_to(cmd))
 
-    Section("soak: burn-in")
+    Section("the deadman: pt.hold")
 
-    soak_caps = shape_of(0, "soak")
-    check(soak_caps.get("kind") == "session",
-          "soak is a session, so it can be started and stopped", str(soak_caps.get("kind")))
+    # The PC owns the clock for a timed run, so the board has to survive the PC
+    # going away mid-run. Nothing here is the board judging a test - it judges
+    # whether anyone is still listening.
+    hold_head = [l for _, body in sections for l in body
+                 if l.startswith("OK porttool=")]
+    check(hold_head and "hold=1" in hold_head[0],
+          "caps advertises pt.hold, so the PC never has to probe for it",
+          hold_head[0] if hold_head else "")
+    check(hold_head and "led=1" in hold_head[0],
+          "caps advertises pt.led", hold_head[0] if hold_head else "")
 
-    soak_frames = [l for _, body in sections for l in body if l.startswith("!soak ")]
-    check(soak_frames, "soak produced frames")
-    if soak_frames:
-        f = dict(parse_kv(soak_frames[-1]))
-        for field in ("elapsed_s", "left_s", "cycles", "din", "relay_ops",
-                      "vdda", "faults", "done"):
-            check(field in f, "soak reports %s" % field, soak_frames[-1])
-        # No verdict anywhere: how many faults is acceptable is the PC's call.
-        check("PASS" not in soak_frames[-1] and "FAIL" not in soak_frames[-1],
-              "the soak frame carries counters, not a verdict", soak_frames[-1])
-        check(f.get("done") == "0",
-              "a soak one minute long is not done after 200 ms", str(f.get("done")))
-
-    for cmd in ("pt.start soak minutes=0", "pt.start soak minutes=9999"):
+    check(reply_to("pt.hold") .startswith("OK hold="),
+          "a bare pt.hold answers rather than arming", reply_to("pt.hold"))
+    for cmd in ("pt.hold abc", "pt.hold 999999999"):
         check(reply_to(cmd).startswith("ERR "), "refused: %s" % cmd, reply_to(cmd))
 
-    driving = [l for _, body in sections for l in body if l.startswith("TEST soak_driving=")]
-    after = [l for _, body in sections for l in body if l.startswith("TEST soak_after_stop=")]
-    if driving:
-        d = dict(parse_kv(driving[0]))
-        check(d.get("dout_duty_any") == "1",
-              "a running soak is driving a high-side output", driving[0])
-        # Contact life: the relays must NOT have moved 200 ms in. Toggling them
-        # every second would spend a quarter of the rated 3x10^4 operations in
-        # a single two-hour run.
-        check(d.get("soak_driving") == "0",
-              "the soak has not touched the relays yet - they cycle slowly on purpose",
-              driving[0])
-    if after:
-        d = dict(parse_kv(after[0]))
-        check(d.get("soak_after_stop") == "0" and d.get("dout_duty_any") == "0",
-              "pt.stop soak left every output it drove released", after[0])
+    live = [l for _, body in sections for l in body
+            if l.startswith("TEST hold_live_driving=")]
+    renewed = [l for _, body in sections for l in body
+               if l.startswith("TEST hold_renewed_driving=")]
+    expired = [l for _, body in sections for l in body
+               if l.startswith("TEST hold_expired_driving=")]
+    disarmed = [l for _, body in sections for l in body
+                if l.startswith("TEST hold_disarmed_dout_duty_any=")]
+
+    if live:
+        d = dict(parse_kv(live[0]))
+        check(d.get("dout_duty_any") == "1" and d.get("hold_live_driving") == "1",
+              "an armed hold does not disturb what is running", live[0])
+    if renewed:
+        d = dict(parse_kv(renewed[0]))
+        check(d.get("dout_duty_any") == "1" and d.get("hold_renewed_driving") == "1",
+              "renewing before the deadline keeps the outputs driven", renewed[0])
+    if expired:
+        d = dict(parse_kv(expired[0]))
+        # The whole point: outputs released without anybody on the PC side.
+        check(d.get("dout_duty_any") == "0" and d.get("hold_expired_driving") == "0",
+              "a lapsed hold released every output", expired[0])
+        check(d.get("led_high") == "1",
+              "a lapsed hold lit the indicator itself - the PC is gone, so "
+              "nobody else would", expired[0])
+
+    frames = [l for _, body in sections for l in body if l.startswith("!hold ")]
+    check(frames, "the board says out loud that the hold lapsed")
+    if frames:
+        f = dict(parse_kv(frames[-1]))
+        check(f.get("expired") == "1", "the hold frame reports expiry", frames[-1])
+
+    stopped = [l for _, body in sections for l in body
+               if l.startswith("OK running=")]
+    check(any(l == "OK running=none" for l in stopped),
+          "every session is stopped after the hold lapsed")
+
+    if disarmed:
+        # pt.hold 0 means "stop watching the clock", not "stop the test".
+        check(disarmed[0].endswith("=1"),
+              "disarming the hold left the running session alone", disarmed[0])
+
+    Section("the indicator: pt.led")
+
+    on = [l for _, body in sections for l in body if l.startswith("TEST led_fault_on=")]
+    off = [l for _, body in sections for l in body if l.startswith("TEST led_fault_off=")]
+    if on:
+        d = dict(parse_kv(on[0]))
+        check(d.get("led_fault_on") == "1", "pt.led fault=1 lit the pin", on[0])
+        check(d.get("writes") != "0", "pt.led actually drove the pin", on[0])
+    if off:
+        d = dict(parse_kv(off[0]))
+        check(d.get("led_fault_off") == "0" and d.get("writes") != "0",
+              "pt.led fault=0 drove the pin without driving it high", off[0])
+
+    for cmd in ("pt.led fault=2", "pt.led"):
+        check(reply_to(cmd).startswith("ERR "), "refused: %s" % cmd, reply_to(cmd))
 
     # A run must not disturb what was already going, unlike a handover which
     # stops every session first.

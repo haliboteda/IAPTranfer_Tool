@@ -54,6 +54,10 @@ type Server struct {
 	echoNote  string // the last thing that went wrong, shown once rather than spammed
 	echoCount uint64
 
+	// The "持续" run in flight, if any: the PC's own clock for it, and the
+	// goroutine renewing the board's deadman. See hold.go.
+	run *timedRun
+
 	// The far ends of the loop=link sessions, keyed by the board's port name.
 	// A loop=link counter only closes when one of these is bound, which is why
 	// binding is part of setting the bench up rather than an option.
@@ -114,6 +118,8 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("/api/autoecho", s.handleAutoEcho)
 	mux.HandleFunc("/api/link", s.handleLink)
 	mux.HandleFunc("/api/unlink", s.handleUnlink)
+	mux.HandleFunc("/api/hold", s.handleHold)
+	mux.HandleFunc("/api/fault", s.handleFault)
 	mux.HandleFunc("/api/judge", s.handleJudge)
 	mux.HandleFunc("/api/portplan", s.handlePortPlan)
 	mux.HandleFunc("/api/criteria", s.handleCriteria)
@@ -229,6 +235,7 @@ func (s *Server) stateJSON() map[string]any {
 		links[name] = l.snapshot()
 	}
 	st["links"] = links
+	st["run"] = s.runStateJSON()
 	if s.board != nil {
 		ports := make([]map[string]any, 0, len(s.caps.Ports))
 		for _, p := range s.caps.Ports {
@@ -463,6 +470,13 @@ func (s *Server) runEchoResponder(b *ptboard.Board) func() {
 }
 
 func (s *Server) disconnect() {
+	// Before anything else: a timed run renews the deadman on this board, and
+	// a renewal goroutine outliving the connection would be sending into a
+	// closed port. Stopping it here also releases the outputs while the port is
+	// still open - the board's own deadman would do it a few seconds later
+	// anyway, but there is no reason to leave 24 V on for those seconds.
+	s.stopTimedRun("断开了板子")
+
 	// The far ends belong to this board connection; a repeater left running
 	// against a board that is gone would answer nothing and look bound.
 	s.unbindAllLinks()

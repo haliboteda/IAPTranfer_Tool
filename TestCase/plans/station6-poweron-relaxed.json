@@ -14,7 +14,7 @@
         {
           "field": "porttool",
           "op": "eq",
-          "value": "0.9.0"
+          "value": "0.10.0"
         },
         {
           "field": "uid",
@@ -125,7 +125,7 @@
       "id": "sd-card",
       "type": "PtRun",
       "execute_condition": "ALWAYS",
-      "_note": "'SD is 1-bit' per the document's key observation. A standard card from the controlled card set has to be in the slot; detected=0 is a missing card, ready=0 with detected=1 is the interface. Three separate answers, because they call for three different repair actions. detected=0 is a card that is not seated. detected=1 with ready=0 is a card or a socket that is broken - err= says which way. fs=exfat is a GOOD card in the wrong format: this FatFs is built without exFAT, so an operator has to reformat it to FAT32, not replace it. Before fs= existed all three looked the same and the third one had people binning good cards.",
+      "_note": "'SD is 1-bit' per the document's key observation. A standard card from the controlled card set has to be in the slot; detected=0 is a missing card, ready=0 with detected=1 is the interface. Three separate answers, because they call for three different repair actions. detected=0 is a card that is not seated. detected=1 with ready=0 is a card or a socket that is broken - err= says which way. fs= names the file system found by reading the boot sector directly, so an unformatted or unreadable card is fs=none while any mounted one - FAT32 or exFAT, both supported since 2026-09-11 - passes. Before fs= existed all three failures looked the same and the third one had people binning good cards.",
       "target": "sd.probe",
       "timeout_ms": 20000,
       "checks": [
@@ -342,44 +342,6 @@
           "field": "enum",
           "op": "eq",
           "value": "0"
-        }
-      ]
-    },
-    {
-      "id": "soak",
-      "type": "PtSession",
-      "execute_condition": "ALWAYS",
-      "enabled": false,
-      "_note": "NOT part of a station-6 power-on run - a burn-in belongs on a rack, not in a 30-second station, and plans/soak-2h.json is the one that runs it. It is here, disabled, because this is the file the panel judges by: without a step the panel has no criteria for the port and has to report it as untested forever, which is what it did until 2026-09-08. The panel prefills its controls from these params, so minutes=1 is a duration somebody at a bench will actually wait through; typing 120 there runs the same test for two hours and is judged by exactly these criteria, all four of which are duration-independent.",
-      "port": "soak",
-      "params": {
-        "minutes": 1,
-        "period": 5000
-      },
-      "frames": 12,
-      "timeout_ms": 120000,
-      "checks": [
-        {
-          "field": "done",
-          "op": "eq",
-          "value": "1"
-        },
-        {
-          "field": "faults",
-          "op": "count_zero"
-        },
-        {
-          "field": "vdda",
-          "op": "range",
-          "min": 2350,
-          "max": 2650,
-          "unit": "mV"
-        },
-        {
-          "field": "tmax",
-          "op": "range",
-          "max": 800,
-          "unit": "0.1C"
         }
       ]
     },
