@@ -985,6 +985,57 @@ function valueCN(v)    { return VALUE_CN[v] || v; }
 function fieldCN(k)    { return FIELD_CN[k] || k; }
 function targetCN(t)   { return TARGET_CN[t] || t; }
 
+// ---- 方案页的词 -----------------------------------------------------------
+//
+// 方案页上印的是 JSON 文件里的键名，所以它比端口卡更容易剩英文 —— 卡片上的词
+// 至少还过了一次 PARAM_CN。
+//
+// *** 只译标签，不译值。那些格子改的就是文件本身，把 "PtSession" 换成中文写
+// *** 回去，文件就读不了了。原词一律进 title 悬停，和面板别处一样。
+const STEPTYPE_CN = {
+  PtSession:   "跑一个端口",
+  PtRun:       "跑一个一次性动作",
+  PtRaw:       "直接发一条命令",
+  Tool:        "调外部程序",
+  UserConfirm: "问人一句",
+  ReadSN:      "读序列号",
+  PushResult:  "把结果推出去",
+};
+
+const PLANFIELD_CN = {
+  port:              "哪个端口",
+  frames:            "收几帧才算完",
+  target:            "哪个动作",
+  command:           "命令原文",
+  tool_name:         "程序名",
+  prompt:            "问什么",
+  source:            "从哪读",
+  sink:              "推到哪",
+  execute_condition: "什么情况下才跑这一步",
+  retry_count:       "失败了重试几次",
+  retry_interval_ms: "两次重试之间等多久（毫秒）",
+  sleep_before_ms:   "开跑前先等多久（毫秒）",
+  sleep_after_ms:    "跑完再等多久（毫秒）",
+  timeout_ms:        "等多久还不回就算超时（毫秒）",
+};
+
+// 门的三个取值。值发回文件，所以照旧是大写英文，只有印出来的字是中文。
+const EXECCOND_CN = {
+  PASS:   "上一步过了才跑",
+  FAIL:   "上一步没过才跑",
+  ALWAYS: "不管上一步，一律跑",
+};
+
+function stepTypeCN(t)  { return STEPTYPE_CN[t] || t; }
+function planFieldCN(k) { return PLANFIELD_CN[k] || paramCN(k); }
+
+// 标签印中文，原词挂在 title 上。方案页每一处都这么做，所以抽出来。
+function planLabel(text, raw) {
+  const d = el("div", "k", text);
+  d.title = "文件里的写法：" + raw;
+  return d;
+}
+
 // ---- 判据那句话 -----------------------------------------------------------
 //
 // 判据本身来自方案文件、由 internal/ptcheck 求值，这里一个字都不判 —— 只是把
@@ -3069,7 +3120,9 @@ function renderPlan() {
     cb.onclick = e => { e.stopPropagation(); st.enabled = cb.checked; };
     row.appendChild(cb);
     row.appendChild(el("span", null, st.id));
-    row.appendChild(el("span", "ty", st.type));
+    const ty = el("span", "ty", stepTypeCN(st.type));
+    ty.title = "文件里的写法：" + st.type;
+    row.appendChild(ty);
     const v = planVerdicts[st.id];
     if (v) { row.appendChild(el("span", "vd " + v, v)); }
     row.onclick = () => { planSel = i; renderPlan(); };
@@ -3086,11 +3139,14 @@ function renderStepProps() {
   const st = (plan.steps || [])[planSel];
   if (!st) { card.appendChild(el("div", "hint", "选一步。")); return card; }
 
-  card.appendChild(el("div", "hd")).appendChild(el("div", "nm", st.id + " · " + st.type));
+  const nm = el("div", "nm", st.id + " · " + stepTypeCN(st.type));
+  nm.title = "文件里的写法：" + st.type;
+  card.appendChild(el("div", "hd")).appendChild(nm);
   const g = el("div", "pgrid");
 
-  const put = (label, node) => {
-    g.appendChild(el("div", "k", label));
+  // raw 省略时，label 本身就是文件里的写法（判据那几行是这种）。
+  const put = (label, node, raw) => {
+    g.appendChild(raw === undefined ? el("div", "k", label) : planLabel(label, raw));
     g.appendChild(node);
   };
   const text = (get, set) => {
@@ -3107,31 +3163,33 @@ function renderStepProps() {
     return i;
   };
 
+  const pf = (key, node) => put(planFieldCN(key), node, key);
+
   if (st.type === "PtSession") {
-    put("port", text(() => st.port, v => { st.port = v; checkPlan(); }));
-    put("frames", num(() => st.frames, v => st.frames = v));
+    pf("port", text(() => st.port, v => { st.port = v; checkPlan(); }));
+    pf("frames", num(() => st.frames, v => st.frames = v));
     const ports = (state.ports || []).filter(p => p.name === st.port);
     const lim = ports.length ? (ports[0].limits || {}) : {};
     for (const k of Object.keys(st.params || {})) {
       const spec = lim[k] ? lim[k].spec : "";
-      put(k + (spec ? "  " + spec : ""),
-          text(() => st.params[k], v => { st.params[k] = v; checkPlan(); }));
+      put(paramCN(k) + (spec ? "  " + spec : ""),
+          text(() => st.params[k], v => { st.params[k] = v; checkPlan(); }), k);
     }
   }
-  if (st.type === "PtRun")  { put("target", text(() => st.target, v => st.target = v)); }
-  if (st.type === "PtRaw")  { put("command", text(() => st.command, v => st.command = v)); }
-  if (st.type === "Tool")   { put("tool_name", text(() => st.tool_name, v => st.tool_name = v)); }
-  if (st.type === "UserConfirm") { put("prompt", text(() => st.prompt, v => st.prompt = v)); }
-  if (st.type === "ReadSN") { put("source", text(() => st.source, v => st.source = v)); }
-  if (st.type === "PushResult") { put("sink", text(() => st.sink, v => st.sink = v)); }
+  if (st.type === "PtRun")  { pf("target", text(() => st.target, v => st.target = v)); }
+  if (st.type === "PtRaw")  { pf("command", text(() => st.command, v => st.command = v)); }
+  if (st.type === "Tool")   { pf("tool_name", text(() => st.tool_name, v => st.tool_name = v)); }
+  if (st.type === "UserConfirm") { pf("prompt", text(() => st.prompt, v => st.prompt = v)); }
+  if (st.type === "ReadSN") { pf("source", text(() => st.source, v => st.source = v)); }
+  if (st.type === "PushResult") { pf("sink", text(() => st.sink, v => st.sink = v)); }
 
   /* 判据只读。放宽一个限值就是让不合格的板子通过，所以屏幕上没有任何
      可编辑的限值 —— 换限值的唯一办法是换一份具名方案文件
      （DECISIONS.md 第 30 条，第 34 条又重申了一遍）。 */
   if ((st.checks || []).length) {
     g.appendChild(el("div", "pgroup", "判据（只读）"));
-    // 判据这几行是只读展示，不是文件编辑框，所以印中文；上面那些能改的格子
-    // 印的还是文件里的原词，改的就是那个文件。
+    // 这几行和上面能改的格子一样印中文，原词都在 title 上。差别只在这几行
+    // 根本不能改 —— 理由见下面那条说明。
     st.checks.forEach(c => {
       const parts = [];
       if (c.op !== undefined) parts.push(c.op);
@@ -3157,18 +3215,19 @@ function renderStepProps() {
   g.appendChild(el("div", "pgroup", "杂项（每个步骤都有）"));
   const cond = el("select");
   ["PASS", "FAIL", "ALWAYS"].forEach(o => {
-    const opt = el("option", null, o);
-    opt.value = o;
+    const opt = el("option", null, EXECCOND_CN[o] || o);
+    opt.value = o;             // 写回文件的仍然是 PASS / FAIL / ALWAYS
+    opt.title = "文件里的写法：" + o;
     if ((st.execute_condition || "PASS") === o) opt.selected = true;
     cond.appendChild(opt);
   });
   cond.onchange = () => st.execute_condition = cond.value;
-  put("execute_condition", cond);
-  put("retry_count", num(() => st.retry_count, v => st.retry_count = v));
-  put("retry_interval_ms", num(() => st.retry_interval_ms, v => st.retry_interval_ms = v));
-  put("sleep_before_ms", num(() => st.sleep_before_ms, v => st.sleep_before_ms = v));
-  put("sleep_after_ms", num(() => st.sleep_after_ms, v => st.sleep_after_ms = v));
-  put("timeout_ms", num(() => st.timeout_ms, v => st.timeout_ms = v));
+  pf("execute_condition", cond);
+  pf("retry_count", num(() => st.retry_count, v => st.retry_count = v));
+  pf("retry_interval_ms", num(() => st.retry_interval_ms, v => st.retry_interval_ms = v));
+  pf("sleep_before_ms", num(() => st.sleep_before_ms, v => st.sleep_before_ms = v));
+  pf("sleep_after_ms", num(() => st.sleep_after_ms, v => st.sleep_after_ms = v));
+  pf("timeout_ms", num(() => st.timeout_ms, v => st.timeout_ms = v));
 
   card.appendChild(g);
   if (st._note) { card.appendChild(el("div", "sub", st._note)); }

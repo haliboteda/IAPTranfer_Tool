@@ -508,6 +508,37 @@ def check_nothing_in_english(page):
     check(not bad, "no card prints a protocol word at a person",
           "; ".join("%s on %s" % (w, ",".join(ps)) for w, ps in sorted(bad.items())))
 
+    # The plan tab prints the keys of a JSON file, so it is where English
+    # survives longest - the port cards at least pass through PARAM_CN first.
+    # Labels are translated and the file's own spelling moved to the tooltip;
+    # the VALUES stay as the file has them, because these boxes edit that file.
+    page.locator('.tab[data-tab="plan"]').click()
+    page.wait_for_timeout(500)
+    rows = page.locator("#planlist .pf, #planlist .prow, #planlist div")
+    if rows.count():
+        rows.first.click()
+        page.wait_for_timeout(800)
+    steps = page.locator(".plansteps .st")
+    if check(steps.count() > 0, "the plan tab lists the steps",
+             "%d steps" % steps.count()):
+        steps.first.click()
+        page.wait_for_timeout(400)
+        body = page.locator("#planbody").inner_text()
+        leftover = [w for w in ("PtSession", "PtRun", "PtRaw", "UserConfirm",
+                                "execute_condition", "timeout_ms", "retry_count",
+                                "sleep_before_ms", "frames")
+                    if w in body]
+        check(not leftover, "the plan page prints no raw file key at a person",
+              ", ".join(leftover))
+        # The tooltip is the other half: hiding the key entirely would leave
+        # nobody able to work out which line of the JSON a box edits.
+        tip = page.locator("#planbody .k[title]").first
+        check(tip.count() and "文件里的写法" in (tip.get_attribute("title") or ""),
+              "and still says, on hover, what the file calls it",
+              tip.get_attribute("title") or "")
+    page.locator('.tab[data-tab="manual"]').click()
+    page.wait_for_timeout(300)
+
 
 def check_run_one_target(page):
     """The 「单独跑」 button next to a single pt.run target.
