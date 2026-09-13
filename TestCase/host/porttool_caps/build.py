@@ -151,6 +151,7 @@ def main():
         str(PORTTOOL / "porttool_handover.c"),
         str(PORTTOOL / "porttool_run.c"),
         str(PORTTOOL / "porttool_sd.c"),
+        str(PORTTOOL / "porttool_sdram.c"),
         str(HARNESS / ("sim_main.c" if sim else "test_main.c")),  # #includes porttool.c
         "-o", str(binary),
     ]
@@ -399,30 +400,30 @@ def main():
         if cmd == "pt.handover":
             listed = [l.split("=", 1)[1].split()[0] for l in body
                       if l.startswith("OK handover=")]
-    # A target can be reached from caps two ways: as a handover port of its
-    # own, or listed on the row the hardware already has - rs485's session,
-    # sdram's kind=run row. One piece of hardware gets one card.
+    # *** No handover target reaches the panel at all. *** Every one of them
+    # takes the command loop away and prints prose until somebody resets the
+    # board, so nothing on the PC can read a result out of one; production
+    # drives sessions and pt.run targets instead (DECISIONS.md 38, 40). They
+    # remain bench tools, reachable by typing the command.
     grouped = []
     for _, d, _ in handovers + sessions + runs:
         if d.get("targets"):
             grouped.extend(d["targets"].split(","))
 
-    # Deliberately reachable only by typing the command. Entering it takes the
-    # command loop away, so a button for it would be a button that kills the
-    # panel. Named here rather than loosening the check, so any OTHER target
-    # going missing still fails.
-    off_panel = {"rs232"}
+    print("  pt.handover lists %d targets; caps offers %d" %
+          (len(listed), len(grouped)))
+    check(not grouped,
+          "no handover target is offered in caps", str(sorted(set(grouped))))
+    check(not handovers,
+          "no caps row is kind=handover any more",
+          str([d.get("port") for _, d, _ in handovers]))
 
-    print("  pt.handover lists %d targets; caps offers %d, %d kept off the panel" %
-          (len(listed), len(grouped), len(off_panel)))
-    check(sorted(listed) == sorted(set(grouped) | off_panel),
-          "every handover target is either offered in caps or deliberately not",
-          "only in list: %s / only in caps: %s" %
-          (sorted(set(listed) - set(grouped) - off_panel),
-           sorted(set(grouped) - set(listed))))
-    check(not (set(grouped) & off_panel),
-          "the targets kept off the panel really are absent from caps",
-          str(sorted(set(grouped) & off_panel)))
+    # Hidden from the panel, NOT removed from the firmware. Typing the command
+    # is a deliberate act; pressing a button is not - which is the whole reason
+    # these were hidden rather than deleted (DECISIONS.md 17).
+    check(len(listed) == 14,
+          "pt.handover still lists all fourteen for the bench",
+          "%d: %s" % (len(listed), sorted(listed)))
 
     # ------------------------------------------------------------- lifecycle
     Section("session lifecycle")
@@ -769,6 +770,41 @@ def main():
           "an unsupported baud rate is refused",
           reply_first("pt.start rs485 baud=12345"))
 
+    def ok_line(body):
+        """The OK line out of a body the check's own prose shares."""
+        oks = [l for l in body if l.startswith("OK ")]
+        return oks[0] if oks else "(no OK line)"
+
+    # pt.run rs485.pins, three times in this order: while the session owns the
+    # pins, with nothing running, and with PD4 wedged low. All three replies
+    # are needed - a check only ever seen passing proves nothing about what it
+    # would do when the board is actually broken.
+    pins = [ok_line(b) for c, b in sections if c == "pt.run rs485.pins" and b]
+    check(len(pins) == 3,
+          "pt.run rs485.pins answered all three times", "got %d" % len(pins))
+    if len(pins) == 3:
+        busy, healthy, stuck = (dict(parse_kv(l)) for l in pins)
+
+        # pt.run leaves sessions alone, so the only honest move here is to
+        # decline: re-muxing PD4 under a live session would break it and the
+        # session would go on reporting misses as if the pair were at fault.
+        check(busy.get("checked") == "0" and busy.get("busy") == "1",
+              "declined while the rs485 session holds the pins", pins[0])
+
+        check(healthy.get("follows") == "1" and healthy.get("dir_high") == "1"
+              and healthy.get("tx_high") == "1"
+              and healthy.get("dir_low") == "0" and healthy.get("tx_low") == "0",
+              "both pins read back what was written to them", pins[1])
+
+        # The point of the whole target. A direction pin that cannot go high
+        # means the transceiver can never transmit, and that has to be
+        # distinguishable from "nobody on the far end".
+        check(stuck.get("follows") == "0" and stuck.get("dir_high") == "0",
+              "a pin that will not follow is reported as such, and named",
+              pins[2])
+        check(stuck.get("tx_high") == "1",
+              "the pin that still works is not dragged down with it", pins[2])
+
     # rs232 is the one port whose control-port round trip IS the link test.
     got = reply_first("pt.echo rs232 1")
     check(got.startswith("OK "),
@@ -865,7 +901,7 @@ def main():
         ("pt.start din ch=1,9", "start refused"),
         ("pt.start din period=abc", "start refused"),
         ("pt.start dinn", "no such port"),
-        ("pt.set sdram ch=1", "no such port"),
+        ("pt.set rtc ch=1", "no such port"),
         ("pt.foo", "unknown command"),
     ):
         body = [b for c, b in sections if c == cmd]
@@ -915,9 +951,36 @@ def main():
                   "%s: ready=%s" % (label, want_ready), str(f.get("ready")))
             check(f.get("size") == str(0x04000000),
                   "%s: reports the window size in bytes" % label, str(f.get("size")))
+
             # No verdict anywhere in the reply - DECISIONS.md 22.
             check("PASS" not in oks[0] and "FAIL" not in oks[0],
                   "%s: the reply carries measurements, not a verdict" % label, oks[0])
+
+    # sdram.crc, three windows: the default, one the plan named, and one that
+    # runs off the end of the array.
+    crcs = [ok_line(b) for c, b in sections
+            if c.startswith("pt.run sdram.crc") and b]
+    check(len(crcs) == 3, "pt.run sdram.crc answered all three times",
+          "got %d" % len(crcs))
+    if len(crcs) == 3:
+        whole, window, past_end = (dict(parse_kv(l)) for l in crcs)
+
+        check(whole.get("offset") == "0" and whole.get("bytes") == "67108864",
+              "no window given means the whole array", crcs[0])
+        check(window.get("offset") == "1024" and window.get("bytes") == "4096",
+              "the plan's window is what gets summed, and is said back",
+              crcs[1])
+
+        # An offset past the mapping wraps on this part, so a CRC taken there
+        # would be a number that looks like an answer and is not one.
+        check(past_end.get("offset") == "0",
+              "an offset past the end of the array is pulled back inside",
+              crcs[2])
+        check(past_end.get("bytes") == "67108864",
+              "a length past the end is clamped, not wrapped", crcs[2])
+
+        check(window.get("crc") != whole.get("crc"),
+              "a different window gives a different CRC", crcs[1])
 
     check(reply_to("pt.run nosuch").startswith("ERR "),
           "an unknown run target is refused", reply_to("pt.run nosuch"))
@@ -1083,15 +1146,16 @@ def main():
     check(can_shape.get("loop") == "link",
           "can's loop travels over the CAN pair, so its counter is a verdict",
           str(can_shape.get("loop")))
-    check(can_shape.get("targets", "").count(",") == 3,
-          "the four deep CAN entries ride on the session row",
+    check(can_shape.get("targets") is None,
+          "the deep CAN entries no longer ride on the session row",
           str(can_shape.get("targets")))
 
     can_frames = [l for _, body in sections for l in body if l.startswith("!can ")]
     check(can_frames, "can produced frames")
     if can_frames:
         f = dict(parse_kv(can_frames[0]))
-        for field in ("bps", "mode", "alive", "tx", "rx_frames", "junk", "tec", "rec"):
+        for field in ("bps", "mode", "alive", "tx", "rx_frames", "junk",
+                      "replied", "tec", "rec"):
             check(field in f, "the can frame reports %s" % field, can_frames[0])
         check(f.get("bps") == "250000",
               "the frame reports the rate that was asked for", str(f.get("bps")))
@@ -1116,10 +1180,43 @@ def main():
         check(listened[0].endswith("=0"),
               "listen mode transmitted nothing at all", listened[0])
 
+    # mode=echo. Three separate things have to hold, and each one fails a
+    # different way: a responder that originates would put traffic on a bus
+    # somebody else is measuring; one that answers on the wrong identifier or
+    # length is invisible to the node waiting for it; one that returns the
+    # payload unchanged cannot be told apart from an unplugged transceiver
+    # handing the sender its own frame back.
+    idle = [l for _, body in sections for l in body
+            if l.startswith("TEST can_echo_idle_sent=")]
+    if idle:
+        check(idle[0].endswith("=0"),
+              "echo mode originates nothing on its own", idle[0])
+
+    echoed = [l for _, body in sections for l in body
+              if l.startswith("TEST can_echo_sent=")]
+    if echoed:
+        d = dict(parse_kv(echoed[0]))
+        check(d.get("can_echo_sent") == "1",
+              "one frame arrived and exactly one answer went out", echoed[0])
+        check(d.get("id") == "123" and d.get("len") == "4",
+              "the answer went back on the same identifier and length",
+              echoed[0])
+        check(d.get("payload") == "42",
+              "the answer carries the payload incremented, not the payload",
+              echoed[0])
+
+    can_echo_frames = [dict(parse_kv(l)) for l in can_frames
+                       if " mode=echo " in l]
+    check(can_echo_frames, "echo mode produced frames")
+    if can_echo_frames:
+        check(can_echo_frames[-1].get("replied") == "1",
+              "the frame reports replied=, which is the verdict in echo mode",
+              str(can_echo_frames[-1]))
+
     for cmd, why in (("pt.set can baud=500000", "when the controller opens"),
                      ("pt.set can mode=listen", "when the controller opens"),
                      ("pt.start can baud=999", "must be one of"),
-                     ("pt.start can mode=sideways", "must be normal, listen, loopback or extloop"),
+                     ("pt.start can mode=sideways", "must be normal, listen, loopback, extloop or echo"),
                      ("pt.start relay period=100", "rated 3e4 operations")):
         got = reply_to(cmd)
         check(got.startswith("ERR ") and why in got, "refused: %s" % cmd, got)

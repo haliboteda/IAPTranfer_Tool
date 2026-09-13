@@ -139,8 +139,11 @@ func TestPanelBuildsItselfFromWhatTheBoardReports(t *testing.T) {
 	if can["kind"] != "session" {
 		t.Errorf("can kind = %v, want session", can["kind"])
 	}
-	if tg, _ := can["targets"].([]any); len(tg) != 4 {
-		t.Errorf("can targets = %v, want the four deep entries", tg)
+	// No deep entries ride along any more: they left caps on 2026-09-13, so a
+	// panel built from what the board reports has no button that would take
+	// the board away (DECISIONS.md 40).
+	if tg, _ := can["targets"].([]any); len(tg) != 0 {
+		t.Errorf("can targets = %v, want none", tg)
 	}
 }
 

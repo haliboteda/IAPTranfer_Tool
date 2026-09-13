@@ -953,7 +953,7 @@ func TestStation6PlanRuns(t *testing.T) {
 	}
 
 	caps := []string{
-		"OK porttool=0.10.0 ports=16 lines=30",
+		"OK porttool=0.10.0 ports=16 lines=32",
 		"OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0",
 		"OK vals=din ch=1,2,3,4,5,6,7,8 period=200",
 		"OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0",
@@ -968,13 +968,18 @@ func TestStation6PlanRuns(t *testing.T) {
 		"OK vals=aout ch=1 mv=1:0 period=500",
 		"OK port=rs232 board=upper kind=session blk=C term=C05,C06 channels=1 loop=self params=period running=0",
 		"OK vals=rs232 period=3000",
-		"OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0",
+		"OK port=rs485 board=upper kind=session blk=C term=C10,C11 channels=1 loop=link params=baud,period running=0 runs=rs485.pins",
 		"OK vals=rs485 baud=115200 period=3000",
 		"OK port=can board=upper kind=session blk=C term=C07,C08 channels=1 loop=link params=baud,mode,period running=0",
 		"OK vals=can baud=500000 mode=extloop period=1000",
 		"OK port=knx board=upper kind=session blk=C term=C03,C04 channels=1 loop=link params=mode,period running=0",
 		"OK vals=knx mode=loopback period=1000",
-		"OK port=sdram board=bridge kind=run blk=- term=U6 channels=1 loop=none runs=sdram.probe,sdram.sweep,sdram.retention",
+		// sdram became a session on 2026-09-13: retention only means anything
+		// over a long run, so the waiting moved onto the PC's clock instead of
+		// blocking the board (DECISIONS.md 40). Its one-shots ride on that row.
+		"OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc",
+		"OK vals=sdram wait=5000 period=1000",
+		"OK limits=sdram wait:1000.. period:50..",
 		"OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed",
 		"OK vals=sd period=500",
 		"OK limits=sd period:50..",
@@ -1002,6 +1007,17 @@ func TestStation6PlanRuns(t *testing.T) {
 				"SDRAM_TEST: full sweep 0x00 OK (write 7100ms, verify 5400ms)",
 				"OK sdram.sweep ready=1 patterns=4 words_each=16777216 mismatches=0 " +
 					"first_bad=0x00000000 bad_pattern=0x00000000 write_ms=28400 verify_ms=21600",
+			}, nil
+		// Added with the targets themselves, 2026-09-13. This board is hand
+		// written: a target the plan names and this switch does not answer is
+		// reported as "unexpected", not as a board that said nothing.
+		case cmd == "pt.run rs485.pins":
+			return []string{
+				"OK rs485.pins checked=1 busy=0 dir_low=0 tx_low=0 dir_high=1 tx_high=1 follows=1",
+			}, nil
+		case cmd == "pt.run sdram.crc bytes=65536 offset=0":
+			return []string{
+				"OK sdram.crc ready=1 offset=0 bytes=65536 crc=0x1A2B3C4D",
 			}, nil
 		case cmd == "pt.run sdram.retention":
 			return []string{
@@ -1097,6 +1113,18 @@ func TestStation6PlanRuns(t *testing.T) {
 			}
 		// 手写假板子，加端口/加步骤都要跟一次。sd 2026-09-10 变成会话之后
 		// station6 多了 sd-detect 这一步。
+		// wait=1000 is the floor: cells hold for tens of milliseconds without
+		// refresh, so a second already proves refresh is running, and cycles
+		// has to reach 1 or "failed=0" would be a step that never ran.
+		case cmd == "pt.start sdram period=500 wait=1000":
+			return []string{"OK started sdram"}, []string{
+				"!sdram t=1 seq=1 rx=0 miss=0 ready=1 phase=wait cycles=0 checked=64 failed=0 first_bad=0x00000000 wait_ms=1000 seed=0x11111111",
+				"!sdram t=2 seq=2 rx=1 miss=0 ready=1 phase=verify cycles=0 checked=64 failed=0 first_bad=0x00000000 wait_ms=1000 seed=0x11111111",
+				"!sdram t=3 seq=3 rx=2 miss=0 ready=1 phase=write cycles=1 checked=64 failed=0 first_bad=0x00000000 wait_ms=1000 seed=0x22222222",
+				"!sdram t=4 seq=4 rx=3 miss=0 ready=1 phase=wait cycles=1 checked=64 failed=0 first_bad=0x00000000 wait_ms=1000 seed=0x22222222",
+				"!sdram t=5 seq=5 rx=4 miss=0 ready=1 phase=verify cycles=1 checked=64 failed=0 first_bad=0x00000000 wait_ms=1000 seed=0x22222222",
+				"!sdram t=6 seq=6 rx=5 miss=0 ready=1 phase=write cycles=2 checked=64 failed=0 first_bad=0x00000000 wait_ms=1000 seed=0x33333333",
+			}
 		case cmd == "pt.start sd period=300":
 			return []string{"OK sd started"}, []string{
 				"!sd t=1 seq=1 rx=0 miss=0 detected=1 changes=0 in=0 out=0",

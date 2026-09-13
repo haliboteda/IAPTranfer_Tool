@@ -26,6 +26,12 @@ uint32_t test_can_mode;
 uint32_t test_can_sent;          /* how many frames the session handed over */
 uint32_t test_can_tec, test_can_rec;
 
+/* The last frame handed to PortCan_Send, so mode=echo can be checked on what
+ * it actually put back on the wire and not only on how many times it did. */
+uint32_t test_can_last_id;
+uint8_t  test_can_last_data[8];
+uint8_t  test_can_last_len;
+
 /* One frame of loopback, which is all a tick ever needs. */
 static uint8_t  q_data[8];
 static uint8_t  q_len;
@@ -90,10 +96,24 @@ void PortCan_Close(void)
     q_full = 0;
 }
 
+/* Puts one frame where PortCan_Receive will find it, without anything having
+ * been sent first. mode=echo originates nothing, so loopback cannot drive it -
+ * the responder needs a frame that arrives from somewhere else. */
+void test_can_inject(uint32_t id, const uint8_t *data, uint8_t len)
+{
+    q_id = id;
+    q_len = len;
+    memcpy(q_data, data, (len > 8u) ? 8u : len);
+    q_full = 1;
+}
+
 int PortCan_Send(uint32_t id, const uint8_t *data, uint8_t len)
 {
     if (!s_open) { return 0; }
     test_can_sent++;
+    test_can_last_id = id;
+    test_can_last_len = len;
+    memcpy(test_can_last_data, data, (len > 8u) ? 8u : len);
     if (test_can_loopback) {
         q_id = id;
         q_len = len;

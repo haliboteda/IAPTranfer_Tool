@@ -1164,11 +1164,17 @@ def run_checks(page, com):
         # rs232 got criteria on 2026-09-08 after this sweep found it had none.
         "rs232": ("pass", None),
         "aout":  ("pass", None),        # judged on the DAC value, not current
-        # One-way handovers. They print prose for a person and take the board
-        # with them, so the page offers no button and says 人工判 rather than
-        # 未测 - "nobody can judge this from here" is not "nobody has yet".
-        "pwm":     ("manual", None),
-        "bringup": ("manual", None),
+        # *** pwm and bringup used to sit here as ("manual", None). *** They
+        # left pt.caps on 2026-09-13, so the page has no row for them at all
+        # (DECISIONS.md 40) and there is nothing left to expect. The "manual"
+        # branch below stays: it is what any future row with no judgeable
+        # reading has to look like, and it is cheaper to keep than to rebuild.
+        #
+        # sdram became a session the same day, and station 6 gained the step
+        # that judges it (sdram-refresh) in the same change - without one the
+        # panel reports the port unjudged forever, which is the hole eth and sd
+        # both fell into.
+        "sdram": ("pass", None),
     }
 
     if com.strip().lower() == "sim":
@@ -1295,8 +1301,22 @@ def run_checks(page, com):
     page.locator("#pause").click()
     check(page.locator("#paused").is_visible(),
           "pausing the log says so - it pauses drawing, not reading")
+
+    # *** Timed, because the way this broke was invisible. *** Resuming
+    # rebuilds the whole pane, and the first version of that did it by calling
+    # appendLine in a loop - which reads scrollHeight after every insert and so
+    # forces a synchronous layout per line. Measured 21.7 s for 4000 lines on
+    # 2026-09-13; the page is frozen for all of it, and what the browser test
+    # reported was a click that timed out, which says nothing about why. The
+    # bound is loose on purpose: this is here to catch a return to per-line
+    # layout, not to police milliseconds.
+    t0 = time.time()
     page.locator("#pause").click()
     check(not page.locator("#paused").is_visible(), "resuming clears that")
+    resume_ms = (time.time() - t0) * 1000
+    check(resume_ms < 3000,
+          "resuming the log redraws in one go, not a layout per line",
+          "took %.0f ms - see redrawLog()" % resume_ms)
 
     page.locator("#clear").click()
     check(page.locator("#log").inner_text().strip() == "" or True,

@@ -387,20 +387,42 @@ function addLog(kind, line, at) {
   if (paused) { pausedCount++; $("#paused").textContent = "已暂停，攒了 " + pausedCount + " 行"; return; }
   appendLine(logBuf[logBuf.length-1]);
 }
+function logNode(e) {
+  const n = el("span", "l " + e.kind);
+  n.appendChild(el("span", "ts", e.at + "  "));
+  n.appendChild(document.createTextNode(e.line));
+  return n;
+}
+
+// One line, appended live. Reading scrollTop/scrollHeight here is what keeps
+// the view stuck to the bottom only while the person is already at the bottom.
 function appendLine(e) {
   if (!filters.has(e.kind)) return;
   const box = $("#log");
   const stick = box.scrollTop + box.clientHeight >= box.scrollHeight - 30;
-  const n = el("span", "l " + e.kind);
-  n.appendChild(el("span", "ts", e.at + "  "));
-  n.appendChild(document.createTextNode(e.line));
-  box.appendChild(n);
+  box.appendChild(logNode(e));
   while (box.childElementCount > 4000) box.removeChild(box.firstChild);
   if (stick) box.scrollTop = box.scrollHeight;
 }
+
+// *** The whole pane at once, and NOT by calling appendLine in a loop. ***
+// Reading scrollHeight right after inserting a node forces a synchronous
+// layout; doing that four thousand times over a growing tree took **21.7 s**
+// measured here on 2026-09-13, and the page is frozen for every one of them.
+// Building into a fragment touches layout once.
+//
+// This is the path 继续 (resume) takes, so before the fix, resuming a paused
+// log after a full port sweep looked exactly like the panel hanging - which is
+// how it was found: the browser test's click on 继续 timed out.
 function redrawLog() {
-  const box = $("#log"); box.textContent = "";
-  for (const e of logBuf.slice(-4000)) appendLine(e);
+  const box = $("#log");
+  const frag = document.createDocumentFragment();
+  for (const e of logBuf.slice(-4000)) {
+    if (!filters.has(e.kind)) { continue; }
+    frag.appendChild(logNode(e));
+  }
+  box.textContent = "";
+  box.appendChild(frag);
   box.scrollTop = box.scrollHeight;
 }
 function nowStamp() {
@@ -1171,10 +1193,17 @@ function curVerdict(port) {
 let planParams = {};      // port -> {params, frames} | null when not in the plan
 let planPending = {};
 
+// pt.run 目标 -> 方案给它的参数。**一定要发出去** —— 判据是照着某一个窗口写的
+// （`sdram.crc` 只算 64 KiB），不带参数跑出来的是固件的默认值，再拿另一套限值去
+// 判它，好板子也会报失败。命令行一直是带着参数发的，页面以前没带，于是同一条方案
+// 步骤两边得出不同结论。2026-09-13 修。
+let planRunArgs = {};
+
 function ensurePortPlan(name) {
   if (planParams[name] !== undefined || planPending[name]) { return; }
   planPending[name] = true;
   api("/api/portplan?port=" + encodeURIComponent(name)).then(pp => {
+    Object.assign(planRunArgs, (pp && pp.runs) || {});
     planParams[name] = (pp && pp.known)
       ? {params: pp.params || {}, frames: pp.frames || 3, step: pp.step}
       : null;
@@ -2803,7 +2832,10 @@ function startRow(p, cmdFor) {
 // Runs one pt.run target and judges the reply it comes back with.
 // Returns {state, note}: state is true, false, or null for "no criteria".
 async function runOne(p, target) {
-  const j = await run("pt.run " + target);
+  const args = planRunArgs[target] || {};
+  let cmd = "pt.run " + target;
+  for (const [k, v] of Object.entries(args)) { cmd += " " + k + "=" + v; }
+  const j = await run(cmd);
   const line = ((j && j.lines) || []).find(l => l.startsWith("OK " + target));
   let state;
   if (!line) {

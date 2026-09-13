@@ -62,20 +62,25 @@ func TestParseGoldenCaps(t *testing.T) {
 	// ports= disagrees with the rows that followed. What matters is that the
 	// ports the panel is built around are all present and typed correctly.
 	// rs485, rs232 and now can are sessions, not handover ports: their
-	// hardware got a session, and one piece of hardware gets one row. Their
-	// deep bring-up entries ride on that row as targets=.
-	wantSessions := []string{"din", "dout", "relay", "ain", "aout", "temp",
-		"rs232", "rs485", "can", "knx", "sd"}
-	wantHandovers := []string{"bringup", "pwm"}
-	// sdram is here because its checks are pt.run targets: the chip's one-shot
-	// checks and its one-way soak entries are the same hardware, so they share
-	// a row and it is the run row that anchors it.
+	// hardware got a session, and one piece of hardware gets one row.
 	//
-	// sd left this list on 2026-09-10. Its detect switch is polled by a
-	// session now, so an insertion shows on the panel as it happens; the four
-	// deep checks stay pt.run targets and ride on the session's row as runs=.
-	// Same shape eth has - one piece of hardware, one row.
-	wantRuns := []string{"sdram", "rtc", "led"}
+	// sdram joined this list on 2026-09-13: retention only means anything over
+	// a long run, and a long run has to be judged by the PC, so it became a
+	// session that waits on its own clock instead of a one-way entry that
+	// blocks (DECISIONS.md 38, 40). Its one-shot checks ride on that row as
+	// runs=, the shape sd and eth already have.
+	wantSessions := []string{"din", "dout", "relay", "ain", "aout", "temp",
+		"rs232", "rs485", "can", "knx", "sd", "sdram"}
+	// *** Empty on purpose. *** Every handover entry left pt.caps on
+	// 2026-09-13: they take the board and print prose, so the panel offers
+	// none of them and production drives sessions and pt.run targets instead.
+	// The entries are still in the firmware, reachable by typing the command -
+	// see TestGoldenHandoverGrouping.
+	wantHandovers := []string{}
+	// sd left this list on 2026-09-10 and sdram on 2026-09-13, both for the
+	// same reason: the hardware got a session, and one piece of hardware gets
+	// one row, so the one-shot checks became runs= on that row.
+	wantRuns := []string{"rtc", "led"}
 
 	for _, name := range wantSessions {
 		p, ok := caps.Port(name)
@@ -116,8 +121,10 @@ func TestParseGoldenCaps(t *testing.T) {
 	if !slices.Contains(sd.Runs, "sd.stress") {
 		t.Errorf("sd runs = %v, want sd.stress among them", sd.Runs)
 	}
-	if !slices.Contains(sd.Targets, "sd.integrity.soak") {
-		t.Errorf("sd targets = %v, want the one-way entry alongside", sd.Targets)
+	// And no one-way entry rides along any more: sd.integrity.soak is still in
+	// the firmware, but a panel built from caps must not offer it.
+	if len(sd.Targets) != 0 {
+		t.Errorf("sd targets = %v, want none - handover entries left caps", sd.Targets)
 	}
 }
 
@@ -181,9 +188,9 @@ func TestGoldenHandoverGrouping(t *testing.T) {
 	if !ok {
 		t.Fatal("no can port")
 	}
-	want := []string{"can", "can.soak", "can.scope", "can.echo"}
-	if !equal(can.Targets, want) {
-		t.Errorf("can targets = %v, want %v", can.Targets, want)
+	if len(can.Targets) != 0 {
+		t.Errorf("can targets = %v, want none - handover entries left caps",
+			can.Targets)
 	}
 	if can.Loop != ptproto.LoopLink {
 		t.Errorf("can loop = %s, want link", can.Loop)
@@ -201,29 +208,22 @@ func TestGoldenHandoverGrouping(t *testing.T) {
 	if len(listed) != 14 {
 		t.Fatalf("pt.handover listed %d targets, want 14", len(listed))
 	}
-	// A target is reachable from caps either as a handover port or on the
-	// session row of the same hardware - rs485 has both a session and a deep
-	// entry, and the panel shows them on one card.
+	// *** And none of them is reachable from caps. *** Entering any one takes
+	// the command loop away and prints prose until the board is reset, so no
+	// panel built from caps may offer a button for it; production drives
+	// sessions and pt.run targets, which report numbers a PC can judge
+	// (DECISIONS.md 38, 40). The firmware keeps them for the bench, which is
+	// why the count above still has to be 14.
 	seen := map[string]int{}
 	for _, p := range caps.Ports {
 		for _, tg := range p.Targets {
 			seen[tg]++
 		}
 	}
-	// Deliberately absent: entering it takes the command loop away, so a
-	// button for it would be a button that kills the panel. Named here so any
-	// OTHER target going missing still fails.
-	offPanel := map[string]bool{"rs232": true}
-
 	for name := range listed {
-		if offPanel[name] {
-			if seen[name] != 0 {
-				t.Errorf("%s is meant to be off the panel but caps offers it", name)
-			}
-			continue
-		}
-		if seen[name] != 1 {
-			t.Errorf("target %s appears in %d caps groups, want exactly 1", name, seen[name])
+		if seen[name] != 0 {
+			t.Errorf("handover target %s is offered in %d caps rows, want none",
+				name, seen[name])
 		}
 	}
 	for name := range seen {

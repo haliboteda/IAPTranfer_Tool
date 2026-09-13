@@ -297,3 +297,67 @@ int SDRAM_Test_RetentionOnce(sdram_retention_t *out)
     }
     return 1;
 }
+
+/* The two halves of a retention cycle, for the session that waits between
+ * them on its own clock. The harness has no 64 MiB array to write into, so
+ * what it stands in for is the bookkeeping the session builds its frame from -
+ * and test_sdram_retention_failed drives the verify half, which is how the
+ * "failed is summed over the whole run, not just the last cycle" behaviour
+ * gets to be seen failing rather than only passing. */
+int test_sdram_retention_write_count = 0;
+int test_sdram_retention_verify_count = 0;
+
+void SDRAM_Test_RetentionWrite(uint32_t *rng_state, sdram_retention_t *out)
+{
+    test_sdram_retention_write_count++;
+
+    if (*rng_state == 0u) { *rng_state = 1u; }
+    *rng_state ^= *rng_state << 13;
+
+    out->seed = *rng_state;
+    out->checked = 64u;
+    out->failed = 0u;
+    out->first_bad_addr = 0u;
+    out->wait_ms = 5000u;
+    out->ready = (uint8_t)(test_sdram_ready ? 1 : 0);
+}
+
+void SDRAM_Test_RetentionVerify(sdram_retention_t *out)
+{
+    test_sdram_retention_verify_count++;
+
+    out->failed = (uint32_t)test_sdram_retention_failed;
+    out->first_bad_addr = (out->failed > 0u) ? 0xC0A0B000UL : 0u;
+}
+
+/* The clamping is the part worth standing in for. The real one sums bytes out
+ * of a 64 MiB mapping, which the harness has no business allocating; what a
+ * contract test can check is that a window the plan asked for came back
+ * described - and that a window running off the end was pulled back inside
+ * rather than wrapping into a CRC that looks like an answer. */
+int test_sdram_crc_count = 0;
+
+int SDRAM_Test_Crc32Once(uint32_t offset, uint32_t length, sdram_crc_t *out)
+{
+    const uint32_t size = 0x04000000UL;
+
+    test_sdram_crc_count++;
+    printf("SDRAM_TEST: crc window (stub)\r\n");
+
+    memset(out, 0, sizeof(*out));
+
+    if (offset >= size) { offset = 0u; }
+    if (length == 0u || length > (size - offset)) { length = size - offset; }
+
+    out->offset = offset;
+    out->length = length;
+    out->ready = (uint8_t)(test_sdram_ready ? 1 : 0);
+    if (!test_sdram_ready) {
+        return 0;
+    }
+
+    /* Derived from the window rather than fixed, so a test that asked for two
+     * different windows and got one number would be caught. */
+    out->crc = 0xC0FFEE00UL ^ offset ^ (length << 1);
+    return 1;
+}

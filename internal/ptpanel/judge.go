@@ -157,6 +157,31 @@ func (s *Server) handlePortPlan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// *** The pt.run targets carry parameters too, and the page has to send
+	// *** them. *** The plan's criteria were written for a particular window -
+	// sdram.crc over 64 KiB, sd.integrity over so many bytes - and a page that
+	// ran the bare target would get the firmware's default instead and judge
+	// it by limits meant for something else. The CLI has always sent them
+	// (ptseq.doRun uses step.ParamArgs); the page did not, which made the two
+	// reach different verdicts from one plan step - exactly what the comment
+	// above this file's criteriaFor says must not happen. Found 2026-09-13,
+	// when sdram.crc became the first run target whose criteria depend on its
+	// arguments.
+	runs := map[string]map[string]string{}
+	for _, st := range plan.Steps {
+		if st.Type != ptplan.TypePtRun || st.Target == "" {
+			continue
+		}
+		if len(st.Params) == 0 {
+			continue
+		}
+		args := map[string]string{}
+		for k, v := range st.Params {
+			args[k] = v
+		}
+		runs[st.Target] = args
+	}
+
 	for _, st := range plan.Steps {
 		if st.Type != ptplan.TypePtSession || st.Port != port {
 			continue
@@ -175,10 +200,13 @@ func (s *Server) handlePortPlan(w http.ResponseWriter, r *http.Request) {
 			"plan":   criteriaPlanName(),
 			"params": params,
 			"frames": frames,
+			"runs":   runs,
 		})
 		return
 	}
-	writeJSON(w, 200, map[string]any{"known": false})
+	// A port with no session step still has run targets that take arguments,
+	// so the answer carries them rather than a bare "unknown".
+	writeJSON(w, 200, map[string]any{"known": false, "runs": runs})
 }
 
 // handleJudge evaluates one port's latest readings against the plan's

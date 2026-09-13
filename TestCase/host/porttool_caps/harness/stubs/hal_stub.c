@@ -136,6 +136,25 @@ int test_led_writes;
 int test_led_high;
 int test_led_configured;
 
+/* One output latch per bank, so a pin reads back what was last written to it -
+ * which is what a healthy push-pull output does, and the whole of what
+ * pt.run rs485.pins checks.
+ *
+ * test_gpio_stuck_low is how a test models the fault that target exists to
+ * find: a pin that will not follow. Without it the check could only ever be
+ * seen passing, and a check that has never been seen failing is not evidence
+ * of anything. */
+uint16_t test_gpio_out[TEST_GPIO_BANKS];
+uint16_t test_gpio_stuck_low[TEST_GPIO_BANKS];
+
+static int gpio_bank(const GPIO_TypeDef *port)
+{
+    for (int i = 0; i < TEST_GPIO_BANKS; i++) {
+        if (port == &test_gpio_banks[i]) { return i; }
+    }
+    return -1;
+}
+
 void HAL_GPIO_Init(GPIO_TypeDef *port, GPIO_InitTypeDef *init)
 {
     if (port == GPIOE && init != NULL && init->Pin == GPIO_PIN_2) {
@@ -145,6 +164,16 @@ void HAL_GPIO_Init(GPIO_TypeDef *port, GPIO_InitTypeDef *init)
 
 void HAL_GPIO_WritePin(GPIO_TypeDef *port, uint16_t pin, GPIO_PinState state)
 {
+    int bank = gpio_bank(port);
+
+    if (bank >= 0) {
+        if (state == GPIO_PIN_SET) {
+            test_gpio_out[bank] |= pin;
+        } else {
+            test_gpio_out[bank] &= (uint16_t)~pin;
+        }
+    }
+
     if (port != GPIOE || pin != GPIO_PIN_2) {
         return;
     }
@@ -152,6 +181,17 @@ void HAL_GPIO_WritePin(GPIO_TypeDef *port, uint16_t pin, GPIO_PinState state)
     if (state == GPIO_PIN_SET) {
         test_led_high++;
     }
+}
+
+GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef *port, uint16_t pin)
+{
+    int bank = gpio_bank(port);
+    uint16_t level;
+
+    if (bank < 0) { return GPIO_PIN_RESET; }
+
+    level = (uint16_t)(test_gpio_out[bank] & ~test_gpio_stuck_low[bank]);
+    return (level & pin) ? GPIO_PIN_SET : GPIO_PIN_RESET;
 }
 
 /* A no-op on purpose: led.blink asks for three seconds of real time, and a

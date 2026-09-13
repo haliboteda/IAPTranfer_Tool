@@ -99,7 +99,8 @@ typedef enum { GPIO_PIN_RESET = 0, GPIO_PIN_SET } GPIO_PinState;
 
 /* Distinct addresses so a mixed-up port is a distinguishable pointer, not a
  * silent alias of another one. */
-extern GPIO_TypeDef test_gpio_banks[11];
+#define TEST_GPIO_BANKS 11
+extern GPIO_TypeDef test_gpio_banks[TEST_GPIO_BANKS];
 #define GPIOA (&test_gpio_banks[0])
 #define GPIOB (&test_gpio_banks[1])
 #define GPIOC (&test_gpio_banks[2])
@@ -138,14 +139,22 @@ typedef struct {
 #define GPIO_NOPULL            0x00u
 #define GPIO_SPEED_FREQ_LOW    0x00u
 #define __HAL_RCC_GPIOE_CLK_ENABLE()  ((void)0)
+#define __HAL_RCC_GPIOD_CLK_ENABLE()  ((void)0)
 
 void HAL_GPIO_Init(GPIO_TypeDef *port, GPIO_InitTypeDef *init);
 void HAL_GPIO_WritePin(GPIO_TypeDef *port, uint16_t pin, GPIO_PinState state);
+GPIO_PinState HAL_GPIO_ReadPin(GPIO_TypeDef *port, uint16_t pin);
 void HAL_Delay(uint32_t ms);
 
 extern int test_led_writes;   /* every WritePin on PE2, high and low alike */
 extern int test_led_high;     /* how many of those drove it high */
 extern int test_led_configured;
+
+/* What each bank's pins were last driven to, and which of them refuse to
+ * follow. Setting a bit in test_gpio_stuck_low models a dead pin, which is the
+ * fault pt.run rs485.pins exists to separate from an unplugged pair. */
+extern uint16_t test_gpio_out[TEST_GPIO_BANKS];
+extern uint16_t test_gpio_stuck_low[TEST_GPIO_BANKS];
 
 /* ---- RCC's backup-domain register -------------------------------------
  *

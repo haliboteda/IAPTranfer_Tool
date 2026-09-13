@@ -49,6 +49,11 @@ extern int      test_can_alive;
 extern uint8_t  test_can_rate;
 extern uint32_t test_can_mode;
 extern uint32_t test_can_sent;
+extern int      test_can_loopback;
+extern uint32_t test_can_last_id;
+extern uint8_t  test_can_last_data[8];
+extern uint8_t  test_can_last_len;
+void test_can_inject(uint32_t id, const uint8_t *data, uint8_t len);
 
 extern int      test_rtc_init_count;
 extern int      test_rtc_calendar_initialised;
@@ -152,10 +157,13 @@ int main(void)
      * commands do not know it. The panel must not offer start/stop for
      * kind=handover.
      *
-     * sdram, not knx: knx became a session on 2026-09-08, and asking a session
-     * this question tests the "not running" path instead - which is a
-     * different rule and already covered elsewhere. */
-    run("pt.set sdram ch=1");
+     * *** Pick a port that cannot graduate into a session. *** This line has
+     * now been rewritten twice for that reason - knx became a session on
+     * 2026-09-08 and sdram on 2026-09-13 - and each time the check silently
+     * started testing the "not running" path instead, which is a different
+     * rule covered elsewhere. rtc is kind=run: one-shot targets and no
+     * session to grow into. */
+    run("pt.set rtc ch=1");
 
     run("pt.foo");
     run("pt.handover");
@@ -176,6 +184,17 @@ int main(void)
     test_sdram_ready = 1;
 
     printf("TEST sdram_probe_count=%d\n", test_sdram_probe_count);
+
+    /* sdram.crc: the window comes from the plan, and the reply has to say
+     * which window it summed - a CRC without its range cannot be compared to
+     * anything on the PC. The third call asks for a window past the end of the
+     * array, which must be pulled back inside rather than wrapping. */
+    run("pt.run sdram.crc");
+    run("pt.run sdram.crc offset=1024 bytes=4096");
+    /* Decimal: PortCmd_GetU32 takes digits only, and a hex offset here would
+     * be rejected and silently leave the offset at 0 - the case would look
+     * like it passed while testing nothing. */
+    run("pt.run sdram.crc offset=2130706432 bytes=999999999");
 
     /* The RTC is not up in this image either, so the target has to bring it up
      * before it can read anything. */
@@ -249,6 +268,26 @@ int main(void)
 
     run("pt.start can baud=999");
     run("pt.start can mode=sideways");
+    run("pt.stop all");
+
+    /* mode=echo: the board answers instead of originating. Loopback is turned
+     * off first, because a real bus does not hand a node its own frame back -
+     * leaving it on would have the responder answering its own reply. */
+    test_can_loopback = 0;
+    test_can_sent = 0;
+    run("pt.start can mode=echo period=100");
+    advance(100);
+    printf("TEST can_echo_idle_sent=%lu\n", (unsigned long)test_can_sent);
+    {
+        static const uint8_t probe[4] = { 0u, 0u, 0u, 41u };
+        test_can_inject(0x123u, probe, 4u);
+    }
+    advance(100);
+    printf("TEST can_echo_sent=%lu id=%lx len=%u payload=%u\n",
+           (unsigned long)test_can_sent, (unsigned long)test_can_last_id,
+           (unsigned)test_can_last_len, (unsigned)test_can_last_data[3]);
+    run("pt.stop can");
+    test_can_loopback = 1;
     run("pt.stop all");
 
     /* ---- ethernet session ------------------------------------------------
@@ -746,7 +785,23 @@ int main(void)
     run("pt.echo rs485 2");
 
     run("pt.start rs485 baud=12345");
+
+    /* pt.run rs485.pins while the session still holds PD4/PD5 as USART2's
+     * alternate function. Re-muxing them here would leave the session running
+     * and blaming the pair, so the target declines instead. */
+    run("pt.run rs485.pins");
     run("pt.stop all");
+
+    /* Now with nothing running: healthy pins follow what is written. */
+    run("pt.run rs485.pins");
+
+    /* And the fault it exists to find. GPIOD is bank 3; PD4 is the direction
+     * pin, so this is a board where the transceiver can never be switched to
+     * transmit - which, without this check, looks exactly like a pair with
+     * nobody on the far end. */
+    test_gpio_stuck_low[3] |= GPIO_PIN_4;
+    run("pt.run rs485.pins");
+    test_gpio_stuck_low[3] &= (uint16_t)~GPIO_PIN_4;
 
     /* ---- RS232: loop=self, the one port whose counter IS the verdict ---- */
     run("pt.start rs232 period=200");
