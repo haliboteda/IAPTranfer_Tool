@@ -19,6 +19,8 @@ import (
 	"time"
 
 	"IAPTool/internal/ptproto"
+
+	"IAPTool/internal/serialx"
 )
 
 // DefaultTimeout is how long to wait for a reply to a command the board
@@ -104,7 +106,11 @@ func New(rw io.ReadWriteCloser, ringCap int) *Board {
 }
 
 func (b *Board) readLoop() {
-	sc := bufio.NewScanner(b.rw)
+	// SteadyReader, not the port directly: an idle port answers with zero
+	// bytes and no error, and a hundred of those make bufio give up on a
+	// board that is simply between replies - which is what "the board stopped
+	// answering" turned out to be.
+	sc := bufio.NewScanner(serialx.SteadyReader{R: b.rw})
 	sc.Buffer(make([]byte, 0, 4096), 64*1024)
 	// The board terminates lines with \r\n; Scanner's line splitter handles
 	// \n and leaves the \r, so it is trimmed below.

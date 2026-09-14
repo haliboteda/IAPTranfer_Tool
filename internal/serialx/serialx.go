@@ -10,6 +10,7 @@ package serialx
 import (
 	"errors"
 	"fmt"
+	"io"
 	"strings"
 	"time"
 
@@ -20,12 +21,23 @@ import (
 // command line, the RS485 terminal, and the USB CDC channel alike.
 const DefaultBaud = 115200
 
+// ReadTimeout bounds one Read on an idle port.
+//
+// Without it a UART driver answers an idle port immediately with zero bytes,
+// and whoever is reading spins. With it the spin becomes one wake-up every
+// tenth of a second, which is far below anything a person or a frame notices.
+const ReadTimeout = 100 * time.Millisecond
+
 // Open opens a port at 8N1.
 func Open(name string, baud int) (serial.Port, error) {
 	port, err := serial.Open(name, &serial.Mode{BaudRate: baud})
 	if err != nil {
 		return nil, err
 	}
+	// Ignoring the error: a port that will not take a read timeout still reads,
+	// and SteadyReader below is what actually makes an idle port safe. Failing
+	// the open over this would turn a working bench into a broken one.
+	_ = port.SetReadTimeout(ReadTimeout)
 	if port == nil {
 		// Not observed, but a nil port with a nil error would surface much
 		// later as a nil dereference in whoever writes to it first.
@@ -94,4 +106,36 @@ func (p PortInfo) Label() string {
 // driver that reports nothing is still a port somebody may need to pick.
 func List() ([]PortInfo, error) {
 	return listPorts()
+}
+
+// SteadyReader hides empty reads from whoever is above it.
+//
+// *** bufio.Scanner gives up after a hundred of them. *** Its error is
+// "multiple Read calls return no data or error" (bufio.ErrNoProgress), and an
+// idle serial port produces exactly that: the driver has nothing, so Read
+// returns (0, nil) as fast as it is asked. The scanner then stops - on a port
+// that is perfectly healthy and merely quiet.
+//
+// *** Both scanners in this program read serial ports. *** The control port
+// showed it as the board "stopping answering" partway through a reply, and the
+// RS485 far end showed it as an adapter that never received a byte while a
+// bare read of the same port at the same baud returned clean data. One cause,
+// two failures that look nothing alike, and both of them intermittent because
+// they depend on how long the port happened to be quiet.
+//
+// Reading again rather than returning is the whole fix: a quiet port is not
+// the end of the stream, and only the port itself can say when it is.
+type SteadyReader struct {
+	R io.Reader
+}
+
+func (s SteadyReader) Read(p []byte) (int, error) {
+	for {
+		n, err := s.R.Read(p)
+		if n > 0 || err != nil {
+			return n, err
+		}
+		// Nothing yet and nothing wrong. The read timeout above is what keeps
+		// this from becoming a busy loop.
+	}
 }
