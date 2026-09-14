@@ -195,13 +195,32 @@ func (s *Server) handlePortPlan(w http.ResponseWriter, r *http.Request) {
 		if frames <= 0 {
 			frames = 3
 		}
+		// What kind of far end this step declares. The page needs it to connect
+		// one by itself: a TCP peer it can open, a serial one it cannot - that
+		// needs somebody to plug an adapter in.
+		peer, peerCom := "", ""
+		if st.Peer != nil {
+			switch {
+			case st.Peer.TCP != "":
+				peer = "tcp"
+			case st.Peer.COM != "":
+				// The plan names the adapter, so the page can bind it without
+				// asking - somebody still has to have plugged it into the
+				// terminal under test, and nothing here can see whether they did.
+				peer, peerCom = "com", st.Peer.COM
+			case st.Peer.USB:
+				peer = "usb"
+			}
+		}
 		writeJSON(w, 200, map[string]any{
-			"known":  true,
-			"step":   st.ID,
-			"plan":   criteriaPlanName(),
-			"params": params,
-			"frames": frames,
-			"runs":   runs,
+			"known":   true,
+			"step":    st.ID,
+			"plan":    criteriaPlanName(),
+			"params":  params,
+			"frames":  frames,
+			"runs":    runs,
+			"peer":    peer,
+			"peerCom": peerCom,
 		})
 		return
 	}
