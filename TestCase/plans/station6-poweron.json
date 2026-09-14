@@ -24,6 +24,26 @@
       ]
     },
     {
+      "id": "reset-cause",
+      "type": "PtRun",
+      "execute_condition": "ALWAYS",
+      "_note": "Why this board came up. *** The cause is NOT judged for what it is, only for what it must not be: *** POR, PIN, SOFT and BOR are all ordinary ways to arrive at a test station and which one happens depends on how the operator powered it, so requiring any particular value would fail good boards. IWDG and WWDG are different - they mean the board hung and its own watchdog restarted it, which at this station is a defect arriving before the test does. The raw rsr is recorded and not judged; it keeps the flags the name's first-match order hides.",
+      "target": "reset.cause",
+      "timeout_ms": 5000,
+      "checks": [
+        {
+          "field": "cause",
+          "op": "ne",
+          "value": "IWDG"
+        },
+        {
+          "field": "cause",
+          "op": "ne",
+          "value": "WWDG"
+        }
+      ]
+    },
+    {
       "id": "sdram-buses",
       "type": "PtRun",
       "execute_condition": "ALWAYS",

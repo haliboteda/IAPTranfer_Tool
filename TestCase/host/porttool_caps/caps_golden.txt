@@ -1,5 +1,5 @@
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
 OK vals=din ch=1,2,3,4,5,6,7,8 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -51,6 +51,7 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> pt.id
 OK uid=003400413135511439303538 porttool=0.10.0 rx_errors=0 rx_dropped=0
@@ -66,7 +67,7 @@ ERR relay start refused: period=100 is below 1000 ms - these are mechanical rela
 OK running=din
 OK running=relay
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=1
 OK vals=din ch=1,3,5 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -118,6 +119,7 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> pt.set din ch=2,4
 OK set din
@@ -158,6 +160,7 @@ OK run=eth.link         PHY identity, link, and the speed/duplex auto-negotiatio
 OK run=rtc.read         brings the RTC up if needed and reads the calendar; never writes it
 OK run=sdram.crc        CRC32 of one window; reads only, so it checks what a tool wrote there
 OK run=rs485.pins       drives PD4 and PD5 as plain GPIO and reads them back; nothing attached
+OK run=reset.cause      why the board last came up - POR, PIN, IWDG, WWDG, SOFT or BOR
 OK run=led.blink        blinks the system indicator on PE2; a person decides whether it lit
 >>> pt.run sdram.probe
 SDRAM_TEST: probing (stub)
@@ -177,6 +180,10 @@ OK sdram.crc ready=1 offset=1024 bytes=4096 crc=0xC0FFCA00
 >>> pt.run sdram.crc offset=2130706432 bytes=999999999
 SDRAM_TEST: crc window (stub)
 OK sdram.crc ready=1 offset=0 bytes=67108864 crc=0xC8FFEE00
+>>> pt.run reset.cause
+OK reset.cause cause=PIN rsr=0x04000000
+>>> pt.run reset.cause
+OK reset.cause cause=IWDG rsr=0x20000000
 >>> pt.run rtc.read
 RTC_TEST: not up yet, running MX_RTC_Init()
 OK rtc.read init=1 clk=lse date=26-09-07 time=13:45:07
@@ -418,7 +425,7 @@ TEST led_configured=1 led_writes=12 led_high=6
 >>> pt.stop all
 OK stopped all
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
 OK vals=din ch=2,4 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -470,6 +477,7 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> pt.stop all
 OK stopped all
@@ -560,7 +568,7 @@ OK stopped all
 >>> pt.start relay ch=1,2,3 mode=hold on=1:1,2:0,3:1
 OK started relay
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
 OK vals=din ch=1 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -612,11 +620,12 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> pt.set relay on=2:1
 OK set relay
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
 OK vals=din ch=1 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -668,6 +677,7 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> pt.start relay on=1:9
 ERR relay start refused: on="1:9" must be like 1:1,2:0 - relays 1..6, level 0 or 1, each relay named at most once
@@ -678,7 +688,7 @@ ERR relay start refused: on="1:1,1:0" must be like 1:1,2:0 - relays 1..6, level 
 >>> pt.start relay on=1:
 ERR relay start refused: on="1:" must be like 1:1,2:0 - relays 1..6, level 0 or 1, each relay named at most once
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
 OK vals=din ch=1 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -730,13 +740,14 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> pt.stop all
 OK stopped all
 >>> pt.start din ch=2,4 period=nonsense
 ERR din start refused: period="nonsense" is not a number
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
 OK vals=din ch=1 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -788,11 +799,12 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> pt.start dout ch=1,5 mode=hold duty=1:20,5:75 freq=1000
 OK started dout
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
 OK vals=din ch=1 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -844,6 +856,7 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> (host) 1000 ms later
 !dout t=19090 seq=1 rx=0 miss=0 mode=hold tick=100000 ch1=20 ch5=75
@@ -854,7 +867,7 @@ OK started dout
 >>> (host) 200 ms later
 !dout t=19290 seq=1 rx=0 miss=0 mode=blink tick=100000 ch1=0 ch2=0
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
 OK vals=din ch=1 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -906,11 +919,12 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> (host) 200 ms later
 !dout t=19490 seq=1 rx=0 miss=1 mode=blink tick=100000 ch1=100 ch2=100
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
 OK vals=din ch=1 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -962,13 +976,14 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> pt.stop all
 OK stopped all
 >>> pt.start dout ch=1,2,3 mode=hold duty=50 freq=1:2000,2:1000,3:250
 OK started dout
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
 OK vals=din ch=1 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -1020,13 +1035,14 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> (host) 1000 ms later
 !dout t=20490 seq=1 rx=0 miss=0 mode=hold tick=200000 ch1=50 ch2=50 ch3=50
 >>> pt.set dout freq=1:2000,2:1
 OK set dout
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
 OK vals=din ch=1 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -1078,11 +1094,12 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> pt.set dout freq=500
 OK set dout
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
 OK vals=din ch=1 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -1134,6 +1151,7 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> (host) 1000 ms later
 !dout t=21490 seq=1 rx=0 miss=1 mode=hold tick=50000 ch1=50 ch2=50 ch3=50
@@ -1168,7 +1186,7 @@ OK started temp
 >>> pt.start aout ch=1,2 mv=1:500,2:1500
 OK started aout
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
 OK vals=din ch=1 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -1220,13 +1238,18 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> (host) 1000 ms later
 !ain t=22490 seq=1 rx=0 miss=0 vdda=3287 ok=1 ch1=21850/2071 ch2=530/50
-!aout t=22490 seq=1 rx=0 miss=0 ch1=500/499/4873 ch2=1500/1499/14638
+!aout t=22490 seq=1 rx=0 miss=0 ch1=500/499/4873 ef1=0 ch2=1500/1499/14638 ef2=0
 !temp t=22490 seq=1 rx=0 miss=0 vdda=3287 ok=1 ch1=738/238 ch2=751/251
 >>> (host) DAC outputs now
 TEST dac_mv=500,1500 vref_enables=6
+>>> (host) 1000 ms later
+!ain t=23490 seq=1 rx=0 miss=1 vdda=3287 ok=1 ch1=21850/2071 ch2=530/50
+!aout t=23490 seq=1 rx=0 miss=1 ch1=500/499/4873 ef1=1 ch2=1500/1499/14638 ef2=0
+!temp t=23490 seq=1 rx=0 miss=1 vdda=3287 ok=1 ch1=738/238 ch2=751/251
 >>> pt.start aout mv=9999
 ERR aout start refused: mv="9999" must be 0..3300 millivolts
 >>> pt.start aout mv=1:4000
@@ -1240,13 +1263,13 @@ TEST dac_after_stop=0,0
 >>> pt.start rs485 baud=115200 period=200
 OK started rs485
 >>> (host) 200 ms later
-!rs485 t=22690 seq=1 rx=0 miss=0 baud=115200 rxbytes=0 junk=0 overrun=0
+!rs485 t=23690 seq=1 rx=0 miss=0 baud=115200 rxbytes=0 junk=0 overrun=0
 >>> (host) 200 ms later
-!rs485 t=22890 seq=2 rx=1 miss=0 baud=115200 rxbytes=2 junk=0 overrun=0
+!rs485 t=23890 seq=2 rx=1 miss=0 baud=115200 rxbytes=2 junk=0 overrun=0
 >>> (host) 200 ms later
-!rs485 t=23090 seq=2 rx=1 miss=1 baud=115200 rxbytes=2 junk=0 overrun=0
+!rs485 t=24090 seq=2 rx=1 miss=1 baud=115200 rxbytes=2 junk=0 overrun=0
 >>> (host) 200 ms later
-!rs485 t=23290 seq=2 rx=1 miss=2 baud=115200 rxbytes=10 junk=1 overrun=0
+!rs485 t=24290 seq=2 rx=1 miss=2 baud=115200 rxbytes=10 junk=1 overrun=0
 >>> (host) what went out on the pair
 TEST rs485_sent=1|2|2|2| driving=0 baud=115200
 >>> pt.echo rs485 2
@@ -1264,13 +1287,13 @@ OK rs485.pins checked=1 busy=0 dir_low=0 tx_low=0 dir_high=0 tx_high=1 follows=0
 >>> pt.start rs232 period=200
 OK started rs232
 >>> (host) 200 ms later
-!rs232 t=23490 seq=1 rx=0 miss=0 rxlines=0
+!rs232 t=24490 seq=1 rx=0 miss=0 rxlines=0
 >>> pt.echo rs232 1
 OK echo rs232 1
 >>> (host) 200 ms later
-!rs232 t=23690 seq=2 rx=1 miss=0 rxlines=0
+!rs232 t=24690 seq=2 rx=1 miss=0 rxlines=0
 >>> pt.caps
-OK porttool=0.10.0 ports=16 lines=52 hold=1 led=1
+OK porttool=0.10.0 ports=17 lines=53 hold=1 led=1
 OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,mode,period running=0
 OK vals=din ch=1 mode=level period=200
 OK limits=din ch:1..8 mode:level|quad period:50..
@@ -1322,6 +1345,7 @@ OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl param
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
+OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause
 OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink
 >>> pt.stop all
 OK stopped all

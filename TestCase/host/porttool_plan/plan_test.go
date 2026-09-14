@@ -953,7 +953,7 @@ func TestStation6PlanRuns(t *testing.T) {
 	}
 
 	caps := []string{
-		"OK porttool=0.10.0 ports=16 lines=32",
+		"OK porttool=0.10.0 ports=17 lines=33",
 		"OK port=din board=upper kind=session blk=D term=D02-D09 channels=8 loop=ctrl params=ch,period running=0",
 		"OK vals=din ch=1,2,3,4,5,6,7,8 period=200",
 		"OK port=dout board=lower kind=session blk=A term=A03-A10 channels=8 loop=ctrl params=ch,mode,duty,freq,period running=0",
@@ -990,6 +990,7 @@ func TestStation6PlanRuns(t *testing.T) {
 		"OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0",
 		"OK vals=usb mode=echo period=1000",
 		"OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read",
+		"OK port=reset board=bridge kind=run blk=- term=- channels=1 loop=none runs=reset.cause",
 		"OK port=led board=bridge kind=run blk=- term=- channels=1 loop=none runs=led.blink",
 	}
 
@@ -1011,6 +1012,11 @@ func TestStation6PlanRuns(t *testing.T) {
 		// Added with the targets themselves, 2026-09-13. This board is hand
 		// written: a target the plan names and this switch does not answer is
 		// reported as "unexpected", not as a board that said nothing.
+		// The cause is whatever this board says it came up from. POR is the
+		// ordinary one at a test station; the step only refuses IWDG and WWDG,
+		// which mean the board hung and its own watchdog restarted it.
+		case cmd == "pt.run reset.cause":
+			return []string{"OK reset.cause cause=POR rsr=0x10000000"}, nil
 		case cmd == "pt.run rs485.pins":
 			return []string{
 				"OK rs485.pins checked=1 busy=0 dir_low=0 tx_low=0 dir_high=1 tx_high=1 follows=1",

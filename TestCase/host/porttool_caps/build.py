@@ -121,6 +121,10 @@ def main():
         "-I", str(PORTTOOL),
         "-I", str(BOOT / "TestCase"),
         "-I", str(BOOT / "TestCase" / "common"),
+        # Only for IAP_boot_handoff.h, which pt.run reset.cause uses. That
+        # header pulls in nothing but stdint/stdbool, and using the real one
+        # means a signature change breaks this build instead of drifting.
+        "-I", str(BOOT / "IAPServer"),
         "-I", str(BOOT / "Core" / "Inc"),
         str(HARNESS / "stubs" / "hal_stub.c"),
         str(HARNESS / "stubs" / "entries_stub.c"),
@@ -981,6 +985,45 @@ def main():
 
         check(window.get("crc") != whole.get("crc"),
               "a different window gives a different CRC", crcs[1])
+
+    # reset.cause. The PC can already see THAT a board restarted - a frame's
+    # tick falls back to near zero - so what this has to add is why, and the
+    # two causes below are the ones that decide who owns the failure: PIN is
+    # somebody knocking the reset line during an ageing run, IWDG is the board
+    # hanging and its own watchdog rescuing it.
+    causes = [ok_line(b) for c, b in sections if c == "pt.run reset.cause" and b]
+    check(len(causes) == 2, "pt.run reset.cause answered both times",
+          "got %d" % len(causes))
+    if len(causes) == 2:
+        pin, iwdg = (dict(parse_kv(l)) for l in causes)
+        check(pin.get("cause") == "PIN", "reports the decoded cause", causes[0])
+        check(iwdg.get("cause") == "IWDG",
+              "and follows the register rather than answering from memory",
+              causes[1])
+        # The raw word too: the name stops at the first flag it matches, and
+        # two causes can be set at once.
+        check(pin.get("rsr") == "0x04000000" and iwdg.get("rsr") == "0x20000000",
+              "the raw RSR goes out beside the name",
+              "%s / %s" % (pin.get("rsr"), iwdg.get("rsr")))
+
+    # The XTR111 fault flags. They are the only output-fault signal on this
+    # board that reaches the MCU, so an ageing run has nothing else to watch -
+    # and the frame has to carry the pin level as it reads, because which level
+    # means fault is not settled anywhere in Hardware/ yet.
+    aout_frames = [dict(parse_kv(l)) for _, body in sections for l in body
+                   if l.startswith("!aout ")]
+    check(aout_frames, "aout produced frames")
+    if aout_frames:
+        check(all("ef1" in f and "ef2" in f for f in aout_frames),
+              "every aout frame carries both fault flags", str(aout_frames[0]))
+        # One high and one low at the same moment: a firmware reading one pin
+        # twice would report them equal, and PI4/PE3 are different ports.
+        staged = [f for f in aout_frames if f.get("ef1") == "1"]
+        check(staged, "a staged fault on channel 1 reached the frame",
+              str([f.get("ef1", "") + "/" + f.get("ef2", "") for f in aout_frames]))
+        if staged:
+            check(staged[-1].get("ef2") == "0",
+                  "and the other channel was not dragged with it", str(staged[-1]))
 
     check(reply_to("pt.run nosuch").startswith("ERR "),
           "an unknown run target is refused", reply_to("pt.run nosuch"))

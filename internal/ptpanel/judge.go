@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"sync"
 
+	"IAPTool/internal/ptcal"
 	"IAPTool/internal/ptcheck"
 	"IAPTool/internal/ptplan"
 	"IAPTool/internal/ptproto"
@@ -308,5 +309,56 @@ func (s *Server) handleCriteria(w http.ResponseWriter, r *http.Request) {
 	name, limits, problem := criteriaSource()
 	writeJSON(w, 200, map[string]any{
 		"plan": name, "limitVersion": limits, "problem": problem,
+	})
+}
+
+// handleFit turns the points a calibration walk collected into a straight
+// line. The arithmetic is in internal/ptcal for the reason everything else
+// here is shared: a production run will fit the same points unattended, and
+// the two must not be able to disagree about what they mean.
+//
+// *** It returns a fit, not a calibrated board. *** Where a coefficient would
+// be stored so it survives the tooling image being replaced is still open
+// (ISS-C1), so this is recorded in the report and nothing is written to the
+// board. Computing is unblocked; storing is not.
+func (s *Server) handleFit(w http.ResponseWriter, r *http.Request) {
+	var body struct {
+		Points []struct {
+			Want float64  `json:"want"`
+			Got  *float64 `json:"got"`
+		} `json:"points"`
+		GainTol   float64 `json:"gain_tol"`
+		OffsetTol float64 `json:"offset_tol"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+		writeErr(w, 400, "没读懂要拟合的那些点。")
+		return
+	}
+
+	pts := make([]ptcal.Point, 0, len(body.Points))
+	for _, p := range body.Points {
+		// A skipped reading arrives as null, and dropping it here is the
+		// difference between "fitted on the points that exist" and a fit that
+		// is silently NaN.
+		if p.Got == nil {
+			continue
+		}
+		pts = append(pts, ptcal.Point{Want: p.Want, Got: *p.Got})
+	}
+
+	fit, err := ptcal.LinearFit(pts)
+	if err != nil {
+		writeJSON(w, 200, map[string]any{"known": false, "why": err.Error()})
+		return
+	}
+
+	gainTol, offsetTol := body.GainTol, body.OffsetTol
+	if gainTol <= 0 {
+		gainTol = 0.01
+	}
+	writeJSON(w, 200, map[string]any{
+		"known": true,
+		"fit":   fit,
+		"ideal": fit.Ideal(gainTol, offsetTol),
 	})
 }

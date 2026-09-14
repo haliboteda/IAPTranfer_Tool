@@ -2262,6 +2262,7 @@ let aocal = {
   rows: [],
   note: "",
   ask: null,                 // 正在等人读表时的 resolve
+  fit: null,                 // 跑完之后服务端算出来的那条直线
 };
 
 // mA -> DAC millivolts, through the XTR111 set resistor. The board reports the
@@ -2351,10 +2352,56 @@ async function aocalRun(p, say, render) {
   say("收尾：把输出放回 0…");
   await run("pt.set aout mv=" + ch + ":0");
   await run("pt.stop all");
+
+  // 拟合在服务端算（internal/ptcal），不在这个页面里 —— 产线跑一遍也要算同一件
+  // 事，两处各写一份迟早会对同一批点得出不同的系数。
+  const fitPts = rows.map(r => ({want: r.wantMa,
+                                 got: (r.gotMa === null || !isFinite(r.gotMa)) ? null : r.gotMa}));
+  try {
+    aocal.fit = await api("/api/fit", {points: fitPts, gain_tol: 0.01, offset_tol: 0.05});
+  } catch (e) {
+    aocal.fit = {known: false, why: String(e)};
+  }
 }
 
 // 满量程。0-20 mA 那一档，JP3/JP4 开路时成立。
 const AOCAL_FS_MA = 20;
+
+// 拟合结果。**残差摆在增益前面** —— 用直线去拟合一条不是直线的响应，唯一的保护
+// 就是残差会说出来；先读增益的人会先相信它。
+function aocalFitBox(r) {
+  const box = el("div","fitbox");
+  if (!r || r.known === false) {
+    box.appendChild(el("div","msg",
+      "没算出补偿系数：" + ((r && r.why) || "点不够") +
+      " —— 一个点分不出零点偏差和增益偏差，至少要两个不同的点。"));
+    return box;
+  }
+  const f = r.fit || {};
+  const rows = [
+    ["最大残差", f.max_residual.toFixed(4) + " mA（在 " + f.max_residual_at.toFixed(3) + " mA 那点）",
+     f.exact ? "⚠️ 只有两个点 —— 两点必然落在自己那条线上，这个 0 是算出来的，不是量出来的"
+             : "比万用表自己的误差大得多，就说明响应不是直线"],
+    ["均方残差", f.rms_residual.toFixed(4) + " mA", "一个点不走运不该左右结论，看这个"],
+    ["增益", f.gain.toFixed(5), "1 就是不用改"],
+    ["零点偏差", f.offset.toFixed(4) + " mA", "0 就是不用改"],
+    ["用了几个点", String(f.points), ""],
+  ];
+  const grid = el("div","dodi");
+  for (const [k, v, why] of rows) {
+    const line = el("div","dodirow");
+    line.appendChild(el("span","c", k));
+    line.appendChild(el("span","c", v));
+    line.appendChild(el("span","c sub", why));
+    grid.appendChild(line);
+  }
+  box.appendChild(grid);
+  box.appendChild(el("div", r.ideal ? "msg ok" : "msg",
+    r.ideal ? "这块板本来就准，不需要补偿。"
+            : "这块板要补偿：要它真的输出 10 mA，得让它输出 " +
+              (f.gain === 0 ? 10 : (10 - f.offset) / f.gain).toFixed(3) + " mA。"));
+  return box;
+}
 
 function aocalCard(p) {
   const c = el("div","card");
@@ -2440,9 +2487,12 @@ function aocalCard(p) {
         bad ? (measured.length + " 个点里 " + bad + " 个超出 ±" + aocal.tolPct + "% FS")
             : (measured.length + " 个点全部在 ±" + aocal.tolPct + "% FS 以内")));
     }
-    c.appendChild(el("div","hint",
-      "⚠ 这一步只测量和判定，**不算补偿值**。拟合用什么形状要靠一批真实数据定，" +
-      "现在编一个出来，等于给后面每块板埋一个说不清的偏差。校准值存哪也还没定（ISS-C1）"));
+    if (aocal.fit) { c.appendChild(aocalFitBox(aocal.fit)); }
+
+    c.appendChild(richText("div","hint",
+      "⚠️ **系数算出来了，但没有写进板子。** 存在板子哪一块 flash 还没定（ISS-C1），" +
+      "所以这些数只进测试报告。**先看最大残差再看增益** —— 残差比表本身的误差大得多，" +
+      "就说明这条响应不是直线，那条直线在哪儿都是错的。"));
   }
 
   go.onclick = async () => {
@@ -2450,6 +2500,7 @@ function aocalCard(p) {
     aocal.busy = "跑着…";
     aocal.rows = [];
     aocal.note = "";
+    aocal.fit = null;
     renderPanel();
     const say = t => { aocal.busy = t; renderPanel(); };
     try {

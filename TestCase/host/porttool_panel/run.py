@@ -876,8 +876,23 @@ def check_aout_walk(page):
     check("% FS" in body,
           "and the verdict is stated against full scale, not against the reading",
           body[-300:])
-    check("不算补偿值" in body,
-          "the card says out loud that it does not compute a correction yet")
+    # The walk now fits a line through the points it collected (internal/ptcal,
+    # 2026-09-13). Two points is the case the fit itself flags as Exact: they
+    # define a line, so a zero residual there is arithmetic and not a
+    # measurement that agreed - and the card has to say so, or somebody reads a
+    # perfect calibration off two readings.
+    check("增益" in body and "零点偏差" in body,
+          "the card reports the gain and the offset it fitted", body[-400:])
+    check("最大残差" in body,
+          "and the residual, which is what says whether a line was the right shape",
+          body[-400:])
+    check("两个点" in body,
+          "two points are called out as defining their own line", body[-400:])
+    # Computing was unblocked on 2026-09-13; storing was not (ISS-C1), and a
+    # coefficient nobody wrote to the board has to be visibly that.
+    check("没有写进板子" in body,
+          "the card says the coefficients are not written to the board",
+          body[-400:])
 
 
 def check_limits_are_readonly(page):

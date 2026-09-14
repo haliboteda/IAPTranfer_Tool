@@ -123,6 +123,7 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("/api/judge", s.handleJudge)
 	mux.HandleFunc("/api/portplan", s.handlePortPlan)
 	mux.HandleFunc("/api/criteria", s.handleCriteria)
+	mux.HandleFunc("/api/fit", s.handleFit)
 	s.planRoutes(mux)
 	return mux
 }

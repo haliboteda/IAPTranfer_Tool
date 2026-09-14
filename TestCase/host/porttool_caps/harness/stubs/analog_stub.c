@@ -117,3 +117,18 @@ uint32_t PortDac_ExpectedMicroamps(uint32_t mv)
 {
     return (PortDac_QuantisedMv(mv) * 10000u) / PORT_XTR111_RSET_OHM;
 }
+
+/* The XTR111 fault flags. A test drives these to stage a fault, which is the
+ * only way that path is exercisable off a board - and the point of staging it
+ * is that the frame has to carry the pin level unchanged, whichever level a
+ * test chooses. Nothing here decides which level means fault; neither does the
+ * firmware (see port_dac.h). */
+int test_aout_ef[2] = {0, 0};
+
+int PortDac_FaultLevel(int ch)
+{
+    if (ch < 1 || ch > 2) {
+        return 0;
+    }
+    return test_aout_ef[ch - 1] ? 1 : 0;
+}

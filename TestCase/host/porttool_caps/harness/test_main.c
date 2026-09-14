@@ -55,6 +55,8 @@ extern uint8_t  test_can_last_data[8];
 extern uint8_t  test_can_last_len;
 void test_can_inject(uint32_t id, const uint8_t *data, uint8_t len);
 
+extern uint32_t test_reset_rsr;
+extern const char *test_reset_cause;
 extern int      test_rtc_init_count;
 extern int      test_rtc_calendar_initialised;
 extern int      test_led_configured;
@@ -64,6 +66,7 @@ extern int      test_led_high;
 extern int      test_vref_fails;
 extern int      test_vref_enable_count;
 extern uint32_t test_dac_mv[2];
+extern int      test_aout_ef[2];
 
 extern uint32_t test_dout_duty[PORT_DOUT_COUNT];
 extern int      test_dout_stop_count;
@@ -195,6 +198,17 @@ int main(void)
      * be rejected and silently leave the offset at 0 - the case would look
      * like it passed while testing nothing. */
     run("pt.run sdram.crc offset=2130706432 bytes=999999999");
+
+    /* Why the board came up. The value is latched by main() before anything can
+     * clear RCC->RSR; this target only puts it on the wire. Both the decoded
+     * name and the raw register go out - the name's first-match order hides
+     * flags when two causes are set at once. */
+    run("pt.run reset.cause");
+    test_reset_cause = "IWDG";
+    test_reset_rsr = 0x20000000u;
+    run("pt.run reset.cause");
+    test_reset_cause = "PIN";
+    test_reset_rsr = 0x04000000u;
 
     /* The RTC is not up in this image either, so the target has to bring it up
      * before it can read anything. */
@@ -743,6 +757,15 @@ int main(void)
     printf("TEST dac_mv=%lu,%lu vref_enables=%d\n",
            (unsigned long)test_dac_mv[0], (unsigned long)test_dac_mv[1],
            test_vref_enable_count);
+
+    /* The XTR111 fault flags. Staged one high and one low, because a frame
+     * that reported both channels the same would pass a firmware that read one
+     * pin twice - and PI4/PE3 are different ports, which is exactly the kind
+     * of pin map that gets copied wrong. */
+    test_aout_ef[0] = 1;
+    test_aout_ef[1] = 0;
+    advance(1000);
+    test_aout_ef[0] = 0;
 
     run("pt.start aout mv=9999");         /* past VREF+ */
     run("pt.start aout mv=1:4000");       /* same, per channel */

@@ -121,23 +121,67 @@ func ParseFrame(body string) (Frame, bool) {
 	return f, true
 }
 
-// UnwrapTick turns the board's 32-bit tick into a monotonic millisecond count.
+// TickUnwrapper turns the board's 32-bit tick into a monotonic millisecond
+// count, and says when the board appears to have restarted underneath it.
 //
-// HAL_GetTick() wraps at 2^32 ms, about 49.7 days, and a soak test that runs
+// HAL_GetTick() wraps at 2^32 ms, about 49.7 days, and a long run that goes
 // through the wrap would otherwise show its timeline jump back to zero. The
 // board cannot help with this - it has no idea how long it has been up beyond
 // that counter - so the PC keeps the high bits.
+//
+// *** A restart also sends the tick backwards, and the two mean opposite
+// *** things. *** A wrap is a board that has been running so long the counter
+// ran out; a restart is a board that stopped. Treating a restart as a wrap -
+// which this did until 2026-09-14 - silently adds 49.7 days to the timeline
+// and makes the restart disappear, which is exactly the event an ageing run
+// exists to catch ("异常复位/死机 0 次" in the production test guide).
+//
+// They are told apart by where the counter was: a wrap can only happen from
+// near the top of the range. The board says WHY it restarted separately, in
+// pt.run reset.cause - only it can know that, and this cannot.
 type TickUnwrapper struct {
 	last  uint32
 	wraps uint64
 	begun bool
+
+	// Restarts counts how many times the tick fell back from somewhere it
+	// could not have wrapped from.
+	Restarts int
 }
 
-func (u *TickUnwrapper) Unwrap(tick uint32) uint64 {
+// wrapFloor is how high the counter must have been for a backwards step to be
+// a wrap rather than a restart: the upper half of the range, about 24.8 days
+// of uptime.
+//
+// Generous on purpose. A production run is hours, so its ticks sit in the
+// first thousandth of the range and no restart there can be mistaken for a
+// wrap. The cost is at the other end: a board that restarts after more than
+// 24.8 days of continuous uptime is counted as a wrap and its restart is
+// missed. That case is not one this tool is used for, and a threshold tight
+// enough to catch it would start calling real wraps restarts instead.
+const wrapFloor = uint32(1) << 31
+
+// Unwrap returns the monotonic millisecond count, and whether this sample is
+// the first one after the board restarted.
+//
+// The restart flag is returned rather than left on the struct because ignoring
+// it has to be a deliberate act: a caller that just wants a timeline is
+// exactly the caller that used to lose the restart.
+func (u *TickUnwrapper) Unwrap(tick uint32) (ms uint64, restarted bool) {
 	if u.begun && tick < u.last {
-		u.wraps++
+		if u.last >= wrapFloor {
+			u.wraps++
+		} else {
+			// The board started over. Its own clock is back at zero, so the
+			// high bits move on instead - the timeline has to keep going
+			// forward across an event whose whole significance is that it
+			// happened.
+			u.wraps++
+			u.Restarts++
+			restarted = true
+		}
 	}
 	u.last = tick
 	u.begun = true
-	return u.wraps<<32 | uint64(tick)
+	return u.wraps<<32 | uint64(tick), restarted
 }

@@ -368,15 +368,64 @@ func TestParseFrame(t *testing.T) {
 
 func TestTickUnwrap(t *testing.T) {
 	var u ptproto.TickUnwrapper
-	if got := u.Unwrap(1000); got != 1000 {
-		t.Errorf("first = %d, want 1000", got)
+	if got, restarted := u.Unwrap(1000); got != 1000 || restarted {
+		t.Errorf("first = %d restarted=%v, want 1000 false", got, restarted)
 	}
-	if got := u.Unwrap(2000); got != 2000 {
-		t.Errorf("forward = %d, want 2000", got)
+	if got, restarted := u.Unwrap(2000); got != 2000 || restarted {
+		t.Errorf("forward = %d restarted=%v, want 2000 false", got, restarted)
 	}
 	// 49.7 days in, the board's counter starts over. The timeline must not.
-	if got := u.Unwrap(5); got != 1<<32+5 {
+	//
+	// *** The pre-wrap value has to be near the top of the range. *** Until
+	// 2026-09-14 this case was written as 2000 -> 5 and called a wrap, which is
+	// the shape of a RESTART: a board two seconds up cannot have exhausted a
+	// 49.7-day counter. The test encoded the bug it should have caught.
+	const nearTop = ^uint32(0) - 1000
+	if got, restarted := u.Unwrap(nearTop); restarted {
+		t.Error("climbing towards the wrap is not a restart")
+	} else if got != uint64(nearTop) {
+		t.Errorf("pre-wrap = %d, want %d", got, nearTop)
+	}
+	if got, restarted := u.Unwrap(5); got != 1<<32+5 {
 		t.Errorf("after wrap = %d, want %d", got, uint64(1)<<32+5)
+	} else if restarted {
+		t.Error("a genuine wrap must not be reported as a restart")
+	}
+	if u.Restarts != 0 {
+		t.Errorf("restarts = %d after a clean wrap, want 0", u.Restarts)
+	}
+}
+
+// The event an ageing run exists to catch. A board that resets mid-run sends
+// its tick back to near zero from wherever it had got to, and that has to be
+// visible - the production test guide's criterion is "0 abnormal resets", and
+// a reset counted as a wrap is a reset nobody hears about.
+func TestTickUnwrapSeesARestart(t *testing.T) {
+	var u ptproto.TickUnwrapper
+
+	// Four hours in, which is a whole ageing run and still only 0.3 % of the
+	// counter's range.
+	u.Unwrap(14_400_000)
+
+	ms, restarted := u.Unwrap(12)
+	if !restarted {
+		t.Fatal("a tick falling from four hours to 12 ms is a restart, not a wrap")
+	}
+	if u.Restarts != 1 {
+		t.Errorf("restarts = %d, want 1", u.Restarts)
+	}
+	// And the timeline still has to move forward across it: a run's log is
+	// read in order, and a second sample that sorts before the first one is
+	// worse than a gap.
+	if ms <= 14_400_000 {
+		t.Errorf("timeline went backwards: %d", ms)
+	}
+
+	// A second restart counts separately - "how many times" is the criterion,
+	// not "did it ever".
+	u.Unwrap(60_000)
+	if _, restarted := u.Unwrap(8); !restarted || u.Restarts != 2 {
+		t.Errorf("restarts = %d restarted=%v, want 2 true", u.Restarts, restarted)
 	}
 }
 

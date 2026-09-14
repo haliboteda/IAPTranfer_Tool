@@ -361,3 +361,20 @@ int SDRAM_Test_Crc32Once(uint32_t offset, uint32_t length, sdram_crc_t *out)
     out->crc = 0xC0FFEE00UL ^ offset ^ (length << 1);
     return 1;
 }
+
+/* The reset cause. On a board main() latches RCC->RSR before anything can
+ * clear it; here there is no such register, so a test says what the board
+ * "came up from" and checks that the target reports it rather than deciding
+ * anything about it. */
+uint32_t test_reset_rsr = 0x04000000u;          /* PINRSTF, a plain reset */
+const char *test_reset_cause = "PIN";
+
+uint32_t boot_handoff_reset_rsr(void)
+{
+    return test_reset_rsr;
+}
+
+const char *boot_handoff_reset_cause_str(void)
+{
+    return test_reset_cause;
+}
