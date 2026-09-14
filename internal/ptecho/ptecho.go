@@ -78,10 +78,13 @@ func New(name string, rw io.ReadWriteCloser, log func(string)) *Peer {
 // built on Scanner dies before the board ever speaks - which reads as a dead
 // link on good wiring. Observed on 2026-09-09 against the RS485 terminal.
 //
-// ⚠️ internal/ptpanel/link.go still uses bufio.Scanner over the same kind of
-// port and has the same exposure; it has not been hit because nothing kept a
-// bound peer idle that long. Fixing it is a change to working code nobody
-// asked for - see the note at the top of this file.
+// ⚠️ Lines, which is all a plan asks of this end: station6-poweron.json runs
+// usb and eth with mode=echo only, because echo is the one mode whose verdict
+// the board can reach by itself. A sink or source session puts a stream with
+// no newline in it on the wire, and this loop would accumulate it to the 64 KiB
+// cap and drop the rest - the panel's far end (internal/ptpanel/link.go) reads
+// by blocks for exactly that reason. Teach this one modes when a plan needs
+// them, not before.
 func (p *Peer) pump(rw io.Reader, log func(string)) {
 	w, canWrite := rw.(io.Writer)
 	if !canWrite {
