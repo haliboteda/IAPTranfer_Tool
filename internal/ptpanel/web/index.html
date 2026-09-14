@@ -1937,6 +1937,21 @@ function watchRange(p, name, inp) {
 //
 // *** 和用例说明里的「怎么做」不是一回事。*** 那一行讲的是每次都一样的步骤；
 // 这里讲的是**此刻这组勾选和这块板子**的状况，勾法一变，说的话就变。
+// 按当前的周期和时长，这一轮持续测试要花掉多少次吸合。
+//
+// *** 算出来的数，不是一句「有寿命」。*** 3 万次听起来很多，14400 次听起来
+// 很少，直到把它们放在一句话里 —— 而这两个数正是人要拿来决定的那两个。
+function relayWearSays() {
+  const p = (state.ports || []).find(x => x.name === "relay");
+  const per = p ? portPeriodMs(p) : 1000;
+  const hours = runHours || 4;
+  const cycles = Math.round(hours * 3600 * 1000 / per);
+  const pct = Math.round(cycles / 30000 * 100);
+  return "周期 " + per + " 毫秒跑 " + (runHours ? runHours + " 小时" : "四小时")
+       + " 是 " + cycles.toLocaleString() + " 次吸合，**一轮就吃掉额定寿命的 "
+       + pct + " %**。";
+}
+
 function headsUp(p) {
   const out = [];
 
@@ -1983,8 +1998,9 @@ function headsUp(p) {
 
   // 触点是消耗品，而「持续」会一直吸合释放。这一句只在真要那么跑的时候说。
   if (p.name === "relay" && (runMode[p.name] || "once") === "loop") {
-    out.push("⚠️ **继电器触点有寿命**（HF41F 额定 3 万次）。持续跑一小时、周期 2 秒，"
-           + "就是 1800 次 —— 老化这个口之前想清楚要不要。");
+    out.push("⚠️ **继电器不做持续测试**（DECISIONS 46）。触点是消耗品，"
+           + "HF41F 额定 3 万次 —— " + relayWearSays()
+           + "**通不通「单次」就能证明**，选「单次」跑。");
   }
 
   return out;
@@ -3403,6 +3419,13 @@ function startRow(p, cmdFor, only) {
     // 而那句话读起来像板子坏了。说清楚要先做什么，比给一个误导的结论好。
     const why = peerMissing(p);
     if (why) { showMessage(why, true); return; }
+    // 触点是消耗品，而这个代价不可逆 —— 一句读过就忘的警告挡不住一次误点。
+    // 「一轮老化吃掉将近一半寿命」的算法在 DECISIONS 46。
+    if (session && (runMode[p.name] || "once") === "loop" && p.name === "relay") {
+      showMessage("继电器不做持续测试。" + relayWearSays()
+                + "通不通「单次」就能证明 —— 选「单次」跑。", true);
+      return;
+    }
     // 持续：发起来之后交给服务端计时，到点它发停止。
     if (session && (runMode[p.name] || "once") === "loop") {
       await startContinuous([p.name], [cmdFor()]);
