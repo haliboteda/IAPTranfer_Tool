@@ -561,6 +561,13 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 
 	lines, err := b.Send(body.Cmd, ptboard.ExpectFor(body.Cmd), ptboard.TimeoutFor(body.Cmd))
 
+	// Only once the board took it. A peer that started pushing at a session
+	// the board refused would be traffic nobody asked for, on a terminal
+	// somebody may be holding a probe against.
+	if err == nil {
+		s.applyLinkMode(body.Cmd)
+	}
+
 	resp := map[string]any{"cmd": body.Cmd, "lines": lines}
 	if err != nil {
 		var refused *ptboard.RefusedError
