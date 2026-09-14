@@ -124,6 +124,8 @@ func (s *Server) routes() *http.ServeMux {
 	mux.HandleFunc("/api/portplan", s.handlePortPlan)
 	mux.HandleFunc("/api/criteria", s.handleCriteria)
 	mux.HandleFunc("/api/fit", s.handleFit)
+	mux.HandleFunc("/api/net", s.handleNet)
+	mux.HandleFunc("/api/ping", s.handlePing)
 	s.planRoutes(mux)
 	return mux
 }
@@ -259,10 +261,15 @@ func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 		Port string `json:"port"` // the board's port name, e.g. "rs485"
 		COM  string `json:"com"`
 		Baud int    `json:"baud"`
+		// TCP is the Ethernet session's far end: the board listens and this
+		// connects. Separate from COM because they are not alternatives for
+		// the same port - each port has exactly one kind of far end, and
+		// letting eth be handed a serial adapter is what this replaced.
+		TCP string `json:"tcp"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil ||
-		body.Port == "" || body.COM == "" {
-		writeErr(w, 400, "要说清楚哪个端口配哪个串口。")
+		body.Port == "" || (body.COM == "" && body.TCP == "") {
+		writeErr(w, 400, "要说清楚哪个端口配哪个对端。")
 		return
 	}
 
@@ -280,23 +287,44 @@ func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, 400, body.Port+" 的回环不走被测链路，用不着第二个串口。")
 		return
 	}
-	if body.COM == s.portNam {
+	if body.TCP == "" && body.COM == s.portNam {
 		writeErr(w, 400, "这个串口已经是控制口了，不能同时当被测链路的对端。")
+		return
+	}
+	// The board only listens while the session is running, so connecting to a
+	// stopped one is refused by the operating system - and "connection
+	// refused" reads like a network fault, which sends somebody to check
+	// cables and subnets that were fine all along. Said plainly instead.
+	if body.TCP != "" && !p.Running {
+		writeJSON(w, 200, map[string]any{"error": body.Port +
+			" 还没在跑 —— 板子是会话起来才开始监听的。先点「开始」，" +
+			"而且要选「持续」：「单次」跑完就停了，那时候再连就没人听了。"})
 		return
 	}
 
 	s.unbindLink(body.Port)
 
-	l, err := s.bindLink(body.Port, body.COM, body.Baud)
+	var l *linkPort
+	var err error
+	if body.TCP != "" {
+		l, err = s.bindTCP(body.Port, body.TCP)
+	} else {
+		l, err = s.bindLink(body.Port, body.COM, body.Baud)
+	}
 	if err != nil {
 		// 200, not 400: a port that is busy or unplugged is an ordinary thing
 		// to run into at a bench, not a malformed request. The page already
 		// says so in words - answering 4xx only adds a red line to the
 		// browser console for a case that is handled. The checks above stay
 		// 4xx: those are requests the panel itself cannot produce.
+		what := body.COM
+		why := "看看是不是别的程序占着它，或者适配器没插好。"
+		if body.TCP != "" {
+			what = body.TCP
+			why = "板子的 IP 和端口对不对？先 ping 一下 —— ping 不通就不是这一步的事。"
+		}
 		writeJSON(w, 200, map[string]any{"error": fmt.Sprintf(
-			"打不开 %s：%v。看看是不是别的程序占着它，或者适配器没插好。",
-			body.COM, err)})
+			"连不上 %s：%v。%s", what, err, why)})
 		return
 	}
 
@@ -306,9 +334,14 @@ func (s *Server) handleLink(w http.ResponseWriter, r *http.Request) {
 	}
 	s.links[body.Port] = l
 	s.mu.Unlock()
-	rememberPeer(body.Port, body.COM, l.Baud)
-	s.emit(fmt.Sprintf("[link %s@%s] 绑好了，%d 8N1。板子发什么就原样送回去。",
-		body.Port, body.COM, l.Baud))
+	if body.TCP != "" {
+		s.emit(fmt.Sprintf("[link %s@%s] 连上了。板子发什么就原样送回去。",
+			body.Port, body.TCP))
+	} else {
+		rememberPeer(body.Port, body.COM, l.Baud)
+		s.emit(fmt.Sprintf("[link %s@%s] 绑好了，%d 8N1。板子发什么就原样送回去。",
+			body.Port, body.COM, l.Baud))
+	}
 
 	writeJSON(w, 200, s.stateJSON())
 }

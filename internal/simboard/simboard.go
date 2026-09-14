@@ -43,11 +43,43 @@ func exeName() string {
 	return "porttool_simboard"
 }
 
+// searchUp walks up from `start` looking for the harness build and returns
+// the first one it finds.
+func searchUp(start string) (string, bool) {
+	rel := filepath.Join("TestCase", "host", "porttool_caps", "harness", exeName())
+
+	dir := start
+	for i := 0; i < 8; i++ {
+		cand := filepath.Join(dir, rel)
+		if _, err := os.Stat(cand); err == nil {
+			return cand, true
+		}
+		parent := filepath.Dir(dir)
+		if parent == dir {
+			break
+		}
+		dir = parent
+	}
+	return "", false
+}
+
 // Find locates the simulated board binary.
 //
 // PORTTOOL_SIM wins when it is set, so a build somewhere else can be used
-// without moving anything. Otherwise it walks up from the working directory
-// looking for the harness, which is where build.py --sim puts it.
+// without moving anything.
+//
+// *** Otherwise BOTH the executable's own directory and the working directory
+// *** are searched, in that order. *** Only the working directory was searched
+// until 2026-09-14, and that made the simulated board appear and disappear
+// depending on how the panel had been started: double-clicking the exe in its
+// own folder found it, while a Start-menu shortcut or a taskbar icon - which
+// set the working directory somewhere else entirely - did not, and the port
+// list then quietly had one fewer entry with nothing said about why. Where a
+// program was launched from is not something the person launching it should
+// have to think about.
+//
+// The executable comes first because it is the stable one: the working
+// directory is wherever the shell happened to be.
 func Find() (string, error) {
 	if p := os.Getenv("PORTTOOL_SIM"); p != "" {
 		if _, err := os.Stat(p); err == nil {
@@ -56,22 +88,21 @@ func Find() (string, error) {
 		return "", fmt.Errorf("PORTTOOL_SIM points at %s, which is not there", p)
 	}
 
-	rel := filepath.Join("TestCase", "host", "porttool_caps", "harness", exeName())
-
-	dir, err := os.Getwd()
-	if err != nil {
-		return "", err
-	}
-	for i := 0; i < 8; i++ {
-		cand := filepath.Join(dir, rel)
-		if _, err := os.Stat(cand); err == nil {
+	if exe, err := os.Executable(); err == nil {
+		// Resolved, so an exe reached through a symlink searches from where
+		// the binary really lives rather than from the link.
+		if real, err := filepath.EvalSymlinks(exe); err == nil {
+			exe = real
+		}
+		if cand, ok := searchUp(filepath.Dir(exe)); ok {
 			return cand, nil
 		}
-		parent := filepath.Dir(dir)
-		if parent == dir {
-			break
+	}
+
+	if dir, err := os.Getwd(); err == nil {
+		if cand, ok := searchUp(dir); ok {
+			return cand, nil
 		}
-		dir = parent
 	}
 
 	return "", errors.New(

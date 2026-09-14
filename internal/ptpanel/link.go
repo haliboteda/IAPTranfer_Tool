@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"fmt"
 	"io"
+	"net"
 	"strings"
 	"sync"
 	"time"
@@ -25,8 +26,13 @@ import (
 // counts on, comparing the number that came back against the one it sent.
 type linkPort struct {
 	Board string // the board's port name, e.g. "rs485"
-	COM   string // the adapter on this machine
+	COM   string // the adapter on this machine, or host:port for TCP
 	Baud  int
+	// Kind is "serial" or "tcp". The Ethernet session's far end is a
+	// TCP client, not an adapter - a serial port has nothing to do with
+	// it, and offering one was the panel telling people to plug the
+	// wrong thing in (2026-09-14).
+	Kind string
 
 	port io.ReadWriteCloser
 	stop func()
@@ -42,6 +48,7 @@ func (l *linkPort) snapshot() map[string]any {
 	defer l.mu.Unlock()
 	return map[string]any{
 		"com":     l.COM,
+		"kind":    l.Kind,
 		"baud":    l.Baud,
 		"rxLines": l.rxLines,
 		"echoed":  l.echoed,
@@ -59,7 +66,7 @@ func (s *Server) bindLink(boardPort, com string, baud int) (*linkPort, error) {
 		return nil, err
 	}
 
-	l := &linkPort{Board: boardPort, COM: com, Baud: baud, port: port}
+	l := &linkPort{Board: boardPort, COM: com, Baud: baud, Kind: "serial", port: port}
 	done := make(chan struct{})
 
 	go func() {
@@ -164,4 +171,63 @@ func (s *Server) subscribePanel(buffer int) (<-chan panelEvent, []panelEvent, fu
 		}
 		s.mu.Unlock()
 	}
+}
+
+// bindTCP connects to the board as a TCP client and echoes back whatever it
+// sends.
+//
+// *** This is the far end the Ethernet session has always needed and the
+// *** panel never had. *** The board runs the server; somebody has to connect
+// to it, or conn= stays 0 and the card says "对端没连上" with no way to do
+// anything about it from here. The command line had this all along, inside
+// porttool run; the panel did not.
+//
+// Bytes, not lines. The board compares the counter that comes back against
+// the one it sent, and a byte stream has no obligation to arrive in the same
+// chunks it left in - splitting on newlines would work until a counter
+// straddled two reads.
+func (s *Server) bindTCP(boardPort, addr string) (*linkPort, error) {
+	conn, err := net.DialTimeout("tcp", addr, 5*time.Second)
+	if err != nil {
+		return nil, err
+	}
+
+	l := &linkPort{Board: boardPort, COM: addr, Kind: "tcp", port: conn}
+	done := make(chan struct{})
+
+	go func() {
+		defer close(done)
+		buf := make([]byte, 4096)
+		for {
+			n, err := l.port.Read(buf)
+			if n > 0 {
+				l.mu.Lock()
+				l.rxLines++
+				l.mu.Unlock()
+				if _, werr := l.port.Write(buf[:n]); werr != nil {
+					l.mu.Lock()
+					l.lastErr = werr.Error()
+					l.mu.Unlock()
+					s.linkLog(l, "回不出去："+werr.Error())
+					return
+				}
+				l.mu.Lock()
+				l.echoed++
+				l.lastErr = ""
+				l.mu.Unlock()
+			}
+			if err != nil {
+				l.mu.Lock()
+				l.lastErr = err.Error()
+				l.mu.Unlock()
+				return
+			}
+		}
+	}()
+
+	l.stop = func() {
+		_ = l.port.Close()
+		<-done
+	}
+	return l, nil
 }

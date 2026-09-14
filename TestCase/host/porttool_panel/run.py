@@ -1072,6 +1072,29 @@ def run_checks(page, com):
     check(page.locator("#portlist .p.on").count() == 0,
           "nothing is preselected on a first run")
 
+    # The simulated board has to be offered in the list, and has to be reachable
+    # without scrolling. It is appended after every real port, so on a bench
+    # with a handful of USB adapters it is the entry most easily buried - and it
+    # is the one entry that lets somebody look at the panel with no hardware at
+    # all. It also has to be visibly not a COM port: everything it reports is
+    # invented, and a row that reads like the ones above it invites a simulated
+    # run being filed as a bench result.
+    sim = page.locator('#portlist .p[data-port="sim"]')
+    if sim.count():
+        check("sim" in (sim.first.get_attribute("class") or ""),
+              "the simulated board is marked apart from the real ports",
+              sim.first.get_attribute("class"))
+        box, list_box = sim.first.bounding_box(), page.locator("#portlist").bounding_box()
+        check(box and list_box and box["y"] + box["height"] <= list_box["y"] + list_box["height"] + 1,
+              "and is visible without scrolling the list",
+              "row bottom %.0f vs list bottom %.0f" % (
+                  (box or {}).get("y", -1) + (box or {}).get("height", 0),
+                  (list_box or {}).get("y", -1) + (list_box or {}).get("height", 0)))
+    else:
+        # Not a failure: a machine with no simulator built has nothing to show.
+        # Said out loud so a silent absence is never mistaken for a pass.
+        check(True, "no simulated board built on this machine - nothing to check")
+
     # The whole rest of the page is inert: everything on it is a reading that
     # arrives over the control port, so before that port is open there is
     # nothing on it that could mean anything.

@@ -175,7 +175,10 @@ main>section{background:var(--bg);overflow-y:auto;padding:14px}
 /* Left column: pick the control port, then everything else. */
 #connbox{padding:0 0 10px;margin-bottom:10px;border-bottom:1px solid var(--line)}
 .step{font:600 12px var(--sans);color:var(--ink2);margin:0 0 7px;letter-spacing:.3px}
-#portlist{display:flex;flex-direction:column;gap:2px;max-height:190px;overflow-y:auto;
+/* Tall enough for ten rows. It was six, and the simulated board is appended
+   after every real port - so on a bench with a handful of USB adapters the one
+   entry that does not need hardware was the one scrolled out of sight. */
+#portlist{display:flex;flex-direction:column;gap:2px;max-height:300px;overflow-y:auto;
   border:1px solid var(--line);border-radius:4px;background:#fff;padding:3px}
 #portlist .p{display:block;font:11.5px var(--mono);color:var(--ink2);padding:4px 6px;
   border-radius:3px;cursor:pointer;border:1px solid transparent;
@@ -183,6 +186,11 @@ main>section{background:var(--bg);overflow-y:auto;padding:14px}
 #portlist .p:hover{background:var(--line2)}
 #portlist .p.on{background:var(--accent-bg);border-color:var(--accent);color:var(--accent)}
 #portlist .p .sug{color:var(--ok);font-weight:600}
+/* The simulated board, set apart from the real ports above it. Everything it
+   reports is invented, so it must not read as one more COM port in the list. */
+#portlist .p.sim{border-top:1px dashed var(--line);margin-top:4px;padding-top:6px;
+  color:var(--warn)}
+#portlist .p.sim .tag{font-weight:600}
 .connrow{display:flex;gap:6px;margin-top:7px}
 .hint{font-size:11.5px;color:var(--ink3);line-height:1.5;margin-top:7px}
 /* Not disabled attributes on every control - one rule, so a new control added
@@ -525,9 +533,17 @@ async function loadPorts() {
   for (const p of j.ports) {
     const row = el("div", "p");
     row.title = p.label;
+    // 机器按这个认行，不按屏幕上的字 —— 标签是中文的，而且会改。
+    row.dataset.port = p.name;
     row.textContent = p.label;
     if (looksLikeRs232(p.label)) {
       row.appendChild(el("span", "sug", "  ← 像是 RS232"));
+    }
+    // 模拟板单独标出来。它排在所有真串口后面，不加个记号就读成了又一个 COM 口 ——
+    // 而它给的每一个读数都是编的。
+    if (p.name === "sim") {
+      row.classList.add("sim");
+      row.appendChild(el("span", "tag", "  ← 不用接板子"));
     }
     if (chosenPort === p.name) {
       row.classList.add("on");
@@ -778,10 +794,10 @@ const PORT_HELP = {
          pass:"**「采样正常」是 1**（基准电压起来了），**原始码不能低于 700** —— 低于 700 就是脚悬空、没接信号。读数要跟着信号源变。\n⚠️ 端子上换算成几伏几毫安取决于出厂跳线焊成什么样；出厂九个跳线全开路时这两个脚彻底悬空"},
   aout: {wiring:"两路接万用表或负载",
          how:"逐路设输出电压，每路报三个数：要求值 / 量化后的值 / 算出来的微安",
-         pass:"**第一个数就是你填的毫伏**（验收给的是 AO1=1000、AO2=2000）。\n⚠️ 微安是算的不是量的 —— 板上没有回读通道，**万用表才是判据**"},
+         pass:"**第一个数就是你填的毫伏**（验收给的是 AO1=1000、AO2=2000）。\n⚠️ 微安是算的不是量的 —— 板上没有回读通道，**万用表才是判据**。\n⚠️ **ef1 / ef2 是 XTR111 故障脚的原始电平，不是结论** —— 哪个电平算故障硬件资料里没写。实测：空载（什么都没接）时两路都读 1"},
   temp: {wiring:"不用接",
          how:"两路板载 LM50 温度传感器，每路报两个数：毫伏 / 0.1 ℃",
-         pass:"**「采样正常」1、参考电压 2400–2600 毫伏、两路温度在 0–60.0 ℃**（第二个数是 0.1 ℃，600 就是 60 度）。室温下通常读到 200–300"},
+         pass:"**「采样正常」1、参考电压 2400–2600 毫伏、两路温度在 0–60.0 ℃**（第二个数是 0.1 ℃，600 就是 60 度）。室温下通常读到 200–350，板子通电久了会往上走"},
   rs232: {wiring:"不用另外接 —— 就是控制口那根线",
          how:"回环走的就是控制口这条链路本身，所以这个回环真的证明它",
          pass:"**「丢失」保持 0，「收到行数」一直涨**。\n⚠️ 它和控制口是同一条链路，过了只说明这条线好"},
@@ -798,8 +814,8 @@ const PORT_HELP = {
          how:"两半：一半走 MDIO 直接读 PHY 芯片，一半在网口上跑 TCP 回环",
          pass:"**读芯片那半**：找到芯片 1、型号码 0x0007C131、链路 1、自协商 1、速率 100、全双工 1、MDIO 出错 0。\n**跑流量那半**：链路 1、**连接数 1**、丢失 0。连接数一直是 0 就是对端没连上"},
   usb: {wiring:"用 USB 线接到这台电脑 —— 板子自己那个口，不是 ST-Link 那个",
-         how:"面板自己起一个对端来应答它",
-         pass:"**「状态」是「已配置」、「丢失」0、「枚举完成」0**。\n⚠️ 枚举过一次以上，说明线或者主机在反复重连 —— 那用「读信息」那个模式看得最清楚"},
+         how:"板子枚举成一个 CDC 串口，在这张卡上把那个口「绑上」当对端",
+         pass:"**「状态」是「已配置」、「丢失」0、「枚举完成」0**。\n⚠️ **板子那个口要点了「开始」才会出现** —— USB 设备是会话起来才枚举的，串口列表里一开始找不到它是正常的：先点「开始」，再点「重新找」。\n⚠️ 枚举过一次以上，说明线或者主机在反复重连 —— 那用「读信息」那个模式看得最清楚"},
   sd: {wiring:"往卡槽插一张卡。FAT16 / FAT32 / exFAT 都认（exFAT 是 2026-09-11 加的）",
          how:"先认卡，再一轮读写校验、64 轮压力、一次读写速率",
          pass:"**「卡在位」1、「就绪」1、「文件系统」不是「没有」**。\n校验那项要「写进去了 / 读回来了 / 内容一致」全是 1、返回码 0；压力要跑满 64 轮而且 64 轮都过"},
@@ -1970,7 +1986,10 @@ function sessionCard(p) {
   // A loop=link port needs a second adapter on the terminal being tested.
   // Without it the counter can never close, and the frames would look exactly
   // like broken wiring - so the card says so rather than leaving it to guess.
-  if (p.loop === "link") c.appendChild(linkRow(p));
+  // 以太网的对端是 TCP，不是串口 —— 网口跟 COM 口没关系。别的 loop=link 端口
+  // 才是真的要绑一个串口适配器。
+  if (p.name === "eth") { c.appendChild(ethRow(p)); }
+  else if (p.loop === "link") { c.appendChild(linkRow(p)); }
 
   // the echo counter, kept away from the readings on purpose
   if (fr && fr.fields.seq !== undefined) {
@@ -2515,6 +2534,113 @@ function aocalCard(p) {
     }
   };
   return c;
+}
+
+// 本机网卡查一次就存着，按板子的 IP 存。
+//
+// *** 不能每次重画都去查。*** 会话跑着的时候这张卡每 500 ms 重画一次，而异步
+// 请求回来之前那次重画已经把结果扔了 —— 现象是「查着…」永远停在那儿，偏偏就是
+// 会话在跑、最需要看这一行的时候。同一个坑页面里已经有先例（方案参数就是这么
+// 存的）。
+let netCache = {};
+let netPending = {};
+
+function netFor(ip) {
+  if (netCache[ip] !== undefined) { return netCache[ip]; }
+  if (!netPending[ip]) {
+    netPending[ip] = true;
+    api("/api/net?board=" + encodeURIComponent(ip))
+      .then(n => { netCache[ip] = n || {error: true}; })
+      .catch(() => { netCache[ip] = {error: true}; })
+      .finally(() => { netPending[ip] = false; renderPanel(); });
+  }
+  return null;
+}
+
+// 以太网那一行：板子的 IP、本机能不能够得着、ping、TCP 对端。
+//
+// *** 「本机 IP」不是一个数。*** 这台机器有五个地址（无线、虚拟网卡、代理…），
+// 挑一个显示多半挑错。有用的是「哪一个和板子同网段」，而**一个都没有**才是最该
+// 说出来的那句 —— 2026-09-10 就栽在这里：代理网卡占着默认路由，有线网口是断的，
+// PC 根本不在板子那个网段上，而屏幕上什么都没说。
+function ethRow(p) {
+  const box = el("div","linkbox");
+  box.appendChild(el("div","st","网口对端 —— 板子是 TCP 服务端，这台电脑当客户端连上去"));
+
+  const fr = reads[p.name];
+  const ip = fr && fr.fields ? fr.fields.ip : null;
+  const port = (fr && fr.fields && fr.fields.port) || "5000";
+
+  if (!ip || ip === "dhcp" || ip === "0.0.0.0") {
+    box.appendChild(el("div","hint",
+      "板子还没报出 IP —— 先点「开始」把会话跑起来，DHCP 拿到地址才有得连。"));
+    return box;
+  }
+
+  const info = el("div","row");
+  info.appendChild(el("span","sub","板子"));
+  info.appendChild(el("b",null, ip));
+  box.appendChild(info);
+
+  const mine = el("div","hint");
+  box.appendChild(mine);
+  const n = netFor(ip);
+  if (!n) {
+    mine.textContent = "本机地址：查着…";
+  } else if (n.error) {
+    mine.textContent = "查不到本机网卡。";
+  } else {
+    if (n.match) {
+      mine.appendChild(el("div",null,"本机 " + n.match + " 和板子同网段，够得着。"));
+    } else {
+      const bad = el("div",null,
+        "⚠️ 本机没有一个地址和板子同网段 —— 连不上跟板子好坏无关，是网段不对。");
+      bad.style.color = "var(--warn)";
+      mine.appendChild(bad);
+    }
+    mine.appendChild(el("div","sub", (n.nics || []).map(x =>
+      x.name + " " + x.ip + (x.same ? "  ← 和板子同网段" : "")).join(" · ")));
+  }
+
+  const acts = el("div","row");
+  const pingBtn = el("button",null,"ping 一下");
+  const said = el("span","sub","");
+  pingBtn.onclick = async () => {
+    pingBtn.disabled = true; said.textContent = "ping 中…";
+    try {
+      const r = await api("/api/ping?ip=" + encodeURIComponent(ip));
+      said.textContent = r.received + "/" + r.sent + " 通" +
+        (r.received ? "，平均 " + r.avg_ms.toFixed(1) + " 毫秒" : "");
+      said.style.color = r.received ? "var(--ok)" : "var(--err)";
+    } catch (e) { said.textContent = String(e); }
+    pingBtn.disabled = false;
+  };
+  acts.appendChild(pingBtn);
+
+  const bound = (state.links || {})[p.name];
+  if (bound) {
+    const off = el("button",null,"断开对端");
+    off.onclick = () => api("/api/unlink", {port: p.name}).then(applyState);
+    acts.appendChild(off);
+    acts.appendChild(el("span","sub",
+      "已连 " + bound.com + "，收 " + bound.rxLines + " 回 " + bound.echoed));
+  } else {
+    const on = el("button","primary","连上对端");
+    on.onclick = async () => {
+      on.disabled = true;
+      const r = await api("/api/link", {port: p.name, tcp: ip + ":" + port});
+      if (r && r.error) { showMessage(r.error, true); } else { applyState(r); }
+      on.disabled = false;
+    };
+    acts.appendChild(on);
+  }
+  acts.appendChild(said);
+  box.appendChild(acts);
+
+  box.appendChild(el("div","hint",
+    "ping 不用板子上跑任何程序 —— 它只证明网线、PHY、网段、协议栈活着。" +
+    "ping 通了「连接数」还是 0，那才是应用层的事。"));
+  return box;
 }
 
 function linkRow(p) {
