@@ -250,42 +250,9 @@ static void peer_usb(void)
  * wants to watch the panel react to something changing. */
 static int sim_walk;
 
-/* The eight-way cable from A03-A10 to D02-D09, and the three ways it is
- * usually wrong. Off by default, because with it plugged in the inputs follow
- * the outputs rather than sitting high, which is not the state a production
- * plan is written against.
- *
- * 1 straight through   2 DO1 and DO2 swapped   3 DO3 not connected
- *
- * The two faults are here so the panel's cross-check can be shown to actually
- * find them. A view that only ever sees a good cable has not been tested - and
- * finding a crossed pair is the entire reason that view exists. */
-static int sim_cable;
-
-static void apply_cable(void)
-{
-    uint8_t bits = 0;
-
-    for (int i = 0; i < PORT_DOUT_COUNT && i < 8; i++) {
-        int driven = (test_dout_duty[i] > 0u);
-        int lands_on = i;               /* which input this output reaches */
-
-        if (sim_cable == 2 && i == 0) { lands_on = 1; }
-        else if (sim_cable == 2 && i == 1) { lands_on = 0; }
-        else if (sim_cable == 3 && i == 2) { continue; }   /* open circuit */
-
-        if (driven) {
-            bits |= (uint8_t)(1u << lands_on);
-        }
-    }
-    test_din_bits = bits;
-}
-
 static void stimulate(uint32_t now_ms)
 {
-    if (sim_cable) {
-        apply_cable();
-    } else if (sim_walk) {
+    if (sim_walk) {
         static const uint8_t walk[4] = { 0x16u, 0xA5u, 0x3Cu, 0xFFu };
         test_din_bits = walk[(now_ms / 3000u) % 4u];
     }
@@ -321,8 +288,6 @@ static int sim_command(const char *line)
                "SIM  sim.ain <ch> <mv>  one analog input's reading\r\n"
                "SIM  sim.temp <ch> <mv> one temperature sensor's reading\r\n"
                "SIM  sim.link <0|1>     whether the ethernet PHY sees a cable\r\n"
-               "SIM  sim.cable <0..3>   the DO->DI eight-way cable: 0 unplugged,\r\n"
-               "SIM                     1 straight, 2 DO1/DO2 swapped, 3 DO3 open\r\n"
                "SIM  none of these exist on a board\r\n");
         return 1;
     }
@@ -334,18 +299,6 @@ static int sim_command(const char *line)
     if (sscanf(line, "sim.walk %u", &a) == 1) {
         sim_walk = (a != 0u);
         printf("SIM  walk=%d\r\n", sim_walk);
-        return 1;
-    }
-    if (sscanf(line, "sim.cable %u", &a) == 1) {
-        sim_cable = (int)a;
-        if (!sim_cable) {
-            test_din_bits = 0xFFu;      /* back to the fixture holding them high */
-        }
-        printf("SIM  cable=%d (%s)\r\n", sim_cable,
-               sim_cable == 0 ? "unplugged" :
-               sim_cable == 1 ? "straight through" :
-               sim_cable == 2 ? "DO1 and DO2 swapped" :
-               sim_cable == 3 ? "DO3 open" : "unknown");
         return 1;
     }
     if (sscanf(line, "sim.vdda %u", &a) == 1) {

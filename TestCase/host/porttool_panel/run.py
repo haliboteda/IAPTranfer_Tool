@@ -292,6 +292,88 @@ def main():
     os._exit(code)
 
 
+def check_warns_before_you_press(page):
+    """The panel says what is wrong while it is being typed, not after.
+
+    Every one of these was somebody finding out too late: a number went down
+    the wire and the board refused it, or a test ran to completion and the
+    verdict was about a jumper nobody had mentioned. Asked for 2026-09-14 -
+    "面板让你填一个板子根本不收的数字，也让你开始一个注定过不了的测试".
+    """
+    Section("按下去之前就说")
+
+    page.locator('.tab[data-tab="manual"]').click()
+    page.wait_for_selector(".prow")
+
+    def open_port(name):
+        page.locator('.prow[data-port="%s"]' % name).first.click()
+        page.wait_for_timeout(400)
+        return page.locator('.card[data-port="%s"]' % name)
+
+    # *** 范围出自板子报的 limits，不是写死的。*** 所以这里不断言"最小 1000"，
+    # 只断言"填了一个板子收不下的数，当场有人告诉你"。固件改了上下限，用例不用改。
+    card = open_port("relay")
+    box = card.locator('label[data-param="period"] input')
+    lo = box.get_attribute("min")
+    if not check(lo is not None, "继电器周期这一格带着板子报的下限"):
+        return
+    box.fill(str(int(lo) - 500))
+    page.wait_for_timeout(300)
+    tip = card.locator(".rangetip:visible")
+    check(tip.count() > 0, "填一个小于下限的数，当场就说",
+          " ".join(card.inner_text().split())[:120])
+    if tip.count():
+        check(lo in tip.first.inner_text(), "而且说了板子到底收多少", tip.first.inner_text())
+    check("bad" in (box.get_attribute("class") or ""), "那一格自己也标出来了")
+
+    # 改回一个板子收得下的值，提示要走干净 —— 留着的话下一个人会以为还没改对。
+    box.fill(lo)
+    page.wait_for_timeout(300)
+    check(card.locator(".rangetip:visible").count() == 0, "改回收得下的值，提示就没了")
+
+    # 触点是消耗品，可是只有真要跑几小时的时候才值得说。
+    check(card.locator(".headsup").count() == 0, "单次跑不提触点寿命 —— 跑一轮不磨它")
+    card.locator('input[data-mode="loop"]').check()
+    page.wait_for_timeout(400)
+    hu = card.locator(".headsup")
+    if check(hu.count() > 0, "选了持续，触点寿命当场说"):
+        check("触点" in hu.first.inner_text(), "说的是触点这件事", hu.first.inner_text()[:80])
+    card.locator('input[data-mode="once"]').check()
+    page.wait_for_timeout(400)
+    check(card.locator(".headsup").count() == 0, "切回单次，那句话跟着走")
+
+    # 每路一格的参数也要逐格说 —— 八格里有一格超了，"有一格超了"等于没说。
+    card = open_port("dout")
+    f = card.locator('.chvals[data-param="freq"] input[data-ch="2"]')
+    hi = f.get_attribute("max")
+    if check(hi is not None, "DO 频率这一格带着板子报的上限"):
+        f.fill(str(int(hi) + 1000))
+        page.wait_for_timeout(300)
+        tips = card.locator(".rangetip:visible")
+        check(tips.count() == 1, "八格里超了一格，就只有那一格在说话",
+              "%d 条提示" % tips.count())
+        f.fill(hi)
+        page.wait_for_timeout(300)
+
+    # 软件读不回来的事：跳线焊没焊、半双工听不见自己、板子这一侧到底管什么。
+    # 它们决定结论怎么读，所以必须在按之前说。
+    #
+    # ⚠️ **不许在这里要求面板提某一种夹具**（DECISIONS 43）。DO→DI 那根八芯线是
+    # 一种接法不是必然做法 —— 断言写成「要提八芯线」，就等于用例把那个夹具又钉
+    # 回去了。这里只断言板子这一侧的事实。
+    for name, want, why in (
+            ("dout", "读不回来", "端子上真出没出 24 V，板上没有回读"),
+            ("din",  "只读不驱动", "它等的是外面给到端子上的 24 V"),
+            ("ain",  "JP5",    "跳线没焊时读数会趴在 0，那不是 AI 坏了"),
+            ("aout", "JP3",    "端子上出来几伏几毫安取决于跳线"),
+            ("rs485", "半双工", "板子说话的时候听不见自己，所以非要对端")):
+        card = open_port(name)
+        hu = card.locator(".headsup")
+        said = hu.first.inner_text() if hu.count() else ""
+        check(want in said, "%s 按之前就说「%s」 —— %s" % (name, want, why),
+              " ".join(said.split())[:110] or "（这一块是空的）")
+
+
 def check_channel_labels(page):
     """Every per-channel control says which channel AND which terminal.
 
@@ -541,34 +623,47 @@ def check_nothing_in_english(page):
 
 
 def check_run_one_target(page):
-    """The 「单独跑」 button next to a single pt.run target.
+    """Running one pt.run target without driving the rest of the port.
 
-    The one-button test runs a port's targets too, so this button was never
-    pressed by anything - and it is the one somebody reaches for when they want
-    just the SD speed figure or just the PHY probe, without driving the rest of
-    the port.
+    On eth this is its own case now: the card is built per test case rather
+    than per port (2026-09-14), and reading the PHY is case ① - it needs no
+    network, no peer and no IP, which is exactly why somebody reaches for it
+    on its own. Each case owns its button and its result, so this also checks
+    that running one does not clear the other's.
     """
-    Section("running one target on its own")
+    Section("running one case on its own")
 
     if not check(pick_port(page, "eth"), "eth is in the port list"):
         return
-    rows = page.locator("#panelbody .tgt")
-    if not check(rows.count() >= 1, "eth offers a target that can be pressed alone",
-                 "%d rows" % rows.count()):
+    cases = page.locator("#panelbody .case")
+    if not check(cases.count() == 2, "eth is split into its two cases",
+                 "%d cases" % cases.count()):
         return
-    name = rows.first.locator(".n").inner_text().strip()
-    check(name == "以太网 PHY 探测", "the target is named in plain Chinese", name)
+    first = cases.nth(0)
+    check("读网口芯片" in first.locator(".casehd").inner_text(),
+          "case ① is the one that needs no network",
+          first.locator(".casehd").inner_text())
+    # One button per case: the whole point of the rewrite is that "what can I
+    # press" is answerable without reading the card twice.
+    for i, want in ((0, 1), (1, 1)):
+        n = cases.nth(i).locator(".caseact button").count()
+        check(n == want, "case %d offers exactly one action" % (i + 1), "%d" % n)
 
     page.fill("#raw", "")           # so the log assertion below cannot match an echo
-    rows.first.locator("button").click()
+    first.locator(".caseact button").first.click()
     page.wait_for_timeout(3000)
 
     stat = page.locator('.prow[data-port="eth"] .stat').inner_text().strip()
     check(stat != "未测", "pressing it alone reaches a verdict", stat)
     log = page.locator("#log").inner_text()
     check("pt.run eth.link" in log,
-          "and the command that went out is the one the row names",
+          "and the command that went out is the one the case names",
           " ".join(log.split())[-160:])
+    # The result belongs to case ① and stays there. One slot per port would
+    # have the session overwrite it the moment anything else ran.
+    check("过" in first.locator(".caseres").inner_text(),
+          "the verdict lands in that case's own result row",
+          first.locator(".caseres").inner_text())
 
 
 def check_continuous_run(page):
@@ -820,7 +915,7 @@ def check_aout_walk(page):
     if not check(picked, "aout is in the port list"):
         return
 
-    card = page.locator('.card', has_text="模拟输出多点测量")
+    card = page.locator('.card[data-extra="aocal"]')
     if not check(card.count() > 0, "the multi-point card appears under aout"):
         return
 
@@ -869,7 +964,7 @@ def check_aout_walk(page):
     page.locator("#meterok").click()
     page.wait_for_timeout(1500)
 
-    card = page.locator('.card', has_text="模拟输出多点测量")
+    card = page.locator('.card[data-extra="aocal"]')
     body = card.inner_text()
     check("过" in body and "不过" in body,
           "the table shows one point passing and one failing", body[-300:])
@@ -1186,18 +1281,20 @@ def run_checks(page, com):
         # reason that names the missing thing.
         # detected=0 when the slot is empty, mounted=0 when the card is
         # there but exFAT. Either is a fail; the reason names which.
-        "sd":    ("fail", None),
-        "din":   ("fail", "v"),         # nothing is driving the inputs
-        "ain":   ("fail", "ch1"),       # no signal source on D12/D13
-        "rs485": ("fail", "miss"),      # no peer bound on C09/C10
-        # eth's session half needs a TCP peer to connect, and this bench has
-        # none: the panel does not open sockets, and the production answerer
-        # that would (PRODUCTION-TEST-GAP.md, "Golden endpoint") is not written
-        # yet. So conn stays 0 and the port fails - which is the honest result,
-        # named by the reading that is missing. eth.link, the one-shot PHY half,
-        # passes on its own; it is the merged verdict that fails.
-        # ⚠️ This flips to ("pass", None) the day that answerer exists.
-        "eth":   ("fail", "conn"),
+        "din":   ("fail", "位图"),      # nothing is driving the inputs
+        "ain":   ("fail", "AI1"),       # no signal source on D12/D13
+        # *** eth used to be expected to fail here. *** It needed a TCP peer and
+        # nothing opened one, so conn stayed 0. The panel became that peer on
+        # 2026-09-14 (autoPeer): it reads the address out of the board's own
+        # frames and connects itself, which is what the command-line runner had
+        # been doing all along. So it passes now, and a failure is a real one.
+        "eth":   ("pass", None),
+        # Both of these need something plugged in that this bench now has: a
+        # card in the slot, and the CH340 on C10/C11 bound through the card's
+        # own peer picker (which this sweep does, below). Expecting them to fail
+        # was a statement about the bench, and the bench changed.
+        "sd":    ("pass", None),
+        "rs485": ("pass", None),
         "knx":   ("either", None),      # bus power is the operator's business
         # rs232 got criteria on 2026-09-08 after this sweep found it had none.
         "rs232": ("pass", None),
@@ -1249,7 +1346,14 @@ def run_checks(page, com):
 
         print("  ... %s" % key, flush=True)
         prows.nth(i).click()
-        btn = page.locator(".startrow button")
+        # 每个用例自己一个主按钮，都在 .caseact 里 —— 会话那一段的按钮外面还裹了
+        # 一层 .startrow（单次/持续那一组要跟着它），所以两种都找。
+        # *** 限定在这个端口自己那张卡里。*** #panelbody 里还挂着挂在端口下面、
+        # 却不属于它任何一个用例的卡（今天只剩模拟输出那张多点测量），它的按钮
+        # 也是 .caseact button.primary —— 不限定就会顺手点了「走一遍」，而那一轮
+        # 会停下来等人读万用表，这一遍扫描就卡在那儿。
+        card = '.card[data-port="%s"]' % key
+        btn = page.locator(card + " .caseact button.primary")
         if btn.count() == 0:
             check(want == "manual",
                   "%s offers no start button - it can only be judged by eye" % key)
@@ -1258,14 +1362,52 @@ def run_checks(page, com):
                   page.locator(".prow.on .stat").inner_text())
             continue
 
-        btn.first.click()
+        # 对端要人插适配器的端口，面板现在不肯替他选 —— 它分不出哪个适配器接在
+        # 哪个端子上，猜错了报出来的失败会像板子的毛病（用户 2026-09-14）。所以
+        # 这里也照人做的来：先在卡片上把对端绑好，再点开始。
+        # 真台子上要人先把适配器选好再开始（面板分不出哪个插在哪个端子上）。
+        # 模拟板自带对端，绑一个真串口反而是错的 —— 那会去开工位上另一块板的线。
+        if com.strip().lower() != "sim":
+            bind = page.locator("#panelbody .peerbox button", has_text="绑上")
+            if bind.count():
+                bind.first.click()
+                page.wait_for_timeout(1200)
+
+        # 绑完对端这张卡重画过了，重新找一遍。
+        btn = page.locator(card + " .caseact button.primary")
+        # *** 每一段都要按。*** 一个口有五段用例时，只按第一段等于只测了五分之
+        # 一，而端口状态会照样变绿 —— 那正是这一轮扫描要防的事。
+        for b in range(btn.count()):
+            one = page.locator(card + " .caseact button.primary").nth(b)
+            if not one.count():
+                break
+            one.click()
+            # 一次性的那几段不走 testing[]，按钮上不会写「跑着」，等待条件会立刻
+            # 放行 —— 那就会在结果出来之前读状态。所以等这一段自己的结论变掉。
+            try:
+                page.wait_for_function(
+                    "(a) => { const r = document.querySelectorAll("
+                    "             '.card[data-port=\"' + a.port + '\"] [data-case]');"
+                    "         return r[a.n] && r[a.n].textContent.indexOf('还没跑') < 0; }",
+                    arg={"port": key, "n": b}, timeout=90000)
+            except Exception:
+                pass
 
         budget = 90000
         page.wait_for_function(
-            "() => { const b = document.querySelector('.startrow button');"
-            " return b && b.textContent.indexOf('跑着') < 0; }", timeout=budget)
+            # 单动作的口没有 .startrow —— 它的按钮在目标行里。写成「面板里没有
+            # 任何按钮还写着『跑着』」就两种都盖到了。
+            "() => ![...document.querySelectorAll('#panelbody button')]"
+            "        .some(b => b.textContent.indexOf('跑着') >= 0)", timeout=budget)
 
-        note = page.locator(".startrow .sub").first.inner_text().strip()
+        # 每一段自己的结论都挂着 data-case，把它们连起来就是这个口的全部说法。
+        #
+        # *** 不再读 .startrow 里的第一个 .sub。*** 那一行里「单次 / 持续」两个
+        # 单选各自带一句说明，也是 .sub，而且排在状态前面 —— 读到的会是
+        # 「跑一轮，跑完自动停下」，不是结论。
+        notes = page.locator(card + " [data-case]")
+        note = " | ".join(notes.nth(j).inner_text().strip()
+                          for j in range(notes.count()))
         status = page.locator(".prow.on .stat").inner_text().strip()
         tested.append((key, status, note))
 
@@ -1445,6 +1587,7 @@ def run_checks(page, com):
           "no limit is editable on the port tab")
 
     check_limits_are_readonly(page)
+    check_warns_before_you_press(page)
     check_channel_labels(page)
     check_off_plan_params(page)
     check_nothing_in_english(page)
@@ -1454,79 +1597,6 @@ def run_checks(page, com):
     check_peer_binding(page)
     check_plan_runs_from_the_page(page)
     check_aout_walk(page)
-
-    # -------------------------------------------------- DO -> DI cross-check
-    #
-    # One eight-way cable, sixteen channels. What matters is not that it can
-    # report a good cable - it is that it finds a crossed pair, which is the
-    # failure neither port can see on its own. So this drives the simulated
-    # board's cable into each of its three states and checks the panel says the
-    # right thing about each.
-    #
-    # Only on the simulated board: making a real bench cross two wires and then
-    # uncross them is not something a test can ask of a person.
-    if com.strip().lower() == "sim":
-        Section("DO -> DI cross-check")
-
-        def raw(cmd):
-            page.fill("#raw", cmd)
-            page.click("#send")
-            page.wait_for_timeout(250)
-
-        def pick(name):
-            prows = page.locator(".prow")
-            for i in range(prows.count()):
-                if prows.nth(i).get_attribute("data-port") == name:
-                    prows.nth(i).click()
-                    return True
-            return False
-
-        if not check(pick("dout"), "dout is in the port list"):
-            pass
-        else:
-            card = page.locator(".card", has=page.locator("text=DO → DI 对照"))
-            check(card.count() > 0,
-                  "the cross-check appears under dout - the cable joins two ports")
-            check(pick("din"), "din is in the port list too")
-            check(page.locator(".card", has=page.locator("text=DO → DI 对照")).count() > 0,
-                  "and under din as well, so it is reachable from either end")
-
-            pick("dout")
-
-            def walk_cable(mode, label, want_ok, want_word):
-                raw("sim.cable %d" % mode)
-                btn = page.locator("button.dodigo")
-                if btn.count() == 0:
-                    Fail("no 走一遍 button on the cross-check card (%s)" % label)
-                    failures.append("cross-check button missing")
-                    return
-                btn.first.click()
-                # Eight outputs, two settle frames each at 200 ms.
-                # Its own class, because the panel rebuilds the whole pane
-                # after every command: waiting on "the first button" would
-                # watch the session card's 启动 and return immediately.
-                page.wait_for_function(
-                    "() => { const b = document.querySelector('button.dodigo');"
-                    " return b && !b.disabled; }",
-                    timeout=120000)
-                said = page.locator(".sub2").first.inner_text()
-                if want_ok:
-                    check(said.startswith("✅"),
-                          "a good cable reads as passing (%s)" % label, said)
-                else:
-                    ok = check(said.startswith("❌"),
-                               "%s is caught, not passed" % label, said)
-                    if ok:
-                        check(want_word in said,
-                              "and it says which wire to look at (%s)" % want_word, said)
-
-            walk_cable(1, "straight through", True, None)
-            walk_cable(2, "DO1 and DO2 swapped", False, "错位")
-            walk_cable(3, "DO3 open", False, "断了")
-
-            # Leave the board the way the rest of the run expects it.
-            raw("sim.cable 0")
-            raw("pt.stop all")
 
     # ---------------------------------------------------- KNX frame mode
     #
