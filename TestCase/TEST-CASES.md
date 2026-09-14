@@ -227,6 +227,27 @@ porttool run --port sim --yes TestCase/plans/station6-poweron.json
 cd TestCase/host/porttool_panel && python run.py --port sim   # H5，不用板子
 ```
 
+**H5 旁边还有一个 `naive.py`，问的不是同一个问题。** `run.py` 知道每个控件在哪、
+该点哪一个；`naive.py` 只认页面：进一个端口，把印在上面的按钮按印出来的顺序挨个
+按一遍，读它自己那一段给出的结论，同时查这一段的排版（说明在不在、按钮是不是排在
+配置后面结果前面、要人插的对端是不是排在所有用例之前）。三个 2026-09-14 的 bug
+`run.py` 看不见，因为它按的是代码里的位置，不是屏幕上的位置。
+
+```bash
+cd TestCase/host/porttool_panel
+python naive.py --port COM5 --peer rs485=COM16     # 真板子，17 个端口 27 个用例
+python naive.py --port COM5 --only sd              # 只走一个口
+python naive.py --port COM5 --long                 # 连全量的 SD 压力和 SDRAM 全片扫描一起跑
+```
+
+⚠️ **默认跳过 `sd.stress`（64 轮）和 `sdram.sweep`（整片 64 MB）。** 那两项验的是
+器件不是面板，而且占掉这个脚本大半的时间 —— 抽查就能回答「按下去给不给得出像样的
+答复」。要给器件下结论，加 `--long`，或者自己在面板上点那两段。用户 2026-09-14 定。
+
+⚠️ 它不点「持续」（那是几小时的老化），不走模拟输出那张多点测量卡（要人读万用表），
+也不进交权入口。`--peer` 一次只说一个口，形如 `rs485=COM16` —— 面板分不出哪个适配器
+插在哪个端子上，这个脚本也分不出。
+
 **造故障看面板怎么显示**（手敲进它的 stdin，或在面板底部的命令框里）：
 
 | 命令 | 干什么 |
