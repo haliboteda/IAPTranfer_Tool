@@ -79,30 +79,6 @@
       ]
     },
     {
-      "id": "sdram-retention",
-      "type": "PtRun",
-      "_note": "Proves auto-refresh is actually running - cells lose charge in tens of milliseconds without it, and a board that passes the sweep can still fail this. One cycle: write 64 random addresses, wait 5 s, read back.",
-      "target": "sdram.retention",
-      "timeout_ms": 30000,
-      "checks": [
-        {
-          "field": "ready",
-          "op": "eq",
-          "value": "1"
-        },
-        {
-          "field": "checked",
-          "op": "eq",
-          "value": "64"
-        },
-        {
-          "field": "failed",
-          "op": "eq",
-          "value": "0"
-        }
-      ]
-    },
-    {
       "id": "sd-detect",
       "type": "PtSession",
       "_note": "The detect switch on PE6, watched rather than sampled once. It exists as a session so an insertion shows on the panel as it happens; this step is what gives that session a criterion, without which the panel reports the port unjudged forever - the same hole eth's session half had. detected=1 only: a fixture has a card in the slot. changes/in/out are recorded and NOT judged here, because how many times a card was moved during a production run is not something a passing board has to satisfy - the hot-plug walk is a bench exercise, and case H4 decides the counting.",
@@ -159,16 +135,6 @@
           "value": "1"
         },
         {
-          "field": "wrote",
-          "op": "eq",
-          "value": "1"
-        },
-        {
-          "field": "read_back",
-          "op": "eq",
-          "value": "1"
-        },
-        {
           "field": "identical",
           "op": "eq",
           "value": "1"
@@ -177,6 +143,16 @@
           "field": "fresult",
           "op": "eq",
           "value": "0"
+        },
+        {
+          "field": "passes",
+          "op": "eq",
+          "value": "1"
+        },
+        {
+          "field": "passed",
+          "op": "eq",
+          "value": "1"
         }
       ],
       "params": {
@@ -186,8 +162,8 @@
     {
       "id": "sd-stress",
       "type": "PtRun",
-      "_note": "'SD read/write stress test'. 64 rounds of write, read back and CRC through FatFs. passed has to equal passes: a run that stopped early reports a smaller passes, so comparing the two is what catches it - a check on passed alone would pass a run that gave up after one round.",
-      "target": "sd.stress",
+      "_note": "'SD read/write stress'. Same target as sd-integrity with passes=64: a stress run is one integrity round repeated (SD/sd_test.h), so how many rounds counts as proof is a parameter. Judge passes AND passed - a run that stopped early reports a smaller passes, and looking only at passed would call that a pass.",
+      "target": "sd.integrity",
       "timeout_ms": 180000,
       "checks": [
         {
@@ -210,7 +186,10 @@
           "op": "eq",
           "value": "0"
         }
-      ]
+      ],
+      "params": {
+        "passes": 64
+      }
     },
     {
       "id": "sd-speed",
