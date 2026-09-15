@@ -20,7 +20,6 @@ visible if you follow the page instead of the code.
 What it deliberately does NOT do:
   * 持续 - a burn-in runs for hours; this presses 单次 only
   * the analog multi-point walk - it stops to ask a person for a meter reading
-  * pt.handover - one-way entries need the reset key to come back
   * the long-running storage cases - see LONG below
 
 *** LONG: it skips the exhaustive storage cases by default. *** Sweeping all
@@ -69,18 +68,16 @@ def good(port, what):
 # How long one case may take before it is called stuck. The slow ones are slow
 # for a reason worth reporting, so they get room rather than a blanket number.
 BUDGET_MS = {
-    "sd.stress": 240000,
     "sd.integrity": 120000,
     "sd.speed": 120000,
     "sdram.sweep": 300000,
-    "sdram.retention": 90000,
     "sdram.crc": 60000,
 }
 DEFAULT_BUDGET_MS = 60000
 
 # Exhaustive by nature: 64 stress passes over the card, the whole 64 MB array.
 # They qualify the part; this script checks the page. Skipped unless --long.
-LONG_CASES = ("sd.stress", "sdram.sweep")
+LONG_CASES = ("sdram.sweep",)
 
 # Ports that wear out. Each press is a real mechanical cycle from a finite
 # supply (HF41F: 30k), so these get the plan's mode once and no mode sweep.
@@ -426,6 +423,105 @@ def walk(page, com, only, peers, long_ok):
     return results
 
 
+def walk_aocal(page):
+    """The analog multi-point card: every control, without inventing readings.
+
+    *** It does not type a meter reading. *** The numbers this card produces are
+    a calibration of a real board, and one made up at a keyboard would look
+    exactly like a measured one in the report. So this presses 跳过这一点 for
+    every point and then 中止 on a second pass: that exercises the button, the
+    prompt, the skip path and the abort path, and leaves the verdict to whoever
+    is holding the meter.
+    """
+    port = "aout+读表"
+    card = page.locator('.card[data-port="aout"]')
+    if not card.count():
+        bad(port, "找不到 AO 卡片")
+        return
+
+    # 一张卡两种用法，靠「读数来自」分开（DECISIONS 47）。不选人工读表，
+    # 这就是产线方案无人值守跑的那一档。
+    pick = card.locator('input[type=radio][data-meter="manual"]')
+    if not pick.count():
+        bad(port, "AO 卡上没有「读数来自」这个选项")
+        return
+    if not card.locator('input[type=radio][data-meter="none"]').count():
+        bad(port, "「不读表」那一档不见了 —— 方案跑的就是它")
+    pick.first.check()
+    page.wait_for_timeout(400)
+    card = page.locator('.card[data-port="aout"]')
+    good(port, "选了「人工读表」")
+
+    for label in ("测哪几个点", "合格判据", "测哪一路"):
+        if label not in flat(card):
+            bad(port, "选了读表之后少了「%s」" % label)
+
+    go = card.locator("button.aocalgo")
+    if not go.count():
+        bad(port, "没有「走一遍」按钮")
+        return
+
+    # Pass one: skip every point. Too few points is a real edge - the fit has
+    # to refuse rather than invent a line through one reading.
+    go.first.click()
+    # Each point sets the DAC and waits for two fresh frames, so the next
+    # prompt is a second or two behind the last one. Waiting on the button
+    # coming back rather than on the gap is what tells "finished" from
+    # "still between points".
+    skipped = 0
+    deadline = time.time() + 90
+    while time.time() < deadline:
+        page.wait_for_timeout(400)
+        if page.locator("#meterask:not([hidden])").count():
+            page.locator("#meterskip").click()
+            skipped += 1
+            continue
+        if skipped and page.locator(
+                '.card[data-extra="aocal"] button.aocalgo:not([disabled])').count():
+            break
+    if not skipped:
+        bad(port, "点了「走一遍」，没有弹出过读数输入框")
+        return
+    good(port, "「走一遍」逐点停下来问读数，%d 个点都能跳过" % skipped)
+
+    page.wait_for_timeout(1500)
+    said = flat(card)
+    if "没有写进板子" not in said:
+        bad(port, "卡片没说清系数不会写进板子")
+    else:
+        good(port, "卡片说明了系数不写进板子")
+
+    # Pass two: abort partway. A run nobody can stop is a run that owns the
+    # board until it finishes.
+    #
+    # First the button has to come back at all: a card left saying 跑着… after
+    # every point was skipped can never be run a second time.
+    ready = False
+    for _ in range(20):
+        page.wait_for_timeout(500)
+        if page.locator('.card[data-port="aout"] button.aocalgo:not([disabled])').count():
+            ready = True
+            break
+    if not ready:
+        bad(port, "跳过所有点之后按钮一直停在「跑着…」，这张卡跑不了第二轮")
+        return
+    good(port, "跳完所有点之后按钮恢复可用")
+    go = page.locator('.card[data-port="aout"] button.aocalgo')
+    go.first.click()
+    for _ in range(10):
+        page.wait_for_timeout(500)
+        if page.locator("#meterask:not([hidden])").count():
+            page.locator("#meterstop").click()
+            break
+    page.wait_for_timeout(1200)
+    if page.locator("#meterask:not([hidden])").count():
+        bad(port, "点了「中止」，读数输入框还在")
+    else:
+        good(port, "「中止」把这一轮停下来了")
+    if page.locator('.card[data-port="aout"] button.aocalgo[disabled]').count():
+        bad(port, "中止之后「走一遍」还是灰的，跑不了第二轮")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--port", required=True, help="the board's RS232 control port")
@@ -435,6 +531,8 @@ def main():
     # person at the bench can, so they say it, one port at a time.
     ap.add_argument("--peer", default="",
                     help="which adapter is on which port, e.g. rs485=COM16")
+    ap.add_argument("--aocal", action="store_true",
+                    help="also walk the analog multi-point card (no meter needed)")
     ap.add_argument("--long", action="store_true",
                     help="also run the exhaustive storage cases (see LONG above)")
     ap.add_argument("--show", action="store_true", help="visible browser window")
@@ -485,6 +583,9 @@ def main():
             page.wait_for_timeout(1200)
 
             results = walk(page, args.port, only, peers, args.long)
+            if args.aocal:
+                Section("模拟输出多点测量")
+                walk_aocal(page)
             page.goto("about:blank")
     finally:
         h5.stop_panel(proc)

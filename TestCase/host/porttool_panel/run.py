@@ -915,15 +915,28 @@ def check_aout_walk(page):
     if not check(picked, "aout is in the port list"):
         return
 
-    card = page.locator('.card[data-extra="aocal"]')
-    if not check(card.count() > 0, "the multi-point card appears under aout"):
+    # One card, two uses, told apart by 读数来自 (DECISIONS 47). The walk only
+    # exists once that is set to 人工读表 - before then this is the echo-only
+    # card a production plan runs unattended.
+    card = page.locator('.card[data-port="aout"]')
+    if not check(card.count() > 0, "the aout card is there"):
         return
+    pick = card.locator('input[type=radio][data-meter="manual"]')
+    if not check(pick.count() > 0, "the card offers 读数来自 as a choice"):
+        return
+    check(card.locator('input[type=radio][data-meter="none"]').count() > 0,
+          "and 不读表 is the other one - the档 a plan runs")
+    pick.first.check()
+    page.wait_for_timeout(400)
+
+    card = page.locator('.card[data-port="aout"]')
+    check(card.locator('button.aocalgo').count() > 0,
+          "picking 人工读表 turns the button into the walk")
 
     # Two points, so the walk is short but still more than one - one point
     # cannot separate an offset from a gain error, which is why it is a walk.
-    boxes = card.locator("input")
-    boxes.nth(0).fill("1, 20")
-    boxes.nth(1).fill("2")
+    card.locator('input[data-aocal="points"]').fill("1, 20")
+    card.locator('input[data-aocal="tol"]').fill("2")
     page.wait_for_timeout(150)
 
     card.locator("button.aocalgo").click()
@@ -964,7 +977,7 @@ def check_aout_walk(page):
     page.locator("#meterok").click()
     page.wait_for_timeout(1500)
 
-    card = page.locator('.card[data-extra="aocal"]')
+    card = page.locator('.card[data-port="aout"]')
     body = card.inner_text()
     check("过" in body and "不过" in body,
           "the table shows one point passing and one failing", body[-300:])
