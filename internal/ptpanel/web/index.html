@@ -63,7 +63,6 @@ main>section{background:var(--bg);overflow-y:auto;padding:14px}
 .grp .nm{flex:1;font-weight:600;font-size:13px}
 .tag{font:11px var(--mono);padding:1px 6px;border-radius:3px}
 .tag.session{color:var(--ok);background:var(--ok-bg)}
-.tag.handover{color:var(--warn);background:var(--warn-bg)}
 .tag.run{color:#fff;background:var(--ok)}
 .kids{padding:2px 0 6px 28px;display:flex;flex-direction:column;gap:2px}
 .kids label{display:flex;align-items:center;gap:6px;font-size:12.5px;color:var(--ink2);
@@ -430,7 +429,7 @@ function isEchoTraffic(kind, line) {
 // 所以给它们自己的一类，默认折起。**不是丢掉** —— 勾上「板子自述」就全回来，
 // 导出的日志也一直是全的。
 function isCaps(kind, line) {
-  return kind === "ok" && /^OK (porttool|port|vals|limits|terms|run|handover)=/.test(line);
+  return kind === "ok" && /^OK (porttool|port|vals|limits|terms|run)=/.test(line);
 }
 
 function addLog(kind, line, at) {
@@ -1012,15 +1011,13 @@ const CASE_TEXT = {
     },
     "sd.integrity": {
       title: "写一个文件再读回来比对",
-      what: "在卡上写一个文件，读回来逐字节比对。这是「卡能不能真存住东西」最直接的问法。",
-      how: "点执行，跑几秒。",
-      pass: "**写进去了 / 读回来了 / 内容一致 三个都是 1，文件系统返回码 0**。",
-    },
-    "sd.stress": {
-      title: "压力：同样的事跑 64 轮", tag: "⚠️ 慢，几十秒起",
-      what: "把上一项重复 64 轮，专门找偶发的坏块和接触不良 —— 那种毛病跑一轮碰不到。",
-      how: "点执行，然后等着。跑着的时候别点别的。",
-      pass: "**跑了 64 轮、过了 64 轮、第一次出错在第几轮 = 0**（0 表示一轮都没错）。",
+      what: "在卡上写一个文件，读回来逐字节比对，跑几轮由方案给。"
+          + "这是「卡能不能真存住东西」最直接的问法；**轮数填大就是压力测试** —— "
+          + "偶发的坏块和接触不良跑一轮碰不到。",
+      how: "点执行。轮数填得大时几十秒起，跑着的时候别点别的。",
+      pass: "**内容一致 1、跑了几轮 = 过了几轮、文件系统返回码 0**。\n"
+          + "⚠️ 判据要**同时**看「跑了几轮」和「过了几轮」 —— 中途停下来时前者跟着变小，"
+          + "只看后者会把「跑一轮就放弃」判成通过。",
     },
     "sd.speed": {
       title: "读写速率",
@@ -1049,14 +1046,6 @@ const CASE_TEXT = {
       what: "用四种花样把整片写一遍读一遍，找单个坏位。",
       how: "点执行，然后等着。",
       pass: "**就绪 1、花样数 4、对不上的字 0**。",
-    },
-    "sdram.retention": {
-      title: "保持：数据坐一会儿还在不在",
-      what: "写一批块，让它们在阵列里坐着不动几秒，再读回来。"
-          + "**它证明的是自动刷新在工作** —— 不刷新的单元几十毫秒就掉电，"
-          + "数据能坐住几秒只可能是刷新在跑。",
-      how: "点执行。坐多久由方案给（下限 1000 毫秒，填更短板子直接拒绝，不会悄悄替你改大）。",
-      pass: "**就绪 1、查过的块 64、失败的块 0**。",
     },
     "sdram.crc": {
       title: "算一段校验和",
@@ -1246,9 +1235,8 @@ const TARGET_CN = {
   "eth.link": "以太网 PHY 探测",
   "sd.probe": "SD 卡探测", "sd.info": "SD 卡信息",
   "sd.integrity": "SD 卡数据校验", "sd.integrity.soak": "SD 卡数据校验（长跑）",
-  "sd.stress": "SD 卡压力", "sd.speed": "SD 卡读写速率",
+  "sd.speed": "SD 卡读写速率",
   "sdram.probe": "SDRAM 地址/数据线", "sdram.sweep": "SDRAM 全片扫描",
-  "sdram.retention": "SDRAM 保持", "sdram.retention.soak": "SDRAM 保持（长跑）",
   "sdram.capacity": "SDRAM 容量", "sdram.crc": "SDRAM 校验",
   "rtc.read": "读实时钟", "led.blink": "指示灯闪",
   "reset.cause": "上次为什么复位", "rs485.pins": "RS485 引脚通断",
@@ -1475,6 +1463,14 @@ let judgeWhy = {};
 // undefined is not false. Found 2026-09-08.
 async function judge(frame) {
   if (judgeBusy[frame.port]) { return curVerdict(frame.port); }
+  // 多点测量正在逐点改这个口的输出，方案那组判据此刻不成立 —— 它是程序在改，
+  // 不是人在改，所以 offPlan 看不见（那张表只记人改过的）。
+  if (aocalRunning && frame.port === "aout") {
+    delete verdicts[frame.port];
+    judgeWhy[frame.port] = "多点测量在跑，逐点改着输出 —— 方案的判据这会儿不适用";
+    renderTree(); renderPanel();
+    return null;
+  }
   // 参数被人改过的会话帧，不判 —— 判据是按方案那组参数写的，拿它去判一组别的
   // 参数，好板子也会报失败。pt.run 的目标不受影响：它不带卡片上的参数。
   if (!frame.target) {
@@ -1492,6 +1488,7 @@ async function judge(frame) {
     const r = await api("/api/judge", {
       port: frame.port, target: frame.target || "",
       fields: frame.fields || {}, text: frame.line || "",
+      args: frame.args || {},
     });
     if (r.known === false) {
       judgeWhy[frame.port] = r.why || "";
@@ -1695,13 +1692,6 @@ function portStatus(p) {
   const v = verdicts[p.name];
   if (v === true)  { return {icon:"✅", cls:"pass", text:"通过"}; }
   if (v === false) { return {icon:"❌", cls:"fail", text:"失败"}; }
-  // A port whose only entries are one-way handovers can never get a verdict
-  // from here: it prints prose for a person and takes the board with it.
-  // Showing 未测 for those reads as "somebody forgot", which sends people
-  // looking for a button that does not exist. Said plainly instead.
-  if (p.kind === "handover" && !(p.runs || []).length) {
-    return {icon:"👁", cls:"manual", text:"人工判"};
-  }
   return {icon:"⬜", cls:"untested", text:"未测"};
 }
 
@@ -1737,8 +1727,8 @@ function renderTree() {
       row.appendChild(el("span","stat", st.text));
       row.onclick = () => { selected = p.name; renderTree(); renderPanel(); };
 
-      // 勾一个就是「这一轮带上它」。只有会话能勾 —— 交权那类一去不回，
-      // 拉它一起跑就是把命令口交出去，剩下的端口全哑。
+      // 勾一个就是「这一轮带上它」。只有会话能勾 —— 一次性的用例自己跑完就回来了，
+      // 没有「带上它一起持续跑」这回事。
       if (p.kind === "session") {
         const c = el("input","pick"); c.type = "checkbox";
         c.checked = picked2.has(p.name);
@@ -1831,7 +1821,7 @@ function renderTreeDetail() {
                       p.blk === "-" ? "板载" : p.blk));
     hd.appendChild(el("span","nm", p.name));
     if (p.running) hd.appendChild(el("span","tag run","跑着"));
-    hd.appendChild(el("span","tag " + p.kind, p.kind === "session" ? "会话" : "交权"));
+    hd.appendChild(el("span","tag " + p.kind, "会话"));
     g.appendChild(hd);
 
     if (expanded[p.name]) {
@@ -1854,8 +1844,6 @@ function renderTreeDetail() {
           lb.appendChild(document.createTextNode(displayName(p, i)));
           kids.appendChild(lb);
         }
-      } else if (p.kind === "handover") {
-        for (const t of p.targets || []) kids.appendChild(el("div","t", t));
       } else {
         kids.appendChild(el("div","t", p.term));
       }
@@ -2139,10 +2127,6 @@ function renderPanel() {
   host.appendChild(portCard(p));
 
 
-  // 多点测量只挂在 aout 下面 —— 只有模拟输出的判据来自外部仪器。
-  if (p.name === "aout") {
-    host.appendChild(aocalCard(p));
-  }
 }
 
 /* ===================== 用例式卡片：先在以太网上试，认可了再铺到别的口 =====================
@@ -2323,28 +2307,6 @@ function portCard(p) {
 
   if (cases.length > 1) { c.appendChild(allCasesRow(p, cases, build)); }
 
-  // 老的独占测试入口。板子现在一个都不报了（所有交权项都退出了 caps），留着是
-  // 为了固件哪天又报出来时这里不用改。
-  if ((p.targets || []).length) {
-    const det = el("details");
-    det.appendChild(el("summary", null,
-      "深度排查入口（" + p.targets.length + " 个，⚠️ 进去就回不来，要按复位键）"));
-    det.appendChild(el("div", "hint",
-      "这些打的是给人看的散文，上位机判不了。正常测这个端口用上面的用例，不用碰这里。"));
-    for (const t of p.targets) {
-      const r = el("div", "tgt");
-      r.appendChild(el("span", "n", t));
-      const b = el("button", null, "进入");
-      b.onclick = () => {
-        if (!confirm("要进入「" + t + "」吗？\n\n进去之后工装就不响应命令了，要按板子上的复位键才能回来，其他端口也就没法测了。"))
-          return;
-        run("pt.handover " + t);
-      };
-      r.appendChild(b);
-      det.appendChild(r);
-    }
-    c.appendChild(det);
-  }
   return c;
 }
 
@@ -2353,17 +2315,35 @@ function runCase(p, t, no) {
   const tx = caseTextFor(p, t);
 
   const cfg = [];
-  // pt.run 的参数出自方案文件，面板里不给改 —— 判据是跟着这些参数写的，改了
-  // 参数判据就不成立了。所以这里只把它们说出来，让人知道这一项是按什么跑的。
-  // 没有参数的用例就不画配置区 —— 一个只写着「没有要设的参数」的灰框，占的
-  // 地方和真有参数时一样大，读的人还得先看懂它其实是空的。「怎么做」那一行
-  // 已经写了直接点执行。
-  const args = planRunArgs[t] || {};
+  // pt.run 的参数可以改，因为判据是按参数挑的（judge.go 的 criteriaFor）。
+  // 同一个目标在方案里可以有好几步：sd.integrity 跑 1 轮和跑 64 轮是两
+  // 组不同的判据，填哪个就按哪组判。填一个方案里没有的值，就只给读数。
+  //
+  // 没有参数的用例不画配置区 —— 一个只写着「没有要设的参数」的灰框占的
+  // 地方和真有参数时一样大。
+  const args = Object.assign({}, planRunArgs[t] || {}, runEdited[t] || {});
   const named = Object.entries(args);
   if (named.length) {
+    const row = el("div", "row");
+    for (const [k, v] of named) {
+      const lb = el("label", null, paramCN(k) + " ");
+      lb.title = "协议里的名字：" + k;
+      lb.dataset.param = k;
+      const inp = el("input");
+      inp.dataset.run = t;
+      inp.value = v;
+      if (/^\d+$/.test(String(v))) { inp.type = "number"; inp.min = 0; }
+      inp.oninput = () => {
+        runEdited[t] = runEdited[t] || {};
+        runEdited[t][k] = inp.value;
+      };
+      lb.appendChild(inp);
+      row.appendChild(lb);
+    }
+    cfg.push(row);
     cfg.push(richText("div", "sub",
-      "方案给的参数：" + named.map(([k, v]) => paramCN(k) + " " + v).join("　") +
-      "　**面板里不改** —— 判据是照着这组参数写的"));
+      "默认是方案给的那组。**改了也有结论** —— 方案里有对应这组参数的判据就按它判，"
+    + "没有就只给读数。"));
   }
 
   const b = el("button", "primary", "执行");
@@ -2545,6 +2525,7 @@ function sessionCase(p, no) {
   //   USB   —— 板子那个 CDC 口有唯一的 VID:PID。
   // 两个还都有先有鸡还是先有蛋的问题：板子要会话起来才拿 IP、才枚举 CDC，所以
   // 「开始之前先选」根本做不到。
+  if (p.name === "aout") { cfg.push(aocalConfig(p)); }
   if (p.name === "eth") { cfg.push(ethPeerRow(p)); }
   else if ((planParams[p.name] || {}).peer === "usb") { cfg.push(linkRow(p, "usb")); }
 
@@ -2671,6 +2652,9 @@ function sessionCase(p, no) {
     return cmd;
   };
 
+  // 读表那一档的结果是逐点表和拟合，不是一句过 / 不过。
+  if (p.name === "aout" && aocal.meter === "manual") { res.appendChild(aocalResult()); }
+
   const tx = caseTextFor(p, "session");
   const node = caseBlock({
     no: no, title: tx.title, tag: tx.tag,
@@ -2738,12 +2722,15 @@ function allCasesRow(p, cases, build) {
 // *** the measurements yet. Inventing one now would put an unexplainable bias
 // *** underneath every board that follows. See ISS-C1 in $BOOT/docs/work.
 
-const AOCAL_METERS = ["manual"];   // 仪器接口预留：加了别的就在这里出现
+
+// 多点测量正在跑。**不是 aocal.busy** —— 那个是给按钮看的，跑完就清；这个要
+// 在最后一帧判完之前一直立着。
+let aocalRunning = false;
 
 let aocal = {
   busy: "",
   ch: 1,
-  meter: "manual",
+  meter: "none",      // "none" = 回显那一档；"manual" = 多点走查
   pointsText: "1, 10, 20",   // mA, 覆盖量程高中低
   tolPct: 2,                 // 合格判据，可配
   rows: [],
@@ -2907,22 +2894,40 @@ function aocalFitBox(r) {
   return box;
 }
 
-function aocalCard(p) {
-  const c = el("div","card");
-  c.dataset.extra = "aocal";
-  const hd = el("div","hd");
-  hd.appendChild(el("span","nm","模拟输出多点测量"));
-  hd.appendChild(el("span","sub","D14/D15，万用表串在回路里"));
-  c.appendChild(hd);
+// 「读数来自」把 AO 这张卡分成两种用法（DECISIONS 47）：不读表就是回显那一档
+// —— 方案判、能无人值守；读表就是多点走查 —— 表判、要人守着。合并之前它们是
+// 两张卡，而两张卡用的是同一条 pt.start aout。
+function aocalConfig(p) {
+  const box = el("div", "chvals");
+  box.dataset.param = "meter";
+  box.appendChild(el("div", "st", "读数来自"));
 
-  const go = el("button","primary aocalgo", aocal.busy ? "跑着…" : "走一遍");
-  go.disabled = !!aocal.busy;
+  const pick = el("div", "enumpick");
+  for (const [v, nm, why] of [
+    ["none", "不读表",
+     "只证明板子收下并保持住了你填的毫伏 —— **端子上出没出电流，板上没有回读通道**。判据用方案里那组，能无人值守跑，产线序列走这一档"],
+    ["manual", "人工读表",
+     "逐点停下来等你把万用表读数填进去，算出偏差和补偿系数 —— 校准走这一档，**必须有人守着**"],
+  ]) {
+    const lb = el("label");
+    const r = el("input"); r.type = "radio"; r.name = "aocal-meter";
+    r.value = v; r.checked = (aocal.meter === v);
+    r.dataset.meter = v;
+    r.onchange = () => { aocal.meter = v; renderPanel(); };
+    lb.appendChild(r);
+    lb.appendChild(el("b", null, nm));
+    lb.appendChild(richText("span", "sub", "—— " + why));
+    pick.appendChild(lb);
+  }
+  box.appendChild(pick);
+  if (aocal.meter !== "manual") { return box; }
 
-  // 三项人工配置，值都存在模块状态里而不是 DOM 里：每来一帧面板都会重建。
-  const row = el("div","row");
-  const mk = (label, get, set, width, step) => {
+  // 值存在模块状态里而不是 DOM 里：每来一帧面板都会重建。
+  const row = el("div", "row");
+  const mk = (key, label, get, set, width, step) => {
     const lb = el("label", null, label + " ");
     const i = el("input");
+    i.dataset.aocal = key;      // 断言按属性找，不按屏幕上的字
     i.value = get();
     i.style.width = width;
     if (step) { i.type = "number"; i.step = step; }
@@ -2930,36 +2935,33 @@ function aocalCard(p) {
     lb.appendChild(i);
     row.appendChild(lb);
   };
-  mk("测哪几个点（mA）", () => aocal.pointsText, v => aocal.pointsText = v, "180px");
-  mk("合格判据（±% FS）", () => aocal.tolPct, v => aocal.tolPct = Number(v) || 0, "70px", "0.1");
+  mk("points", "测哪几个点（mA）", () => aocal.pointsText, v => aocal.pointsText = v, "180px");
+  mk("tol", "合格判据（±% FS）", () => aocal.tolPct, v => aocal.tolPct = Number(v) || 0, "70px", "0.1");
 
+  // *** 这一档只测一路。*** 表一次只能串进一条回路，上面那组通道复选这里不算数。
   const chsel = el("select");
+  chsel.dataset.param = "aocalch";
   for (let i = 1; i <= (p.channels || 2); i++) {
-    const o = el("option", null, "AO" + i); o.value = i;
+    const o = el("option", null, displayName(p, i)); o.value = i;
     if (i === aocal.ch) o.selected = true;
     chsel.appendChild(o);
   }
   chsel.onchange = () => { aocal.ch = Number(chsel.value); renderPanel(); };
-  const chlb = el("label", null, "通道 "); chlb.appendChild(chsel); row.appendChild(chlb);
+  const chlb = el("label", null, "测哪一路 "); chlb.appendChild(chsel); row.appendChild(chlb);
+  box.appendChild(row);
 
-  const msel = el("select");
-  for (const m of AOCAL_METERS) {
-    const o = el("option", null, m === "manual" ? "人工读表" : m); o.value = m;
-    if (m === aocal.meter) o.selected = true;
-    msel.appendChild(o);
-  }
-  msel.onchange = () => { aocal.meter = msel.value; };
-  const mlb = el("label", null, "读数来自 "); mlb.appendChild(msel); row.appendChild(mlb);
+  box.appendChild(richText("div", "sub",
+    "⚠ **表一次只能串进一路**，所以这一档只测上面选的那一路，卡片顶上的通道勾选不算数。" +
+    "判据是**满量程的百分比**（满量程 " + AOCAL_FS_MA + " mA），不是读数的百分比 —— " +
+    "DAC 是 12 位，一步约 5.9 µA，在 1 mA 那一点一步就占读数的 0.6%，" +
+    "「读数的 0.1%」在量程低端是硬件到不了的指标。"));
+  return box;
+}
 
-  // *** richText，不是 el。*** 这一段写着 **满量程的百分比**，走 textContent 的话
-  // 那两对星号会原样印在屏幕上。
-  const fsNote = richText("div","sub",
-    "⚠ 判据是**满量程的百分比**（满量程 " + AOCAL_FS_MA + " mA），不是读数的百分比。" +
-    "DAC 是 12 位，一步约 5.9 µA —— 在 1 mA 那一点，一步就占读数的 0.6%，" +
-    "「读数的 0.1%」在量程低端是硬件到不了的指标");
-
+// 多点走查的结果：逐点表 + 拟合。只在「人工读表」那一档出现。
+function aocalResult() {
   const res = el("div");
-  res.appendChild(el("span","tgtres", aocal.busy || aocal.note || "还没跑"));
+  res.appendChild(el("span", "tgtres", aocal.busy || aocal.note || "还没跑"));
 
   if (aocal.rows.length) {
     const grid = el("div","rowgrid");
@@ -2992,42 +2994,13 @@ function aocalCard(p) {
 
     res.appendChild(richText("div","hint",
       "⚠️ **系数算出来了，但没有写进板子。** 存在板子哪一块 flash 还没定（ISS-C1），" +
-      "所以这些数只进测试报告。**先看最大残差再看增益** —— 残差比表本身的误差大得多，" +
+      "所以这些数只在这一页上 —— 关掉就没了，要留就先抄下来。**先看最大残差再看增益** —— 残差比表本身的误差大得多，" +
       "就说明这条响应不是直线，那条直线在哪儿都是错的。"));
   }
 
-  c.appendChild(caseBlock({
-    no: "", title: "逐点输出，人读表填回来", tag: "读数来自万用表",
-    what: "板子上**没有回读通道**，帧里那个毫安是算出来的不是量出来的 —— 判据只能来自表。"
-        + "走几个点是为了把**零点误差和增益误差分开**，一个点分不开。",
-    how: "把万用表串进 D14 → 表 → Analog GND → 填要测的点 → 点「走一遍」。"
-       + "每到一个点它会停下来等你把表上的读数填进去。",
-    pass: "**每个点的偏差都在 ±" + aocal.tolPct + "% 满量程以内**。\n"
-        + "⚠️ 系数算出来了**也没有写进板子** —— 存在哪一块 flash 还没定，这些数只进测试报告。",
-    config: [row, fsNote], actions: [go], result: res,
-  }));
-
-  go.onclick = async () => {
-    if (aocal.busy) return;
-    aocal.busy = "跑着…";
-    aocal.rows = [];
-    aocal.note = "";
-    aocal.fit = null;
-    renderPanel();
-    const say = t => { aocal.busy = t; renderPanel(); };
-    try {
-      await aocalRun(p, say, () => renderPanel());
-      aocal.note = "跑完了。";
-    } catch (e) {
-      aocal.note = "出错了：" + e;
-    } finally {
-      aocal.busy = "";
-      meterDone(null);
-      renderPanel();
-    }
-  };
-  return c;
+  return res;
 }
+
 
 // 本机网卡查一次就存着，按板子的 IP 存。
 //
@@ -3375,7 +3348,9 @@ function startRow(p, cmdFor, only) {
   const busy = testing[p.name];
   // 参数一改，方案的判据就不成立了 —— 那时「单发」也只给读数，说明写在下面。
   const off = offPlan(p);
-  const session = p.kind === "session" && !!cmdFor;
+  // 读表那一档自己就是一轮多点走查，没有「持续」这回事（DECISIONS 47）。
+  const aoWalk = (p.name === "aout" && aocal.meter === "manual");
+  const session = p.kind === "session" && !!cmdFor && !aoWalk;
   const mode = runMode[p.name] || "once";
 
   if (session) {
@@ -3408,9 +3383,37 @@ function startRow(p, cmdFor, only) {
     }
   }
 
-  const b = el("button","primary", busy ? "跑着…" : "开始");
-  b.disabled = !!busy;
+  const b = el("button","primary" + (aoWalk ? " aocalgo" : ""),
+                aoWalk ? (aocal.busy ? "跑着…" : "走一遍")
+                       : (busy ? "跑着…" : "开始"));
+  b.disabled = !!busy || (aoWalk && !!aocal.busy);
   b.onclick = async () => {
+    // 多点走查走自己那条路：逐点改输出、每点停下来等人读表。
+    if (aoWalk) {
+      if (aocal.busy) { return; }
+      aocalRunning = true;
+      aocal.busy = "跑着…";
+      aocal.rows = []; aocal.note = ""; aocal.fit = null;
+      renderPanel();
+      try {
+        await aocalRun(p, t => { aocal.busy = t; renderPanel(); }, () => renderPanel());
+        aocal.note = "跑完了。";
+      } catch (e) {
+        aocal.note = "出错了：" + e;
+      } finally {
+        aocal.busy = "";
+        meterDone(null);
+        // 收尾那几条命令自己也会来帧，等它们过去再放开判定。
+        setTimeout(() => {
+          aocalRunning = false;
+          delete verdicts.aout;
+          judgeWhy.aout = "刚跑完多点走查 —— 要结论就把「读数来自」改回「不读表」再跑一遍";
+          renderTree(); renderPanel();
+        }, 2500);
+        renderPanel();
+      }
+      return;
+    }
     if (p.channels > 1 && chanSet(p).size === 0) {
       showMessage("「" + portLabel(p.name) + "」一个通道都没勾，先勾上要测的那几路。", true);
       return;
@@ -3519,7 +3522,7 @@ function startRow(p, cmdFor, only) {
 // Runs one pt.run target and judges the reply it comes back with.
 // Returns {state, note}: state is true, false, or null for "no criteria".
 async function runOne(p, target) {
-  const args = planRunArgs[target] || {};
+  const args = Object.assign({}, planRunArgs[target] || {}, runEdited[target] || {});
   let cmd = "pt.run " + target;
   for (const [k, v] of Object.entries(args)) { cmd += " " + k + "=" + v; }
   const j = await run(cmd);
@@ -3537,7 +3540,9 @@ async function runOne(p, target) {
       const i = tok.indexOf("=");
       if (i > 0) { fields[tok.slice(0, i)] = tok.slice(i + 1); }
     }
-    state = await judge({port: p.name, target: target, fields: fields, line: line});
+    // 跟着参数一起发：同一个目标在方案里可能有两步（轮数不同），
+    // 服务端靠这组参数挑出该用哪一组判据。
+    state = await judge({port: p.name, target: target, fields: fields, line: line, args: args});
   }
   // 按用例记一份。judgeWhy 只按端口存一个槽，而一个端口有好几个用例 —— 共用
   // 一个槽的话，后跑的那个会把先跑的结果抹掉，卡片上就只剩最后一次。
@@ -3551,6 +3556,10 @@ async function runOne(p, target) {
 
 // 每个用例自己的结果。键是「端口|用例」，会话那一段用端口名本身。
 let caseNote = {};
+
+// 人改过的 pt.run 参数，按目标存。和会话那边的 edited 同一个理由：
+// 每来一帧面板都重建，值只活在输入框里的话会被抹掉。
+let runEdited = {};
 
 // One port, one press.
 //
