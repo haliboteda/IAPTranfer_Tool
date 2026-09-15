@@ -61,22 +61,11 @@ func TestParseGoldenCaps(t *testing.T) {
 	// meant to cost nothing here, and ParseCaps already refuses a reply whose
 	// ports= disagrees with the rows that followed. What matters is that the
 	// ports the panel is built around are all present and typed correctly.
-	// rs485, rs232 and now can are sessions, not handover ports: their
-	// hardware got a session, and one piece of hardware gets one row.
-	//
-	// sdram joined this list on 2026-09-13: retention only means anything over
-	// a long run, and a long run has to be judged by the PC, so it became a
-	// session that waits on its own clock instead of a one-way entry that
-	// blocks (DECISIONS.md 38, 40). Its one-shot checks ride on that row as
-	// runs=, the shape sd and eth already have.
+	// One piece of hardware gets one row: sdram's retention is the session and
+	// its one-shot checks ride on that row as runs=, the shape sd and eth
+	// already have.
 	wantSessions := []string{"din", "dout", "relay", "ain", "aout", "temp",
 		"rs232", "rs485", "can", "knx", "sd", "sdram"}
-	// *** Empty on purpose. *** Every handover entry left pt.caps on
-	// 2026-09-13: they take the board and print prose, so the panel offers
-	// none of them and production drives sessions and pt.run targets instead.
-	// The entries are still in the firmware, reachable by typing the command -
-	// see TestGoldenHandoverGrouping.
-	wantHandovers := []string{}
 	// sd left this list on 2026-09-10 and sdram on 2026-09-13, both for the
 	// same reason: the hardware got a session, and one piece of hardware gets
 	// one row, so the one-shot checks became runs= on that row.
@@ -95,16 +84,6 @@ func TestParseGoldenCaps(t *testing.T) {
 			t.Errorf("%s has no current values", name)
 		}
 	}
-	for _, name := range wantHandovers {
-		p, ok := caps.Port(name)
-		if !ok {
-			t.Errorf("handover %s missing", name)
-			continue
-		}
-		if p.Kind != ptproto.KindHandover || len(p.Targets) == 0 {
-			t.Errorf("%s = %s with targets %v", name, p.Kind, p.Targets)
-		}
-	}
 	for _, name := range wantRuns {
 		p, ok := caps.Port(name)
 		if !ok {
@@ -118,13 +97,8 @@ func TestParseGoldenCaps(t *testing.T) {
 	// The production plan checker looks a target up by name, so the run
 	// targets a plan can name have to be reachable that way.
 	sd, _ := caps.Port("sd")
-	if !slices.Contains(sd.Runs, "sd.stress") {
-		t.Errorf("sd runs = %v, want sd.stress among them", sd.Runs)
-	}
-	// And no one-way entry rides along any more: sd.integrity.soak is still in
-	// the firmware, but a panel built from caps must not offer it.
-	if len(sd.Targets) != 0 {
-		t.Errorf("sd targets = %v, want none - handover entries left caps", sd.Targets)
+	if !slices.Contains(sd.Runs, "sd.integrity") {
+		t.Errorf("sd runs = %v, want sd.integrity among them", sd.Runs)
 	}
 }
 
@@ -178,60 +152,6 @@ func TestGoldenSessionDetail(t *testing.T) {
 	}
 }
 
-func TestGoldenHandoverGrouping(t *testing.T) {
-	caps, err := ptproto.ParseCaps(transcript(t)["pt.caps"][0])
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	can, ok := caps.Port("can")
-	if !ok {
-		t.Fatal("no can port")
-	}
-	if len(can.Targets) != 0 {
-		t.Errorf("can targets = %v, want none - handover entries left caps",
-			can.Targets)
-	}
-	if can.Loop != ptproto.LoopLink {
-		t.Errorf("can loop = %s, want link", can.Loop)
-	}
-
-	// Every target pt.handover lists must be reachable from exactly one port,
-	// or the panel silently cannot start it.
-	listed := map[string]bool{}
-	for _, l := range transcript(t)["pt.handover"][0] {
-		_, body := ptproto.Classify(l)
-		if name, ok := strings.CutPrefix(body, "handover="); ok {
-			listed[strings.Fields(name)[0]] = true
-		}
-	}
-	if len(listed) != 14 {
-		t.Fatalf("pt.handover listed %d targets, want 14", len(listed))
-	}
-	// *** And none of them is reachable from caps. *** Entering any one takes
-	// the command loop away and prints prose until the board is reset, so no
-	// panel built from caps may offer a button for it; production drives
-	// sessions and pt.run targets, which report numbers a PC can judge
-	// (DECISIONS.md 38, 40). The firmware keeps them for the bench, which is
-	// why the count above still has to be 14.
-	seen := map[string]int{}
-	for _, p := range caps.Ports {
-		for _, tg := range p.Targets {
-			seen[tg]++
-		}
-	}
-	for name := range listed {
-		if seen[name] != 0 {
-			t.Errorf("handover target %s is offered in %d caps rows, want none",
-				name, seen[name])
-		}
-	}
-	for name := range seen {
-		if !listed[name] {
-			t.Errorf("caps offers target %s that pt.handover does not list", name)
-		}
-	}
-}
 
 func TestGoldenLifecycle(t *testing.T) {
 	runs := transcript(t)["pt.caps"]

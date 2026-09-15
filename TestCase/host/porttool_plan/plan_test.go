@@ -888,7 +888,7 @@ func TestPlanRunTargetsCheckedAgainstWhatTheBoardReports(t *testing.T) {
 	plan, err := ptplan.Parse([]byte(`{"schema":1,"name":"p","limit_version":"v","steps":[
 	  {"id":"typo","type":"PtRun","target":"sdram.sweeep",
 	   "checks":[{"field":"mismatches","op":"eq","value":"0"}]},
-	  {"id":"handover-not-run","type":"PtRun","target":"sdram.capacity",
+	  {"id":"not-a-run-target","type":"PtRun","target":"sdram.capacity",
 	   "checks":[{"field":"mismatches","op":"eq","value":"0"}]},
 	  {"id":"real","type":"PtRun","target":"sdram.sweep",
 	   "checks":[{"field":"mismatches","op":"eq","value":"0"}]}]}`))
@@ -900,11 +900,11 @@ func TestPlanRunTargetsCheckedAgainstWhatTheBoardReports(t *testing.T) {
 	if !strings.Contains(findings, "typo") {
 		t.Fatalf("a misspelled run target was not caught:\n%s", findings)
 	}
-	// A one-way handover entry is not a pt.run target, however much its name
-	// looks like one: pt.run would refuse it and the step would hang waiting
-	// for a reply shape that never comes.
-	if !strings.Contains(findings, "handover-not-run") {
-		t.Fatalf("a handover entry named as a run target was not caught:\n%s", findings)
+	// A name the firmware does not report as a run target is refused, however
+	// much it looks like one: pt.run would answer ERR and the step would hang
+	// waiting for a reply shape that never comes.
+	if !strings.Contains(findings, "not-a-run-target") {
+		t.Fatalf("an unreported target was not caught:\n%s", findings)
 	}
 	if strings.Contains(findings, `"real"`) {
 		t.Fatalf("a target the firmware reports was reported anyway:\n%s", findings)
@@ -977,10 +977,10 @@ func TestStation6PlanRuns(t *testing.T) {
 		// sdram became a session on 2026-09-13: retention only means anything
 		// over a long run, so the waiting moved onto the PC's clock instead of
 		// blocking the board (DECISIONS.md 40). Its one-shots ride on that row.
-		"OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc",
+		"OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc",
 		"OK vals=sdram wait=5000 period=1000",
 		"OK limits=sdram wait:1000.. period:50..",
-		"OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed",
+		"OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed",
 		"OK vals=sd period=500",
 		"OK limits=sd period:50..",
 		// A session with a one-shot on the same row: the TCP server and the PHY
@@ -1025,19 +1025,14 @@ func TestStation6PlanRuns(t *testing.T) {
 			return []string{
 				"OK sdram.crc ready=1 offset=0 bytes=65536 crc=0x1A2B3C4D",
 			}, nil
-		case cmd == "pt.run sdram.retention":
-			return []string{
-				"SDRAM_TEST: written, waiting 5s (proves auto-refresh keeps cells alive)...",
-				"OK sdram.retention ready=1 checked=64 failed=0 wait_ms=5000 " +
-					"first_bad=0x00000000 seed=0x12345678",
-			}, nil
 		case cmd == "pt.run sd.probe":
 			return []string{"OK sd.probe detected=1 ready=1 blocks=62333952 block_size=512 " +
 				"mib=30436 v2x=1 class=1461 fs=fat32 err=0x00000000"}, nil
 		case cmd == "pt.run sd.integrity bytes=1048576":
 			return []string{
-				"OK sd.integrity mounted=1 wrote=1 read_back=1 identical=1 " +
-					"bytes=1048576 write_crc=0xDEADBEEF read_crc=0xDEADBEEF fresult=0",
+				"OK sd.integrity mounted=1 identical=1 passes=1 passed=1 " +
+					"bytes_each=1048576 bytes_total=1048576 elapsed_ms=210 " +
+					"first_bad_pass=0 fresult=0",
 			}, nil
 		// ⚠️ Rate only, and the plan records rather than judges it - there is
 		// no measured threshold yet. Answering with a plausible number keeps
@@ -1047,11 +1042,13 @@ func TestStation6PlanRuns(t *testing.T) {
 				"OK sd.speed mounted=1 bytes=1048576 write_ms=2000 read_ms=1000 " +
 					"write_bps=524288 read_bps=1048576 fresult=0",
 			}, nil
-		case cmd == "pt.run sd.stress":
+		// The stress step is the same target with more rounds (DECISIONS.md 48).
+		case cmd == "pt.run sd.integrity passes=64":
 			return []string{
 				"SDCARD_TEST: stress - 64 rounds of 4096 bytes write/read/verify",
-				"OK sd.stress mounted=1 passes=64 passed=64 bytes_each=4096 " +
-					"bytes_total=262144 elapsed_ms=9130 first_bad_pass=0 fresult=0",
+				"OK sd.integrity mounted=1 identical=1 passes=64 passed=64 " +
+					"bytes_each=4096 bytes_total=262144 elapsed_ms=9130 " +
+					"first_bad_pass=0 fresult=0",
 			}, nil
 		case cmd == "pt.run eth.link":
 			// What the board printed on 2026-09-08 with a cable plugged in.

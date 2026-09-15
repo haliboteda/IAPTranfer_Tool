@@ -44,10 +44,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=echo period=1000
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=500
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
@@ -112,10 +112,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=echo period=1000
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=500
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
@@ -133,29 +133,12 @@ ERR no such port "dinn"
 ERR no such port "rtc"
 >>> pt.foo
 ERR unknown command "pt.foo"
->>> pt.handover
-OK handover=bringup          DIN, relays, analog in/out and temperature together, with a key menu
-OK handover=can              five phases: report, internal loopback, external loopback, listen, normal
-OK handover=can.soak         one normal-mode session that runs until reset
-OK handover=can.scope        square wave then back-to-back frames, for a scope on PB9
-OK handover=can.echo         replies to every frame with its payload incremented
-OK handover=knx              TP1 bit timing, raw and bit-inverted decode of every burst
-OK handover=rs485            pin-level check, periodic banner, echo of whatever arrives
-OK handover=rs232            echo every byte back to the terminal
-OK handover=pwm              breathing LED on Digital Out 6
-OK handover=sd.info          card type, capacity, and live detect-pin state
-OK handover=sd.integrity.soak write 4 KiB through FatFs, read back, compare and CRC, forever
-OK handover=sdram.capacity   capacity and address wrap-around
-OK handover=sdram.retention.soak write/wait/read-back cycles over a long run
-OK handover=sdram.crc.soak   CRC32 against what CubeProgrammer wrote, reprinted every second forever
 >>> pt.run
 OK run=sd.probe         detect pin, card identification, capacity and class
-OK run=sd.integrity     one write/read/verify round through FatFs; reports both CRCs
-OK run=sd.stress        64 write/read/verify rounds; reports rounds passed and elapsed time
+OK run=sd.integrity     write/read/verify through FatFs, passes= rounds of bytes= each
 OK run=sd.speed         how fast the card moves data each way; does not verify content
 OK run=sdram.probe      FMC bring-up, data bus and address bus; reports the window and three flags
 OK run=sdram.sweep      all 64 MiB, four patterns; reports mismatches and where the first was
-OK run=sdram.retention  one write/wait-5s/read-back cycle over 64 random addresses
 OK run=eth.link         PHY identity, link, and the speed/duplex auto-negotiation settled on
 OK run=rtc.read         brings the RTC up if needed and reads the calendar; never writes it
 OK run=sdram.crc        CRC32 of one window; reads only, so it checks what a tool wrote there
@@ -201,16 +184,16 @@ SDCARD_TEST: probing (stub)
 OK sd.probe detected=1 ready=1 blocks=62333952 block_size=512 mib=30436 v2x=1 class=1461 fs=fat32 err=0x00000000
 >>> pt.run sd.integrity
 SDCARD_TEST: one integrity round (stub)
-OK sd.integrity mounted=1 wrote=1 read_back=1 identical=1 bytes=4096 write_crc=0xDEADBEEF read_crc=0xDEADBEEF fresult=0
+OK sd.integrity mounted=1 identical=1 passes=1 passed=1 wrote=1 read_back=1 bytes_each=4096 bytes_total=4096 write_crc=0xDEADBEEF read_crc=0xDEADBEEF fresult=0
 >>> pt.run sd.integrity
 SDCARD_TEST: one integrity round (stub)
-OK sd.integrity mounted=1 wrote=1 read_back=1 identical=0 bytes=4096 write_crc=0xDEADBEEF read_crc=0x11112222 fresult=0
+OK sd.integrity mounted=1 identical=0 passes=1 passed=0 wrote=1 read_back=1 bytes_each=4096 bytes_total=4096 write_crc=0xDEADBEEF read_crc=0x11112222 fresult=0
 >>> pt.run sd.probe
 SDCARD_TEST: probing (stub)
 OK sd.probe detected=0 ready=0 blocks=0 block_size=0 mib=0 v2x=0 class=0 fs=none err=0x00000000
 >>> pt.run sd.integrity
 SDCARD_TEST: one integrity round (stub)
-OK sd.integrity mounted=0 wrote=0 read_back=0 identical=0 bytes=4096 write_crc=0x00000000 read_crc=0x00000000 fresult=-1
+OK sd.integrity mounted=0 identical=0 passes=1 passed=0 wrote=0 read_back=0 bytes_each=4096 bytes_total=4096 write_crc=0x00000000 read_crc=0x00000000 fresult=-1
 >>> pt.stop all
 OK stopped all
 >>> pt.start can baud=250000 mode=loopback period=100
@@ -470,10 +453,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=info period=100
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=500
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
@@ -613,10 +596,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=info period=100
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=1000
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
@@ -670,10 +653,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=info period=100
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=1000
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
@@ -733,10 +716,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=info period=100
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=1000
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
@@ -792,10 +775,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=info period=100
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=1000
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
@@ -849,10 +832,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=info period=100
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=1000
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
@@ -912,10 +895,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=info period=100
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=1000
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
@@ -969,10 +952,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=info period=100
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=1000
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
@@ -1028,10 +1011,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=info period=100
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=1000
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
@@ -1087,10 +1070,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=info period=100
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=1000
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
@@ -1144,10 +1127,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=info period=100
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=1000
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
@@ -1231,10 +1214,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=info period=100
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=1000
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read
@@ -1338,10 +1321,10 @@ OK limits=eth mode:echo|sink|source port:1..65535 period:50..
 OK port=usb board=bridge kind=session blk=- term=J2 channels=1 loop=link params=mode,period running=0
 OK vals=usb mode=info period=100
 OK limits=usb mode:echo|sink|source|info period:50..
-OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.stress,sd.speed
+OK port=sd board=bridge kind=session blk=- term=J6 channels=1 loop=ctrl params=period running=0 runs=sd.probe,sd.integrity,sd.speed
 OK vals=sd period=1000
 OK limits=sd period:50..
-OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.retention,sdram.crc
+OK port=sdram board=bridge kind=session blk=- term=U6 channels=1 loop=ctrl params=wait,period running=0 runs=sdram.probe,sdram.sweep,sdram.crc
 OK vals=sdram wait=5000 period=1000
 OK limits=sdram wait:1000.. period:50..
 OK port=rtc board=bridge kind=run blk=- term=- channels=1 loop=none runs=rtc.read

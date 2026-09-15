@@ -152,7 +152,6 @@ def main():
         str(PORTTOOL / "porttool_knx.c"),
         str(PORTTOOL / "porttool_eth.c"),
         str(PORTTOOL / "porttool_usb.c"),
-        str(PORTTOOL / "porttool_handover.c"),
         str(PORTTOOL / "porttool_run.c"),
         str(PORTTOOL / "porttool_sd.c"),
         str(PORTTOOL / "porttool_sdram.c"),
@@ -270,8 +269,8 @@ def main():
 
     # ------------------------------------------------------------ port rows
     Section("pt.caps rows")
-    sessions, handovers, runs = [], [], []
-    by_kind = {"session": sessions, "handover": handovers, "run": runs}
+    sessions, runs = [], []
+    by_kind = {"session": sessions, "run": runs}
     dup_keys = []
     unknown_kind = []
     for line in port_lines:
@@ -301,29 +300,29 @@ def main():
     # silently mistyped one would put a port in a group of its own.
     boards = {"bridge", "upper", "lower", "junction", "whole"}
     bad_board = [(d.get("port"), d.get("board"))
-                 for _, d, _ in sessions + handovers + runs
+                 for _, d, _ in sessions + runs
                  if d.get("board") not in boards]
     check(not bad_board, "every port names one of the product's boards",
           str(bad_board))
 
     by_board = {}
-    for _, d, _ in sessions + handovers + runs:
+    for _, d, _ in sessions + runs:
         by_board.setdefault(d.get("board"), []).append(d.get("port"))
     for b in sorted(by_board):
         print("  %-9s %s" % (b, " ".join(sorted(by_board[b]))))
 
     required = ("port", "board", "kind", "blk", "term", "channels", "loop")
-    missing = [(d.get("port"), f) for _, d, _ in sessions + handovers + runs
+    missing = [(d.get("port"), f) for _, d, _ in sessions + runs
                for f in required if f not in d]
     check(not missing, "every port row carries the fields the panel needs",
           str(missing[:3]))
 
     check(all(d["loop"] in ("ctrl", "link", "self", "none")
-              for _, d, _ in sessions + handovers + runs),
+              for _, d, _ in sessions + runs),
           "loop= is one of ctrl / link / self / none")
 
     check(all(d.get("channels", "0").isdigit() and int(d["channels"]) >= 1
-              for _, d, _ in sessions + handovers + runs),
+              for _, d, _ in sessions + runs),
           "channels= is a positive integer everywhere")
 
     # Current values live on the port's own vals= line: shape and values do not
@@ -347,9 +346,6 @@ def main():
         check(not absent,
               "%s reports a value for each of params=%s" % (d["port"], d.get("params")),
               "missing %s" % absent)
-
-    check(all("targets" in d and d["targets"] for _, d, _ in handovers),
-          "every handover row lists its targets")
 
     # ------------------------------------------------- run rows vs pt.run
     Section("run targets")
@@ -383,51 +379,11 @@ def main():
           (sorted(set(run_listed) - set(in_caps)),
            sorted(set(in_caps) - set(run_listed))))
 
-    # A name that is both a run target and a handover target would answer to
-    # two verbs with two behaviours - one returns, one never does.
-    handover_names = []
-    for _, d, _ in handovers + sessions + runs:
-        handover_names.extend(t for t in d.get("targets", "").split(",") if t)
-    clash = sorted(set(in_caps) & set(handover_names))
-    check(not clash, "no name is both a run target and a handover target", str(clash))
-
     # One row per piece of hardware: two rows with the same port= would give
     # the panel two cards for one chip (DECISIONS.md 17).
-    all_ports = [d["port"] for _, d, _ in sessions + handovers + runs]
+    all_ports = [d["port"] for _, d, _ in sessions + runs]
     dup_ports = sorted({p for p in all_ports if all_ports.count(p) > 1})
     check(not dup_ports, "no two caps rows share a port name", str(dup_ports))
-
-    # ------------------------------------------- handover coverage vs pt.handover
-    Section("handover grouping")
-    listed = []
-    for cmd, body in sections:
-        if cmd == "pt.handover":
-            listed = [l.split("=", 1)[1].split()[0] for l in body
-                      if l.startswith("OK handover=")]
-    # *** No handover target reaches the panel at all. *** Every one of them
-    # takes the command loop away and prints prose until somebody resets the
-    # board, so nothing on the PC can read a result out of one; production
-    # drives sessions and pt.run targets instead (DECISIONS.md 38, 40). They
-    # remain bench tools, reachable by typing the command.
-    grouped = []
-    for _, d, _ in handovers + sessions + runs:
-        if d.get("targets"):
-            grouped.extend(d["targets"].split(","))
-
-    print("  pt.handover lists %d targets; caps offers %d" %
-          (len(listed), len(grouped)))
-    check(not grouped,
-          "no handover target is offered in caps", str(sorted(set(grouped))))
-    check(not handovers,
-          "no caps row is kind=handover any more",
-          str([d.get("port") for _, d, _ in handovers]))
-
-    # Hidden from the panel, NOT removed from the firmware. Typing the command
-    # is a deliberate act; pressing a button is not - which is the whole reason
-    # these were hidden rather than deleted (DECISIONS.md 17).
-    check(len(listed) == 14,
-          "pt.handover still lists all fourteen for the bench",
-          "%d: %s" % (len(listed), sorted(listed)))
 
     # ------------------------------------------------------------- lifecycle
     Section("session lifecycle")
@@ -705,10 +661,10 @@ def main():
         ("pt.echo relay 1", "is not running"),
         ("pt.echo nosuch 1", "no such port"),
         ("pt.echo din notanumber", "is not a number"),
-        # can became a loop=link session on 2026-09-08. Before that it was
-        # handover-only and this answered "no such port" - which passed for
-        # the wrong reason: what the line is here to check is that a LINK
-        # port refuses an echo offered on the control port.
+        # can became a loop=link session on 2026-09-08. Before that this
+        # answered "no such port" - which passed for the wrong reason: what
+        # the line is here to check is that a LINK port refuses an echo
+        # offered on the control port.
         ("pt.echo can 1", "takes its echo on its own link"),
     ):
         body = [b for c, b in sections if c == cmd]
@@ -943,8 +899,8 @@ def main():
             if not oks:
                 continue
 
-            # The whole point of pt.run over a handover: the checks print prose
-            # as they go, and the OK line still has to arrive whole and last.
+            # The checks print prose as they go, and the OK line still has
+            # to arrive whole and last.
             check(body[0].startswith("SDRAM_TEST:"),
                   "%s: the check's own prose comes first" % label, body[0])
             check(body[-1] == oks[0],
@@ -1185,7 +1141,7 @@ def main():
 
     can_shape = shape_of(0, "can")
     check(can_shape.get("kind") == "session",
-          "can is a session, not a handover row", str(can_shape.get("kind")))
+          "can is a session", str(can_shape.get("kind")))
     check(can_shape.get("loop") == "link",
           "can's loop travels over the CAN pair, so its counter is a verdict",
           str(can_shape.get("loop")))
@@ -1371,7 +1327,7 @@ def main():
         check(eth_shape.get("loop") == "link",
               "eth closes its loop over the link under test", str(eth_shape.get("loop")))
 
-    eth_rows = [d for _, d, _ in (sessions + handovers + runs)
+    eth_rows = [d for _, d, _ in (sessions + runs)
                 if d.get("port") == "eth"]
     check(len(eth_rows) == 1,
           "eth appears exactly once in caps - one card, not two",
@@ -1536,8 +1492,7 @@ def main():
     for cmd in ("pt.led fault=2", "pt.led"):
         check(reply_to(cmd).startswith("ERR "), "refused: %s" % cmd, reply_to(cmd))
 
-    # A run must not disturb what was already going, unlike a handover which
-    # stops every session first.
+    # A run must not disturb what was already going.
     probes = [l for _, body in sections for l in body
               if l.startswith("TEST sdram_probe_count=")]
     if probes:

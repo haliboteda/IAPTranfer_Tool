@@ -136,7 +136,7 @@ int main(void)
     run("pt.list");
 
     /* Two sessions running side by side, which is the whole point of a
-     * session as opposed to a handover. */
+     * session. */
     run("pt.start din ch=1,3,5 period=200");
     run("pt.start relay ch=1,2 mode=square period=2000");
 
@@ -156,9 +156,8 @@ int main(void)
     run("pt.start din period=abc");
     run("pt.start dinn");
 
-    /* A handover port appears in pt.caps but is not a session, so the session
-     * commands do not know it. The panel must not offer start/stop for
-     * kind=handover.
+    /* A kind=run port appears in pt.caps but is not a session, so the session
+     * commands do not know it. The panel must not offer start/stop for one.
      *
      * *** Pick a port that cannot graduate into a session. *** This line has
      * now been rewritten twice for that reason - knx became a session on
@@ -169,13 +168,12 @@ int main(void)
     run("pt.set rtc ch=1");
 
     run("pt.foo");
-    run("pt.handover");
 
     /* ---- one-shot actions ----------------------------------------------
      *
      * pt.run has to come back, and its OK line has to survive the prose the
-     * checks print on their way. Both are what separates it from a handover -
-     * see porttool_run.h. Sessions are left running across it on purpose. */
+     * checks print on their way - see porttool_run.h. Sessions are left
+     * running across it on purpose. */
     run("pt.run");
     run("pt.run sdram.probe");
     run("pt.run nosuch");
