@@ -2,6 +2,7 @@ package ptpanel
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"sync"
 
@@ -106,10 +107,21 @@ func criteriaSource() (name, limits, problem string) {
 // When `target` is given it is matched exactly, and the port is only used for
 // sessions. Matching a run reply by its port instead was a real bug, found by
 // the browser test on 2026-09-08: sdram has three targets, the lookup returned
-// the first step for the port (sdram.probe's), and judging sdram.retention's
+// the first step for the port (sdram.probe's), and judging sdram.crc's
 // reply by it reported "no field size" on a chip that had just passed
 // everything. One port, several targets, several sets of criteria.
-func criteriaFor(port, target string) ([]ptcheck.Check, string, bool) {
+// criteriaFor finds the step whose criteria apply to this reply.
+//
+// *** A target may appear more than once. *** One plan runs sd.integrity twice
+// - once for a large single round, once for 64 small ones - because those
+// prove different things about a card. They carry different criteria, so the
+// arguments the run was made with are what picks between them. With no
+// arguments to go on, the first step for that target wins, which is what the
+// panel shows by default.
+func criteriaFor(port, target string, args map[string]string) ([]ptcheck.Check, string, bool) {
+	var firstChecks []ptcheck.Check
+	var firstID string
+	haveFirst := false
 	path, err := safePlanPath(criteriaPlanName())
 	if err != nil {
 		return nil, "", false
@@ -121,7 +133,12 @@ func criteriaFor(port, target string) ([]ptcheck.Check, string, bool) {
 	for _, st := range plan.Steps {
 		if target != "" {
 			if st.Type == ptplan.TypePtRun && st.Target == target {
-				return st.Checks, st.ID, true
+				if !haveFirst {
+					firstChecks, firstID, haveFirst = st.Checks, st.ID, true
+				}
+				if stepArgsMatch(st, args) {
+					return st.Checks, st.ID, true
+				}
 			}
 			continue
 		}
@@ -129,7 +146,25 @@ func criteriaFor(port, target string) ([]ptcheck.Check, string, bool) {
 			return st.Checks, st.ID, true
 		}
 	}
+	if haveFirst {
+		return firstChecks, firstID, true
+	}
 	return nil, "", false
+}
+
+// stepArgsMatch says whether a step was written for the arguments this run
+// used. Absent on either side counts as matching: most targets take none, and
+// a page that sent nothing should get the plan's own step rather than nothing.
+func stepArgsMatch(st ptplan.Step, args map[string]string) bool {
+	if len(args) == 0 {
+		return len(st.Params) == 0
+	}
+	for k, v := range args {
+		if fmt.Sprint(st.Params[k]) != v {
+			return false
+		}
+	}
+	return len(st.Params) == len(args)
 }
 
 // handlePortPlan tells the page how the plan starts this port, before it is
@@ -238,13 +273,18 @@ func (s *Server) handleJudge(w http.ResponseWriter, r *http.Request) {
 		Target string            `json:"target"` // for a pt.run reply
 		Fields map[string]string `json:"fields"`
 		Text   string            `json:"text"`
+		// What the page actually sent, when a target can be run more than one
+		// way. sd.integrity with passes=1 and with passes=64 are two steps in
+		// the plan with two sets of criteria, and judging one by the other
+		// fails a healthy card.
+		Args map[string]string `json:"args"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Port == "" {
 		writeErr(w, 400, "没说要判哪个端口。")
 		return
 	}
 
-	checks, stepID, found := criteriaFor(body.Port, body.Target)
+	checks, stepID, found := criteriaFor(body.Port, body.Target, body.Args)
 	if !found || len(checks) == 0 {
 		// Not an error: most ports have no criteria yet, and the page says so
 		// rather than showing a tick nobody earned.
@@ -338,8 +378,8 @@ func (s *Server) handleCriteria(w http.ResponseWriter, r *http.Request) {
 //
 // *** It returns a fit, not a calibrated board. *** Where a coefficient would
 // be stored so it survives the tooling image being replaced is still open
-// (ISS-C1), so this is recorded in the report and nothing is written to the
-// board. Computing is unblocked; storing is not.
+// (ISS-C1), so this is shown on the page and nothing is written to the board
+// or to disk. Computing is unblocked; storing is not.
 func (s *Server) handleFit(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		Points []struct {
