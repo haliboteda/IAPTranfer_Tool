@@ -167,6 +167,34 @@ def cubeide_roots():
             str(HOME / "st" / "stm32cubeide*"), str(HOME / "stm32cubeide*")]
 
 
+def detect_git_bash():
+    """Git Bash, which is what runs compile_tool.sh on Windows.
+
+    ⚠️ NOT whatever `bash` resolves to. On Windows that is System32\\bash.exe,
+    the WSL launcher: it is on PATH by default, it is not a shell, and with no
+    distribution installed it prints an install hint and exits non-zero - which
+    reads as a build failure rather than as a missing tool.
+
+    Derived from git itself, so a non-default install location is followed.
+    """
+    if not IS_WIN:
+        return shutil.which("bash")
+    git = shutil.which("git")
+    if git:
+        root = Path(git).resolve().parent.parent   # <root>/cmd/git.exe
+        for rel in ("usr/bin/bash.exe", "bin/bash.exe"):
+            cand = root / rel
+            if cand.exists():
+                return str(cand)
+    for r in (r"C:\Program Files\Git", r"C:\Program Files (x86)\Git",
+              r"D:\Program Files\Git", r"D:\Git", r"C:\Git"):
+        for rel in ("usr/bin/bash.exe", "bin/bash.exe"):
+            cand = Path(r) / rel
+            if cand.exists():
+                return str(cand)
+    return None
+
+
 def detect_cubeide():
     for r in cubeide_roots():
         for hit in sorted(glob.glob(r)):
@@ -383,6 +411,9 @@ SETTINGS = [
       "This is the install root; the versioned plugin underneath it is resolved",
       "at run time, because hardcoding it breaks on every CubeIDE update."]),
     ("CUBEIDE", "path", detect_cubeide, False, []),
+    ("GIT_BASH", "path", detect_git_bash, False,
+     ["compile_tool.sh needs a real bash. On Windows the bash on PATH is the",
+      "WSL launcher, not a shell, so build.py asks for this one by name."]),
     ("WORKSPACE", "path", detect_workspace, False,
      ["Eclipse workspace holding the bootloader project"]),
     ("IAPTOOL", "plain", lambda: "", False,

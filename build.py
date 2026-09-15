@@ -41,7 +41,7 @@ except AttributeError:
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE / "TestCase" / "tools"))
 
-from common import Fail, Ok, Section, Warn  # noqa: E402
+from common import Fail, Ok, Section, Warn, cfg  # noqa: E402
 
 # Menu entry -> (which firmware or None, build the PC tools).
 MENU = [
@@ -83,16 +83,34 @@ def build_firmware(which):
     return subprocess.call(args, cwd=str(HERE / "TestCase")) == 0
 
 
+def find_bash():
+    """The bash that can run compile_tool.sh.
+
+    ⚠️ On Windows, `bash` on PATH is System32\\bash.exe - the WSL launcher, not
+    a shell. With no distribution installed it prints an install hint and
+    exits non-zero, which reads as a build failure. config/machine.py names
+    the real one, because where Git is installed is a fact about this machine.
+    """
+    named = getattr(cfg, "GIT_BASH", "")
+    if named and Path(named).exists():
+        return named
+    found = shutil.which("bash")
+    if found and "system32" in found.lower():
+        return None      # WSL, not a shell
+    return found
+
+
 def build_tools():
     Section("PC 工具")
-    bash = shutil.which("bash")
+    bash = find_bash()
     # ⚠️ On Windows, `bash` on PATH is WSL's, and this machine has no
     # distribution installed. Git Bash is what runs compile_tool.sh, and where
     # it lives is machine-specific - so it belongs in config/machine.py rather
     # than here. Say which one is missing instead of failing with WSL's error.
     if bash is None:
-        Fail("找不到 bash —— compile_tool.sh 需要它。Windows 上那是 Git Bash，"
-             "把它的 bin 目录加进 PATH，或者在 Git Bash 里直接跑 ./compile_tool.sh")
+        Fail("找不到能跑 compile_tool.sh 的 bash。Windows 上 PATH 里那个是 WSL 的启动器，"
+             "不是 shell。跑一遍：python TestCase/tools/init_machine.py —— 它会把 Git Bash "
+             "的位置写进 config/machine.py。")
         return False
     return subprocess.call([bash, str(HERE / "compile_tool.sh")], cwd=str(HERE)) == 0
 
