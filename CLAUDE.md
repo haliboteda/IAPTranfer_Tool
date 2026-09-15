@@ -90,7 +90,7 @@ python tools/selfcheck.py --list   # 先看它会跑哪几步、各证明哪条�
 
 | 目标 | 命令 |
 |---|---|
-| **工装固件 + 两个 PC 工具（一条命令）** | **`./build.sh`** —— 直接跑给菜单选；也可以 `--fw` 只编固件、`--tool` 只编工具、`--boot` 编 bootloader、`--all` 不问直接两个都编。⚠️ 编固件前 CubeIDE 要关掉 |
+| **固件 + PC 工具（一条命令）** | **`python build.py`** —— 直接跑给菜单选（五种组合）；也可以 `--fixture` / `--boot` / `--tool` 自由组合，例如发版是 `--boot --tool`。⚠️ 编固件前 CubeIDE 要关掉 |
 | `IAPTool` + `PortTool`（三平台） | `./compile_tool.sh` —— 一次出六个二进制，别手搓 `go build`，输出布局是约定好的 |
 | `TestCase`（本机） | `go build -o Output/<GOOS>/TestCase ./TestCase` |
 
