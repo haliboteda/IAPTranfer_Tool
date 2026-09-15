@@ -157,15 +157,26 @@ func (s *Server) handlePorts(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	// The simulated board, but only where one has been built. A production PC
-	// gets the exe on its own, so the option never appears there - which is
-	// the point: nobody should be able to pick a fake board by accident on a
-	// bench, and the list is the only place it could happen.
-	if _, err := simboard.Find(); err == nil {
+	// The simulated board. It is listed either way: leaving it out when the
+	// binary is missing is a silent absence, and somebody looking for it has
+	// nothing to go on - which is where an afternoon went on 2026-09-15. When
+	// it cannot be found the row says so and cannot be picked.
+	//
+	// A production PC gets the exe on its own and never builds the simulator,
+	// so there it reads as "not built here", which is the truth.
+	if path, err := simboard.Find(); err == nil {
 		out = append(out, map[string]any{
 			"name":  simboard.PortName,
 			"label": simboard.Label,
 			"usb":   false,
+			"path":  path,
+		})
+	} else {
+		out = append(out, map[string]any{
+			"name":        simboard.PortName,
+			"label":       simboard.Label,
+			"usb":         false,
+			"unavailable": err.Error(),
 		})
 	}
 

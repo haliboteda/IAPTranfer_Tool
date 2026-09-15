@@ -83,6 +83,24 @@ def build_firmware(which):
     return subprocess.call(args, cwd=str(HERE / "TestCase")) == 0
 
 
+def rebuild_sim():
+    """The simulated board compiles the same porttool sources as the fixture.
+
+    *** So a firmware change leaves it stale, and H5 then tests yesterday's
+    protocol against today's panel. *** Rebuilding it here is what keeps
+    "I changed the firmware" from silently meaning "and the simulated board
+    still answers the old way". Failing to build it is a warning, not an
+    error: it needs a host compiler, and a machine without one can still
+    build firmware and tools.
+    """
+    Section("模拟板")
+    rc = subprocess.call([sys.executable, "build.py", "--sim"],
+                         cwd=str(HERE / "TestCase" / "host" / "porttool_caps"))
+    if rc != 0:
+        Warn("模拟板没重建（多半是主机 gcc 没装）—— H5 会用旧的那个。")
+    return rc == 0
+
+
 def find_bash():
     """The bash that can run compile_tool.sh.
 
@@ -140,6 +158,9 @@ def main():
     ok = True
     if fw is not None:
         ok = build_firmware(fw) and ok
+        # Only the fixture: the simulated board stands in for that image.
+        if ok and fw == "fixture":
+            rebuild_sim()
     if tools:
         ok = build_tools() and ok
 

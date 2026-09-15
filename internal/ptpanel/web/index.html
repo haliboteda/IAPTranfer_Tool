@@ -598,7 +598,22 @@ async function loadPorts() {
     // 而它给的每一个读数都是编的。
     if (p.name === "sim") {
       row.classList.add("sim");
-      row.appendChild(el("span", "tag", "  ← 不用接板子"));
+      if (p.unavailable) {
+        // 找不到就把原因摆出来，而不是从列表里消失 ——
+        // “本来就没有”和“没编”在屏幕上长得一模一样。
+        row.classList.add("off");
+        row.appendChild(el("span", "tag", "  ← 没编，点不了"));
+        row.title = p.unavailable;
+        row.appendChild(richText("div", "sub",
+          "先编一个：`cd TestCase/host/porttool_caps && python build.py --sim`"));
+      } else {
+        row.appendChild(el("span", "tag", "  ← 不用接板子"));
+      }
+    }
+    if (p.unavailable) {
+      row.style.opacity = "0.55";
+      host.appendChild(row);
+      continue;
     }
     if (chosenPort === p.name) {
       row.classList.add("on");
