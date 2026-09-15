@@ -17,8 +17,7 @@ import (
 type Kind string
 
 const (
-	KindSession  Kind = "session"
-	KindHandover Kind = "handover"
+	KindSession Kind = "session"
 	// KindRun is hardware whose tests finish and answer with numbers -
 	// pt.run. A production plan is built out of these, so having them in
 	// caps is what lets a plan file be checked without a board attached.
@@ -68,15 +67,9 @@ type Port struct {
 	Values  map[string]string // the port's current value for each of Params
 	Running bool
 
-	// Handover only: the variants that share this hardware, each its own
-	// pt.handover target. The panel lists them separately - hiding three SDRAM
-	// tests behind one "SDRAM" button loses the only thing that distinguishes
-	// them.
-	Targets []string
-
-	// Runs is this hardware's pt.run targets. A row may carry both Runs and
-	// Targets: sdram's one-shot checks and its one-way soak entries are the
-	// same chip, so they share a row.
+	// Runs is this hardware's pt.run targets. A session row may carry them
+	// too: eth's session is the TCP server and eth.link is the PHY probe, one
+	// RJ45 between them, so they share a row.
 	Runs []string
 
 	terms []string // explicit per-channel labels, when the firmware sent them
@@ -293,28 +286,15 @@ func ParseCaps(lines []string) (Caps, error) {
 		}
 
 		switch p.Kind {
-		case KindHandover:
-			if v, ok := Get(f, "targets"); ok {
-				p.Targets = splitList(v)
-			}
 		case KindRun:
 			if v, ok := Get(f, "runs"); ok {
 				p.Runs = splitList(v)
-			}
-			// The same chip's one-way entries, when it has any.
-			if v, ok := Get(f, "targets"); ok {
-				p.Targets = splitList(v)
 			}
 			if len(p.Runs) == 0 {
 				return Caps{}, fmt.Errorf("run port %s listed no runs=", p.Name)
 			}
 		case KindSession:
-			// A session may also carry targets=: one piece of hardware with
-			// both a session and a deep bring-up entry gets one row, not two.
-			if v, ok := Get(f, "targets"); ok {
-				p.Targets = splitList(v)
-			}
-			// And runs=, for the same reason: eth's session is a TCP server
+			// A session may also carry runs=: eth's session is a TCP server
 			// and eth.link is the PHY probe, one RJ45 between them. Unlike a
 			// run row, a session with no runs= is normal - most have none.
 			if v, ok := Get(f, "runs"); ok {

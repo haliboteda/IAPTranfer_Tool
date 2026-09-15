@@ -210,7 +210,6 @@ func portJSON(p ptproto.Port) map[string]any {
 		"params":     p.Params,
 		"values":     p.Values,
 		"running":    p.Running,
-		"targets":    p.Targets,
 		"runs":       p.Runs,
 	}
 }
@@ -580,9 +579,8 @@ func (s *Server) handleCommand(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Any command can change what a port reports, and pt.handover changes it
-	// even when it is refused - the firmware stops every session before it
-	// checks the target name. Re-reading is cheaper than tracking that.
+	// Any command can change what a port reports, so re-reading is cheaper
+	// than tracking which ones do.
 	if err == nil || resp["refused"] != nil {
 		if caps, cerr := b.Caps(); cerr == nil {
 			s.mu.Lock()

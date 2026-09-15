@@ -32,7 +32,7 @@ const DefaultTimeout = 3 * time.Second
 //
 // *** Not a guess and not the same as DefaultTimeout. *** Measured on the
 // board 2026-09-08: sdram.sweep 6.5 s (the whole 64 MiB, four patterns),
-// sd.stress 9.1 s (64 write/read/verify rounds), sdram.retention 5.4 s (it
+// sd.integrity with passes=64 takes 9.1 s (write/read/verify rounds), and
 // waits 5 s by design). Against the old 3 s every one of those timed out while
 // the board was still working, and the panel then reported a healthy chip as a
 // failure - which is exactly what happened on the bench before this existed.
@@ -53,7 +53,7 @@ func TimeoutFor(cmd string) time.Duration {
 }
 
 // idleGap ends a reply whose length nothing declares - pt.list and a bare
-// pt.handover both answer with "as many OK lines as apply". The board writes
+// pt.run both answer with "as many OK lines as apply". The board writes
 // them back to back at 115200, so a gap this long between them means it has
 // moved on.
 const idleGap = 250 * time.Millisecond
@@ -227,8 +227,8 @@ func ExpectCaps(lines []string) bool {
 }
 
 // ExpectMany never completes on its own, so the reply ends on the idle gap.
-// For pt.list and a bare pt.handover, which answer with as many lines as apply
-// and give no count.
+// For pt.list and a bare pt.run, which answer with as many lines as apply and
+// give no count.
 func ExpectMany(lines []string) bool { return false }
 
 // ExpectFor picks the right rule for a command line, so a caller passing a
@@ -246,14 +246,9 @@ func ExpectFor(cmd string) Expect {
 		return ExpectCaps
 	case "pt.list":
 		return ExpectMany
-	case "pt.handover":
-		if len(fields) == 1 {
-			return ExpectMany // the catalogue: one line per target, no count
-		}
-		return ExpectOne // handing over: one OK, then that test's own printf
 	case "pt.run":
 		if len(fields) == 1 {
-			return ExpectMany // the catalogue, same shape as pt.handover's
+			return ExpectMany // the catalogue: one line per target, no count
 		}
 		// Performing one: the checks it runs print prose first, then one OK
 		// line. Log lines do not end a reply, so this is still one line.
