@@ -90,7 +90,8 @@ python tools/selfcheck.py --list   # 先看它会跑哪几步、各证明哪条�
 
 | 目标 | 命令 |
 |---|---|
-| **固件 + PC 工具（菜单）** | **双击 `build.cmd`**，或者 `python build.py`。不带参数给菜单（五种组合）；`--fixture` / `--boot` / `--tool` 可自由组合，发版是 `--boot --tool`。⚠️ 编固件前 CubeIDE 要关掉 |
+| **编 / 烧 / 交付（菜单）** | **双击 `build.cmd`**，或者 `python build.py`。不带参数给菜单（八项）；`--fixture` / `--boot` / `--tool` / `--flash` / `--deliver` 可组合。⚠️ 编固件前 CubeIDE 要关掉 |
+| **出一版给硬件工程师** | **双击 `delivery.cmd`** —— 编固件 + 编工具 + 打包，一步到位。产物在 `Output/delivery/`，整个文件夹发给他；他那边只要装 STM32CubeProgrammer |
 | `IAPTool` + `PortTool`（三平台） | `./compile_tool.sh` —— 一次出六个二进制，别手搓 `go build`，输出布局是约定好的 |
 | `TestCase`（本机） | `go build -o Output/<GOOS>/TestCase ./TestCase` |
 
