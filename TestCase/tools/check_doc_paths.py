@@ -101,7 +101,7 @@ def docs(boot, tool, core, skills, prod):
                        (core, ["CLAUDE.md"]),
                        (skills, ["_shared", "CLAUDE.md", "README.md"]),
                        (prod, ["docs", "maps", "work", "waiting", "README.md",
-                               "WHERE-THINGS-LIVE.md"])):
+                               "WHERE-THINGS-LIVE.md", "CLAUDE.md", "GLOSSARY.md"])):
         if root is None or not str(root) or not root.exists():
             continue
         for s in subs:
