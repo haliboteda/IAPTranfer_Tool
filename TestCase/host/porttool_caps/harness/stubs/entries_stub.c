@@ -1,11 +1,14 @@
 /*
  * The fourteen standalone bring-up entries, as addresses only.
  *
- * porttool_handover.c's table holds a function pointer per target, so the
- * symbols must exist to link. None of them should ever run here: a handover is
- * one-way and would take the harness with it. Each one therefore fails the run
- * loudly rather than doing nothing, so a test that accidentally hands over is
- * a red result and not a quiet pass.
+ * They exist so the harness links: the port tool sources are compiled
+ * unchanged, and some of them still name these entries. None should ever run
+ * here -- a standalone entry never returns and would take the harness with it
+ * -- so each fails the run loudly rather than doing nothing.
+ *
+ * The table that used to hold a function pointer per target was deleted with
+ * pt.handover; 11 of the 14 below are no longer named by any port tool source.
+ * Why the rig is built this way: $PROD/docs/production/TEST-DESIGN.md.
  */
 
 #include <stdio.h>
