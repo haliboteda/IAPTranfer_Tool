@@ -23,7 +23,7 @@ sys.path.insert(0, str(HERE.parent.parent / "tools"))
 
 from common import Fail, Ok, Section, cfg, run_capture  # noqa: E402
 
-# Kept in step with docs/test/BUILD-AND-TEST.md. The menu options matter: the variant
+# Kept in step with $PROD/docs/build/BUILD-AND-TEST.md. The menu options matter: the variant
 # header is selected by pnum, and a wrong FQBN would compile a different variant
 # and prove nothing about this one.
 FQBN = ("OpenPLC_Alpha:stm32:OPEN-PLC:pnum=PLC_H743,usb=CDCgen,xusb=FS,"

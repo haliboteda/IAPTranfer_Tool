@@ -1,6 +1,7 @@
 """Every check that needs no board, in one command.
 
-This is layer 1 of the acceptance checklist (acceptance/checklist.md section A).
+This is layer 1 of the acceptance checklist ($PROD/docs/tables/ACCEPTANCE-CHECKLIST.md,
+section A).
 It is cheap enough to run after every edit, and each round of on-board debugging
 costs an order of magnitude more -- so nothing here should ever be skipped on the
 way to the board.
@@ -69,7 +70,7 @@ CATALOG = [
 COVERS = {cid: covers for cid, covers, _ in CATALOG}
 
 STATUS_DOC = "open_plc_cube_ide/docs/STATUS.md"
-CRITERIA_DOC = "TestCase/TEST-CASES.md"
+CRITERIA_DOC = "$PROD/docs/tables/TEST-CASES.md"
 
 
 def print_catalog():
@@ -254,7 +255,7 @@ def main():
         return 1
     if skipped > 0:
         Warn("%d skipped - those areas are unverified on this machine" % skipped)
-    Ok("host-side checks pass; next is acceptance/checklist.md CHK-A4 (build) and CHK-A5 (flash)")
+    Ok("host-side checks pass; next is ACCEPTANCE-CHECKLIST.md CHK-A4 (build) and CHK-A5 (flash)")
     return 0
 
 

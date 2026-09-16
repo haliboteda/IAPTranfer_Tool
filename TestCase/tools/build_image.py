@@ -121,7 +121,7 @@ def build(porttool, clean):
         # linker line naming the script means the -T never arrived - most
         # likely PLC_LD_SCRIPT expanded to nothing.
         Fail("no linker line names %s - did PLC_LD_SCRIPT expand? See "
-             "$BOOT/docs/design/CUBEMX-RULES.md" % want_ld)
+             "$BOOT/$PROD/docs/build/CUBEMX-RULES.md" % want_ld)
         return None
 
     marker_seen = TOOL_MARKER in out

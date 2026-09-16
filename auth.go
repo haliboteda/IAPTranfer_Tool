@@ -17,7 +17,7 @@ import (
 // that key.
 //
 // Two ways to come by one, and the board cannot tell them apart -- which is
-// the point (see docs/design/OWNERSHIP.md, "客户自己建根之后，他的密钥怎么和根挂上"):
+// the point (see $PROD/docs/security/OWNERSHIP.md, "客户自己建根之后，他的密钥怎么和根挂上"):
 //
 //   - No certificate file: the key certifies itself. One person, one key, the
 //     key is the root. This is what a fresh install does.

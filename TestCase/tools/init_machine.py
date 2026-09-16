@@ -373,7 +373,7 @@ def detect_workspace():
 SETTINGS = [
     ("__section__", "repositories",
      ["The three repos this product is built from.",
-      "See open_plc_cube_ide/docs/design/ARCHITECTURE.md."]),
+      "See $PROD/docs/repo/ARCHITECTURE.md."]),
     ("BOOT_REPO", "path", detect_repo("open_plc_cube_ide"), True,
      ["bootloader, CubeIDE project, and the shared docs"]),
     ("CORE_REPO", "path", detect_repo("open_plc_arduino"), True,

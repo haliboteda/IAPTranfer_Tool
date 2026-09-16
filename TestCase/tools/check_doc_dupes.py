@@ -76,7 +76,8 @@ ALLOWED = {
     # point -- a pointer in one repo only would leave the other five silent. It
     # is long enough to read as a claim, so it needs an entry here rather than
     # being shortened until the check stops noticing it.
-    "产品全貌<AISkills/OpenPLC/docs/OVERVIEW.md（本机位置见SKILLS_REPO）": "the product-docs pointer; every repo is meant to carry it",
+    "产品文档在OpenPLC_Docs（$PROD）全部文档和待决的问题入口它的README.md（本机位置见DOCS_REPO）":
+        "the product-docs pointer; every repo is meant to carry it",
 }
 
 
@@ -104,7 +105,7 @@ def docs():
     """
     boot = Path(cfg.BOOT_REPO)
     out = []
-    named = [boot / "CLAUDE.md", boot / "RELEASE-NOTES.md", boot / "OpenPLC_Bootloader.md",
+    named = [boot / "CLAUDE.md", boot / "RELEASE-NOTES.md",
              TESTTOOL / "TEST-CASES.md", TESTTOOL / "acceptance" / "checklist.md",
              TESTTOOL.parent / "CLAUDE.md"]
     # The sibling repos' own CLAUDE.md. They state facts about themselves now,

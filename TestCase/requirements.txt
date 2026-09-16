@@ -3,7 +3,7 @@
 # Only one entry, and that is deliberate: everything else the test scripts need
 # is in the standard library. Sockets, hashing, subprocesses and path handling
 # all have stdlib answers, so the rewrite tracked in
-# open_plc_cube_ide/docs/work/M7-python-scripts.md adds no dependency
+# The move from PowerShell to Python added no dependency
 # beyond this one.
 #
 #     pip install -r requirements.txt

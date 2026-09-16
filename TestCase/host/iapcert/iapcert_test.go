@@ -125,7 +125,7 @@ func TestIssue_RejectsMalformedLeafKey(t *testing.T) {
 }
 
 // TestNextSerial_CountsUpAndPersists covers the decision recorded in
-// docs/design/OWNERSHIP.md: serials come from a counter file kept beside the
+// $PROD/docs/security/OWNERSHIP.md: serials come from a counter file kept beside the
 // root private key. Two certificates sharing a serial would make a future
 // revocation (C12) revoke both, so "never the same twice for one root" is the
 // property, and it survives the process exiting.

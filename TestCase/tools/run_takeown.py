@@ -11,7 +11,7 @@ directly over TCP, so the tool cannot be the one confirming its own work.
 ⚠️ THIS NEEDS SOMEBODY AT THE BOARD, and that is the whole point. takeown is
 gated on BOOT0 having been held through the startup window: the first claim
 carries no signature -- there is no owner yet to sign it -- so physical presence
-is the only gate there can be. See docs/design/OWNERSHIP.md.
+is the only gate there can be. See $PROD/docs/security/OWNERSHIP.md.
 
 Before running: press RESET, then hold BOOT0 until the relays finish clicking
 and let go. The board should be sitting in "UPLOAD Mod ... (BOOT0 held)".

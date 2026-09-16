@@ -3,7 +3,7 @@ package ptpanel
 // A timed run: the PC owns the clock, and the board is kept alive by a deadman
 // the PC has to keep renewing.
 //
-// The split is deliberate (see $BOOT/docs/design/DECISIONS.md 37). Every
+// The split is deliberate (see $BOOT/$PROD/docs/tables/DECISIONS.md 37). Every
 // verdict is made up here; the board only samples. The one thing the board
 // decides on its own is whether anybody is still listening, and pt.hold is how
 // it is told. Without it a PC that dies mid-run leaves the outputs driven until
