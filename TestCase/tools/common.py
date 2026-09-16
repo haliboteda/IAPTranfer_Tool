@@ -175,12 +175,13 @@ def prod_docs():
     """$PROD -- where the product-level documents live: what the relationship
     between the repositories is, and what the product as a whole is.
 
-    In the AI-Skills checkout rather than in one of the six product repos,
-    because its subject is all of them. Every repo's CLAUDE.md points here by
-    name; there is no plugin involved -- reading a document needs a path, not a
-    loading mechanism."""
-    s = skills_repo()
-    return s / "OpenPLC" if s else None
+    In its own repository rather than in one of the product repos, because its
+    subject is all of them. Every repo's CLAUDE.md points here by name; there is
+    no plugin involved -- reading a document needs a path, not a loading
+    mechanism.
+
+    Moved out of the AI-Skills checkout on 2026-09-16."""
+    return docs_repo()
 
 
 # ---------------------------------------------------------------- paths

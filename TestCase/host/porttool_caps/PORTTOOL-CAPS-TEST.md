@@ -165,7 +165,7 @@ python build.py
 
 ⚠️ **假串口用的是 `io.Pipe`，不是真 COM 口。**这台机器上那对 ELTIMA 虚拟串口
 （COM1↔COM2）被占着开不了，所以这层测的是面板逻辑，**不包括串口驱动本身**。
-串口驱动那条风险只能在干净机器上插真适配器验（`$BOOT/docs/design/DECISIONS.md` 第 7 条）。
+串口驱动那条风险只能在干净机器上插真适配器验（`$PROD/docs/tables/DECISIONS.md` 第 7 条）。
 
 ## caps_golden.txt
 

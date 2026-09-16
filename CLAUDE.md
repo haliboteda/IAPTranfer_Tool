@@ -4,7 +4,7 @@
 
 这个仓库装两样东西：出货给客户的 **`IAPTool`**（Go，负责把固件烧进板子），以及**整套测试资产 `TestCase/`**（用例、主机侧单元测试、板上 sketch、自动化脚本、验收单）。
 
-> 产品全貌：`<AI-Skills>/OpenPLC/docs/OVERVIEW.md`（本机位置见 `SKILLS_REPO`）。
+> 文档在 `$PROD`（`OpenPLC_Docs` 仓）。
 
 ## 这个仓库自己的东西
 
@@ -17,7 +17,7 @@
 | `internal/ptboard/` | 一条串口连接的对话管理：**永不停止地读**（停读就丢帧，这条链没有重传）、命令逐条串行（协议没有请求 id）、环形缓冲 + 订阅 |
 | `internal/ptpanel/` | 面板的 HTTP 面 + `go:embed` 的页面。推送用 **SSE 不是 WebSocket**（标准库，零依赖）。`Open` 字段是给测试注入假板子的缝 |
 | `internal/ptcheck/` | **限值与读数比对的唯一去处**。面板和产线序列都调它，两边不可能对同一个数得出不同结论 —— 和 `ptproto` 管解析是同一条规矩 |
-| `internal/ptplan/` | 方案文件（JSON）的读写与校验。**限值是步骤自己的参数，没有独立的限值表**（`$BOOT/docs/design/DECISIONS.md` 第 24 条）。`CheckAgainstCaps` 报只有板子能settle的事：端口不存在、参数固件不收、以及**给 `loop=ctrl` 端口写 `miss` 判据这种假判据** |
+| `internal/ptplan/` | 方案文件（JSON）的读写与校验。**限值是步骤自己的参数，没有独立的限值表**（`$PROD/docs/tables/DECISIONS.md` 第 24 条）。`CheckAgainstCaps` 报只有板子能settle的事：端口不存在、参数固件不收、以及**给 `loop=ctrl` 端口写 `miss` 判据这种假判据** |
 | `internal/ptseq/` | 执行器。**六个通用字段的语义住在这里**：`execute_condition` 的门、重试、前后延时、超时。⚠️ 门看的是「上一个真正跑过的步骤」，所以被跳过的步骤不会把前面的失败洗掉 |
 | `internal/ptreport/` | 报告。三条规矩：**每次尝试都留**（重试不覆盖原失败）、**原始值都留**（限值会改，要能重判）、**超时与判定失败分开记**（前者多半是接线/探针，后者多半是板子） |
 | `iapcrypto/` | 加密原语。**测试用例 import 它，不重写** |
@@ -113,7 +113,7 @@ python tools/selfcheck.py --list   # 先看它会跑哪几步、各证明哪条�
 | 裸错误码（`err=0x10000000`） | 译成原因，原始码可以跟在后面 |
 | 只给数字 | 带单位、带范围、带"这算过还是不过" |
 
-⚠️ **哪些数字不是判据，要在面板上说出来** —— 例如 `loop=ctrl` 端口回报的那三个计数只说明控制口活着，不是该端口的结论（`$BOOT/docs/design/DECISIONS.md` 第 9 条）。
+⚠️ **哪些数字不是判据，要在面板上说出来** —— 例如 `loop=ctrl` 端口回报的那三个计数只说明控制口活着，不是该端口的结论（`$PROD/docs/tables/DECISIONS.md` 第 9 条）。
 
 ## 边界
 

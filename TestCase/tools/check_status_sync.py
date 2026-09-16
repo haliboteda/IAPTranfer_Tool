@@ -65,18 +65,17 @@ def find_docs():
     """
     prod = prod_docs()
     if prod is None:
-        Fail("no AI-Skills clone found, so STATUS.md cannot be located.")
-        Fail("  it moved there on 2026-08-24 -- the requirement table is about all")
-        Fail("  the repositories, not about the bootloader.")
-        Warn("  clone it, then: python tools/init_machine.py --redetect SKILLS_REPO")
+        Fail("no OpenPLC_Docs clone found, so STATUS.md cannot be located.")
+        Fail("  every document moved there on 2026-09-16 -- the tables are about")
+        Fail("  all the repositories, not about any one of them.")
+        Warn("  clone it, then: python tools/init_machine.py --redetect DOCS_REPO")
         return None, None
-    # STATUS.md is product-level and lives in the openplc plugin; the criteria
-    # documents are in this repo, next to the code they judge. So this check is
-    # now genuinely cross-repository -- and it FAILS rather than skipping when the
-    # other side is absent, because a skip here would pass vacuously on exactly
-    # the machine that is set up wrong.
-    status = prod / "docs" / "STATUS.md"
-    cases = [TESTTOOL / "TEST-CASES.md", TESTTOOL / "acceptance" / "checklist.md"]
+    # All three moved into OpenPLC_Docs on 2026-09-16. This still FAILS rather
+    # than skipping when they are absent, because a skip would pass vacuously on
+    # exactly the machine that is set up wrong.
+    tables = prod / "docs" / "tables"
+    status = tables / "STATUS.md"
+    cases = [tables / "TEST-CASES.md", tables / "ACCEPTANCE-CHECKLIST.md"]
     missing = [str(p) for p in [status] + cases if not p.exists()]
     if missing:
         for m in missing:

@@ -93,12 +93,15 @@ def repos():
 
 def docs(boot, tool, core, skills, prod):
     out = []
-    for root, subs in ((boot, ["docs", "CLAUDE.md", "RELEASE-NOTES.md", "OpenPLC_Bootloader.md"]),
-                       (tool, ["CLAUDE.md", "TestCase/TEST-CASES.md",
-                               "TestCase/acceptance/checklist.md"]),
+    # Every document moved into OpenPLC_Docs on 2026-09-16. What is left in the
+    # other repositories is the entry file, the customer-facing release notes,
+    # and the READMEs that sit beside the test code they describe.
+    for root, subs in ((boot, ["CLAUDE.md", "RELEASE-NOTES.md"]),
+                       (tool, ["CLAUDE.md", "TestCase/host"]),
                        (core, ["CLAUDE.md"]),
-                       (skills, ["OpenPLC", "_shared", "CLAUDE.md", "README.md"]),
-                       (prod, ["docs", "maps", "README.md", "WHERE-THINGS-LIVE.md"])):
+                       (skills, ["_shared", "CLAUDE.md", "README.md"]),
+                       (prod, ["docs", "maps", "work", "waiting", "README.md",
+                               "WHERE-THINGS-LIVE.md"])):
         if root is None or not str(root) or not root.exists():
             continue
         for s in subs:
