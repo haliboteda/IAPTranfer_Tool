@@ -81,7 +81,7 @@ Revoking a colleague means handing the board to a new root
 (`IAPTool setowner`) and issuing fresh certificates to everyone still there:
 certificates from the old root stop verifying the moment the board's root
 changes, including on firmware already installed. See
-`open_plc_cube_ide/docs/design/OWNERSHIP.md`.
+`OpenPLC_Docs/docs/security/OWNERSHIP.md`.
 
 ### Mismatch is caught before the transfer
 
