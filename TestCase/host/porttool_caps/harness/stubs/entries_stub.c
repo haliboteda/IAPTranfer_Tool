@@ -1,13 +1,17 @@
 /*
- * The fourteen standalone bring-up entries, as addresses only.
+ * Stubs for the board-side measurements the port tool sessions call.
  *
- * They exist so the harness links: the port tool sources are compiled
- * unchanged, and some of them still name these entries. None should ever run
- * here -- a standalone entry never returns and would take the harness with it
- * -- so each fails the run loudly rather than doing nothing.
+ * SD and SDRAM one-shots stand in for the measurement instead of failing the
+ * run, so a test can model a missing card and a card that reads back wrong --
+ * two failures that look alike from a distance. The detect switch is polled
+ * every superloop pass, so moving it between advance() calls is the only way
+ * hot-plug is decidable without a hand on the slot.
  *
- * The table that used to hold a function pointer per target was deleted with
- * pt.handover; 11 of the 14 below are no longer named by any port tool source.
+ * 2026-09-16: the fourteen standalone bring-up entries were removed. They
+ * existed for porttool_handover.c's function-pointer table, which went with
+ * pt.handover; nothing in the harness source list named them any more, and
+ * the build links clean without them.
+ *
  * Why the rig is built this way: $PROD/docs/production/TEST-DESIGN.md.
  */
 
@@ -25,28 +29,6 @@
 #include "SDRAM/sdram_test.h"
 #include "bringup_test.h"
 
-static void never(const char *who)
-{
-    fprintf(stderr, "TEST FAILURE: handover to %s actually ran\n", who);
-    exit(3);
-}
-
-#define ENTRY(fn) void fn(void) { never(#fn); }
-
-ENTRY(BringUp_Test_Run)
-ENTRY(CAN_Test_Run)
-ENTRY(CAN_Test_Soak_Run)
-ENTRY(CAN_Test_Scope_Run)
-ENTRY(CAN_Test_Echo_Run)
-ENTRY(KNX_Test_Run)
-ENTRY(RS485_Test_Run)
-ENTRY(RS232_Test_Run)
-ENTRY(PWM_Test_Run)
-ENTRY(SD_Test_Info)
-ENTRY(SD_Test_FileIntegrity)
-ENTRY(SDRAM_Test_Capacity)
-ENTRY(SDRAM_Test_Retention)
-ENTRY(SDRAM_Test_CubeProgrammerVerify)
 
 /* The SD one-shots, like the SDRAM probe below: pt.run calls them and comes
  * back, so they stand in for the measurement instead of failing the run.
