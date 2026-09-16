@@ -8,7 +8,7 @@ would ever have told anyone.
 
 It checks only the three shapes whose base directory is unambiguous:
 
-  * markdown links            [text](../design/OWNERSHIP.md)     -- relative to the doc
+  * markdown links            [text](path/to/OWNERSHIP.md)      -- relative to the doc
   * repo-var paths            $PROD/docs/tables/DECISIONS.md
   * backticked docs/ paths    `$PROD/work/TODO.md`             -- some repo root
 
@@ -30,7 +30,7 @@ people to re-run it, and a warning everyone learned to ignore. Narrower coverage
 that can be trusted beats broader coverage that cannot.
 
 What that costs: a bare `tools/foo.py` that gets deleted still goes unnoticed.
-Write `$TOOL/TestCase/tools/foo.py` when you want it checked.
+Write `$TOOL/TestCase/tools/path/to/foo.py` when you want it checked.
 
 Line numbers in a path (fmc.c:153-193) are stripped before checking: the file has
 to exist, but a line number is a hint and drifts by design -- M4 already carries
@@ -72,12 +72,19 @@ VAR_PATH = re.compile(r"\$(BOOT|TOOL|CORE|PROD)(?:_REPO)?[:/]([\w./+-]+)")
 # repo root -- every other bare path in these documents is relative to whichever
 # repo the surrounding paragraph is about, which is not knowable from here.
 TICK_PATH = re.compile(r"`(docs/[\w./+-]+\.\w+)`")
+# A document path written in a source comment. Deliberately narrow: only tokens
+# that carry "docs/" and an extension, because anything looser turns this check
+# into noise and an ignored check protects nobody. 2026-09-16: 66 such paths
+# were left pointing at nothing by the document move and no check could see them.
+SRC_PATH = re.compile(r"(?<![\w/$])[\w./+-]*docs/[\w./+-]+\.\w+")
+SRC_EXT = (".c", ".h", ".cpp", ".go", ".py", ".json", ".html", ".js", ".txt",
+           ".cmd", ".ps1")
 
 SKIP_DIR = {".git", "__pycache__", "Debug", "Release", "node_modules", ".vscode"}
 # Placeholders, globs and brace expansions are not claims about a file that
 # exists. "machine.{ps1,py}" arrives here truncated at the dot, and "path/to/X"
 # is an illustration in a rule about how to write paths.
-SKIP_TOKEN = re.compile(r"[<>*?{}]|^https?:|^#|^mailto:|(?:^|/)path/to/|\.$")
+SKIP_TOKEN = re.compile(r"[<>*?{}]|^https?:|^//|://|^#|^mailto:|(?:^|/)path/to/|\.$")
 
 
 def repos():
@@ -112,6 +119,31 @@ def docs(boot, tool, core, skills, prod):
                 for dp, dirs, fs in os.walk(p):
                     dirs[:] = [d for d in dirs if d not in SKIP_DIR]
                     out.extend((Path(dp) / f, root) for f in fs if f.endswith(".md"))
+    return sorted(set(out))
+
+
+def sources(boot, tool, core, prod):
+    """Source files that may name a document in a comment."""
+    out = []
+    for root, subs in ((boot, ["IAPServer", "LWIP", "Core/Src", "Core/Inc", "TestCase"]),
+                       (tool, ["TestCase/tools", "TestCase/host", "TestCase/plans",
+                               "internal", "iapcert", "."]),
+                       (core, ["libraries", "cores", "tools"]),
+                       (prod, ["tools"])):
+        if root is None or not str(root) or not root.exists():
+            continue
+        for sub in subs:
+            p = root / sub.replace("/", os.sep)
+            if not p.is_dir():
+                continue
+            if sub == ".":
+                out.extend((f, root) for f in p.iterdir()
+                           if f.is_file() and f.suffix in SRC_EXT)
+                continue
+            for dp, dirs, fs in os.walk(p):
+                dirs[:] = [d for d in dirs if d not in SKIP_DIR and d != "uecc"]
+                out.extend((Path(dp) / f, root) for f in fs
+                           if os.path.splitext(f)[1] in SRC_EXT)
     return sorted(set(out))
 
 
@@ -180,14 +212,25 @@ def main():
     print("  prod    %s" % prod_docs())
 
     files = docs(boot, tool, core, skills, prod)
-    print("  %d document(s)" % len(files))
+    srcs = sources(boot, tool, core, prod)
+    print("  %d document(s), %d source file(s)" % (len(files), len(srcs)))
 
     dead, checked = [], 0
-    for doc, root in files:
+    for doc, root in files + srcs:
+        in_source = doc.suffix in SRC_EXT
         try:
             text = doc.read_text(encoding="utf-8")
         except (OSError, UnicodeDecodeError):
             continue
+        if in_source:
+            for m in SRC_PATH.finditer(text):
+                tok = m.group(0)
+                target = resolve(tok, doc, root, boot, tool, core, skills, prod)
+                if target is None:
+                    continue
+                checked += 1
+                if not target.exists():
+                    dead.append((doc, text[:m.start()].count(chr(10)) + 1, tok))
         for rx in (MD_LINK, TICK_PATH):
             for m in rx.finditer(text):
                 tok = m.group(1)

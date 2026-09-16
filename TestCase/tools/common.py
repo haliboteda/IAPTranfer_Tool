@@ -158,8 +158,8 @@ def skills_repo():
     return None
 
 
-# Points one level ABOVE docs/, so a citation reads $PROD/docs/STATUS.md. Pointing
-# it at docs/ itself made $PROD/docs/x.md resolve to .../docs/docs/x.md, which P9
+# Points one level ABOVE docs/, so a citation reads $PROD/docs/tables/STATUS.md. Pointing
+# it at docs/ itself made $PROD/docs/path/to/x.md resolve to .../docs/docs/path/to/x.md, which P9
 # caught at once.
 def docs_repo():
     """The OpenPLC_Docs checkout, or None if this machine has no clone of it."""

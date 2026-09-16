@@ -455,7 +455,7 @@ def main():
         result = run_once(args.case, args, cli, iaptool, image, ip)
         if result == "pass":
             Section("record it")
-            print("  docs/STATUS.md  E8 row: status, result, date")
+            print("  $PROD/docs/tables/STATUS.md  E8 row: status, result, date")
             return 0
         if result in ("fail", "setup"):
             return 1 if result == "fail" else 2

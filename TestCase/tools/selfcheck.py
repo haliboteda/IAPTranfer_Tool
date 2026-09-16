@@ -46,7 +46,7 @@ results = []
 # --list prints it, and run_step() looks up "covers" here and raises if a step is
 # missing, so the two can never drift apart.
 #
-# "covers" is the requirement id in open_plc_cube_ide/docs/STATUS.md that this
+# "covers" is the requirement id in $PROD/docs/tables/STATUS.md that this
 # case is the evidence for. A case that covers nothing should not exist.
 CATALOG = [
     ("ENV",     "-",           "this machine has the toolchain"),
@@ -69,7 +69,7 @@ CATALOG = [
 ]
 COVERS = {cid: covers for cid, covers, _ in CATALOG}
 
-STATUS_DOC = "open_plc_cube_ide/docs/STATUS.md"
+STATUS_DOC = "$PROD/docs/tables/STATUS.md"
 CRITERIA_DOC = "$PROD/docs/tables/TEST-CASES.md"
 
 
