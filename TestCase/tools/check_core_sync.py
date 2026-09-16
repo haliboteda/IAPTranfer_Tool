@@ -49,6 +49,10 @@ for p in (cfg.CORE_LIVE, cfg.CORE_REPO):
 # would still be skipped but Claude.md would not, and the check would go red on
 # a rename nobody made.
 #
+# The six exclusions above are the sole source for WHY each one is skipped;
+# $PROD/docs/repo/ARCHITECTURE.md names this file and deliberately does not copy
+# them. A reason in code still carries where the rest is written.
+#
 # One pattern, one place:
 # holds the two versions to byte-identical output, so fixing one alone breaks
 # the comparison rather than the check.
