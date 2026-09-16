@@ -324,8 +324,8 @@ print("       scans the two iap_auth.c files, not the core's backup.h or HID ind
 
 # --- what this script does not check ----------------------------------------
 Section("not covered by this script -- still manual")
-print("  - iap_keyderive HMAC formula across the two C copies and iapcrypto.go")
-print("      (covered instead by host/iapcrypto/ and host/bootloader_unit/)")
+print("  - iap_keyderive: the two C copies are NEVER compared. host/bootloader_unit")
+print("      compiles the bootloader copy only, so a one-sided edit here is silent.")
 print("  - fw_pubkey.inc: bootloader-only by design, nothing to compare")
 print("  - $CORE_LIVE vs $CORE_REPO: use tools/check_core_sync.py")
 
