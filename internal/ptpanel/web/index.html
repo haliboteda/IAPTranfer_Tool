@@ -796,7 +796,7 @@ const AIN_RANGE = [
 // ⚠️ 这条带子本身还没定论：2026-08-27 在 bring-up 固件上测到约 380 mV，
 // 2026-09-10 在工装镜像上同样两路读到的却是 0–12 raw（≈0 mV）。两次对不上，
 // 所以真正的判据仍然是「有没有人确认那四处锡桥焊了」——
-// 见 $BOOT/$PROD/docs/outbound/AIN-JUMPER-REQUEST.md。
+// 见 $PROD/docs/outbound/AIN-JUMPER-REQUEST.md。
 const AIN_FLOAT_MIN_MV = 300, AIN_FLOAT_MAX_MV = 450;
 
 // formatReading 把一路读数变成 {text, hint}。text 顶替原来那串生数，
