@@ -35,8 +35,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from common import (Fail, Ok, Section, Warn, cfg, have_cmd,  # noqa: E402
-                    probe, python_exe)
+from common import (Fail, Ok, Section, Warn, cfg, docs_repo,  # noqa: E402
+                    have_cmd, probe, python_exe)
 
 TESTTOOL = HERE.parent
 results = []
@@ -59,6 +59,7 @@ CATALOG = [
     ("P7",      "-",           "STATUS.md and TEST-CASES.md name the same set of cases"),
     ("P8",      "-",           "no claim is written out in more than one document"),
     ("P9",      "-",           "every path a document names actually exists"),
+    ("P12",     "-",           "OpenPLC_Docs: tickets close honestly, placeholders have owners"),
     ("H2",      "C5",          "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)"),
     ("H4",      "-",           "port tool protocol contract (real porttool.c, then the Go parser)"),
     ("K1-K7",   "C8",          "IAPTool key/certificate match against a stand-in board"),
@@ -192,6 +193,17 @@ def main():
 
     run_step("P9", "every path a document names actually exists",
              [python_exe(), HERE / "check_doc_paths.py"], cwd=tool_repo)
+
+    # The pre-commit hook in OpenPLC_Docs runs these too, but --no-verify skips
+    # it and core.hooksPath is not under version control, so the gate lives here.
+    docs = docs_repo()
+    if docs:
+        run_step("P12", "OpenPLC_Docs: tickets close honestly, placeholders have owners",
+                 [python_exe(), docs / "tools" / "check_wayfinder_ticket_hygiene.py"],
+                 cwd=docs)
+        run_step("P12", "OpenPLC_Docs: no placeholder without a ticket",
+                 [python_exe(), docs / "tools" / "check_no_orphan_placeholders.py"],
+                 cwd=docs)
 
     if not args.quick:
         # HOST_CC from config wins; otherwise fall back to whatever "gcc"

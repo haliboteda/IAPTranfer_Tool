@@ -54,7 +54,7 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from common import Fail, Ok, Section, Warn, cfg, prod_docs, skills_repo  # noqa: E402
+from common import Fail, Ok, Section, Warn, cfg, docs_repo, prod_docs, skills_repo  # noqa: E402
 
 TESTTOOL = HERE.parent
 
@@ -88,16 +88,17 @@ def repos():
     # beside the six product repos on every machine. common.skills_repo() reads
     # SKILLS_REPO from config and keeps the old two-candidate probe as fallback,
     # so all three document checks agree on where it is.
-    return boot, tool, core, skills_repo()
+    return boot, tool, core, skills_repo(), docs_repo()
 
 
-def docs(boot, tool, core, skills):
+def docs(boot, tool, core, skills, prod):
     out = []
     for root, subs in ((boot, ["docs", "CLAUDE.md", "RELEASE-NOTES.md", "OpenPLC_Bootloader.md"]),
                        (tool, ["CLAUDE.md", "TestCase/TEST-CASES.md",
                                "TestCase/acceptance/checklist.md"]),
                        (core, ["CLAUDE.md"]),
-                       (skills, ["OpenPLC", "_shared", "CLAUDE.md", "README.md"])):
+                       (skills, ["OpenPLC", "_shared", "CLAUDE.md", "README.md"]),
+                       (prod, ["docs", "maps", "README.md", "WHERE-THINGS-LIVE.md"])):
         if root is None or not str(root) or not root.exists():
             continue
         for s in subs:
@@ -111,7 +112,7 @@ def docs(boot, tool, core, skills):
     return sorted(set(out))
 
 
-def resolve(token, doc, doc_root, boot, tool, core, skills):
+def resolve(token, doc, doc_root, boot, tool, core, skills, prod):
     """Where a named path should be, or None if the token is not a claim."""
     if SKIP_TOKEN.search(token):
         return None
@@ -132,7 +133,7 @@ def resolve(token, doc, doc_root, boot, tool, core, skills):
     if token.startswith("docs/"):
         # Pinned to a repo root, but which repo depends on the sentence -- so it
         # passes if any repo has it. That is enough to catch a path that moved.
-        for base in (boot, tool, core, skills, doc_root):
+        for base in (boot, tool, core, skills, prod, doc_root):
             if base and str(base) and (base / token.replace("/", os.sep)).exists():
                 return base / token.replace("/", os.sep)
         return boot / token.replace("/", os.sep)
@@ -156,7 +157,7 @@ def main():
     args = ap.parse_args()
 
     Section("every documented path exists")
-    boot, tool, core, skills = repos()
+    boot, tool, core, skills, prod = repos()
     if not boot.exists():
         Fail("BOOT_REPO does not exist -- run tools/init_machine.py")
         return 2
@@ -175,7 +176,7 @@ def main():
         return 2
     print("  prod    %s" % prod_docs())
 
-    files = docs(boot, tool, core, skills)
+    files = docs(boot, tool, core, skills, prod)
     print("  %d document(s)" % len(files))
 
     dead, checked = [], 0
@@ -187,7 +188,7 @@ def main():
         for rx in (MD_LINK, TICK_PATH):
             for m in rx.finditer(text):
                 tok = m.group(1)
-                target = resolve(tok, doc, root, boot, tool, core, skills)
+                target = resolve(tok, doc, root, boot, tool, core, skills, prod)
                 if target is None:
                     continue
                 checked += 1
@@ -196,7 +197,7 @@ def main():
                     dead.append((doc, lineno, tok))
         for m in VAR_PATH.finditer(text):
             tok = m.group(0)
-            target = resolve(tok, doc, root, boot, tool, core, skills)
+            target = resolve(tok, doc, root, boot, tool, core, skills, prod)
             if target is None:
                 continue
             checked += 1

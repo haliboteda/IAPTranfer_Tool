@@ -386,6 +386,9 @@ SETTINGS = [
     ("REF_REPO", "path", detect_repo("Hello_World_OpenPLC"), False,
      ["CubeIDE reference project for the same board. Optional; read it before",
       "inventing a new way to drive a peripheral."]),
+    ("DOCS_REPO", "path", detect_repo("OpenPLC_Docs"), False,
+     ["The OpenPLC_Docs checkout: the product-level documents and the open",
+      "questions. It sits beside the product repos. P8, P9 and P12 read it."]),
     ("SKILLS_REPO", "path", detect_repo("AI-Skills"), False,
      ["The AI-Skills checkout: the product-level documents and the machine",
       "bring-up documents live in it, plus the standing rules that get synced",
@@ -474,6 +477,7 @@ EXAMPLES = {
         # One level OUT from the product workspace, not inside it -- AI-Skills is
         # shared across projects. Showing it beside the others would teach the
         # wrong shape on the one setting most likely to be pasted wrong.
+        "DOCS_REPO": r"E:\WorkSpace\Schaeffer-AG\OpenPLC_Docs",
         "SKILLS_REPO": r"E:\WorkSpace\AI-Skills",
         "A15": r"C:\Users\you\AppData\Local\Arduino15",
         "CORE_LIVE": r"C:\Users\you\AppData\Local\Arduino15\packages\OpenPLC_Alpha\hardware\stm32\0.1.3-pre",
@@ -492,6 +496,7 @@ EXAMPLES = {
         "TOOL_REPO": "/home/you/Documents/WorkSpace/IAPTranfer_Tool",
         "HW_REPO": "/home/you/Documents/WorkSpace/Hardware",
         "REF_REPO": "/home/you/Documents/WorkSpace/ref/Hello_World_OpenPLC",
+        "DOCS_REPO": "/home/you/Documents/Schaeffer-AG/OpenPLC_Docs",
         "SKILLS_REPO": "/home/you/Documents/AI-Skills",
         "A15": "/home/you/.arduino15",
         "CORE_LIVE": "/home/you/.arduino15/packages/OpenPLC_Alpha/hardware/stm32/0.1.3-pre",
@@ -513,6 +518,7 @@ EXAMPLES = {
         "TOOL_REPO": "/Users/you/WorkSpace/IAPTranfer_Tool",
         "HW_REPO": "/Users/you/WorkSpace/Hardware",
         "REF_REPO": "/Users/you/WorkSpace/ref/Hello_World_OpenPLC",
+        "DOCS_REPO": "/Users/you/Schaeffer-AG/OpenPLC_Docs",
         "SKILLS_REPO": "/Users/you/AI-Skills",
         "A15": "/Users/you/Library/Arduino15",
         "CORE_LIVE": "/Users/you/Library/Arduino15/packages/OpenPLC_Alpha/hardware/stm32/0.1.3-pre",
@@ -543,6 +549,8 @@ WHAT_IT_IS = {
     "HW_REPO": "the Hardware clone -- schematics and production files. Forgejo only, "
                "there is no GitHub copy of it",
     "REF_REPO": "the Hello_World_OpenPLC clone -- CubeIDE reference project for this board",
+    "DOCS_REPO": "the OpenPLC_Docs clone -- the product-level documents and the "
+                 "open questions",
     "SKILLS_REPO": "the AI-Skills clone -- the product-level and machine bring-up "
                    "documents, plus the standing rules synced into ~/.claude/rules/. "
                    "Shared across projects, so it is usually NOT beside the six "
@@ -785,7 +793,7 @@ def render_python(values):
 # half. The local file is gitignored in every repo that has one.
 # Everything a session may need to read...
 GRANTED_KEYS = ("BOOT_REPO", "CORE_REPO", "TOOL_REPO", "HW_REPO", "REF_REPO",
-                "SKILLS_REPO", "A15", "CUBEIDE", "IDE")
+                "SKILLS_REPO", "DOCS_REPO", "A15", "CUBEIDE", "IDE")
 # ...written into every repo a session gets opened in. Hardware and
 # Hello_World_OpenPLC were excluded until 2026-08-24 as read-only references, but
 # the product-level documents moved into the AI-Skills checkout and are reached by

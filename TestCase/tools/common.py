@@ -161,6 +161,16 @@ def skills_repo():
 # Points one level ABOVE docs/, so a citation reads $PROD/docs/STATUS.md. Pointing
 # it at docs/ itself made $PROD/docs/x.md resolve to .../docs/docs/x.md, which P9
 # caught at once.
+def docs_repo():
+    """The OpenPLC_Docs checkout, or None if this machine has no clone of it."""
+    configured = getattr(cfg, "DOCS_REPO", "")
+    if configured and Path(configured).is_dir():
+        return Path(configured)
+    boot = Path(getattr(cfg, "BOOT_REPO", "") or ".")
+    cand = boot.parent / "OpenPLC_Docs"
+    return cand if cand.is_dir() else None
+
+
 def prod_docs():
     """$PROD -- where the product-level documents live: what the relationship
     between the repositories is, and what the product as a whole is.
