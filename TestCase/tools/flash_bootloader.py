@@ -26,7 +26,7 @@ from common import (Fail, Ok, Section, Warn, assert_target_reachable,  # noqa: E
                     read_log_ports, read_text)
 
 # The sector is 128K, but the linker only gets 120K: the last 8K is the owner
-# record area (requirement C10). Reporting against 131,072 would overstate the
+# record area (requirement R2-02). Reporting against 131,072 would overstate the
 # headroom by a whole 8K and hide the point at which the build starts failing --
 # read the cap out of the linker script instead of repeating it here, so the two
 # cannot disagree.
@@ -146,7 +146,7 @@ def main():
     Section("BG1 verdict")
     allof = "\n".join(buf.values())
     if "SDRAM staging buffer OK" in allof:
-        Ok("PASS - staging buffer usable. Next: T1 (normal upload).")
+        Ok("PASS - staging buffer usable. Next: T1-07 (normal upload).")
     elif "SDRAM SELF-TEST FAILED" in allof:
         Fail("FAIL - SDRAM self-test failed. Fix FMC / power-up sequence before "
              "testing uploads.")

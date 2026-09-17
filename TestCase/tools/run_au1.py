@@ -1,4 +1,4 @@
-"""AU1 -- drives both phases of the nonce-uniqueness case around a real power cut.
+"""T1-17 -- drives both phases of the nonce-uniqueness case around a real power cut.
 
     python3 tools/run_au1.py                   full run, prompts you to pull the plug
     python3 tools/run_au1.py --count 12        take 12 nonces per phase instead of 8
@@ -15,7 +15,7 @@ see the power go and come back, so the timing recorded is the board's, not a
 human's reaction time -- and so the script cannot be fooled by somebody
 confirming a power cut that did not happen.
 
-Exit 0 = AU1 passed, 1 = it failed, 2 = the run could not be set up.
+Exit 0 = T1-17 passed, 1 = it failed, 2 = the run could not be set up.
 """
 
 import argparse
@@ -119,7 +119,7 @@ def main():
         state_file.unlink()
 
     # ------------------------------------------------------------ phase 1 ----
-    Section("AU1 phase 1 -- collecting nonces before the power cut")
+    Section("T1-17 phase 1 -- collecting nonces before the power cut")
 
     if args.resume and state_file.exists():
         before = json.loads(state_file.read_text(encoding="utf-8"))
@@ -140,7 +140,7 @@ def main():
         if rc != 0:
             Fail("could not park the board in the bootloader")
             return 2
-        rc = run_emit([test_tool, "AU1", "--ip=%s" % ip, "--port=%s" % args.port,
+        rc = run_emit([test_tool, "T1-17", "--ip=%s" % ip, "--port=%s" % args.port,
                        "--state=%s" % state_file, "--phase=1", "--count=%d" % args.count])
         if rc != 0:
             Fail("phase 1 failed -- not sending you to the board for nothing")
@@ -182,14 +182,14 @@ def main():
         print(boot_log)
 
     # ------------------------------------------------------------ phase 2 ----
-    Section("AU1 phase 2 -- collecting nonces after the power cut")
+    Section("T1-17 phase 2 -- collecting nonces after the power cut")
 
     eb_out, eb_rc = enter_bootloader(ip, ports)
     if eb_rc != 0:
         Fail("board came back but could not be parked in the bootloader")
         return 2
 
-    verdict = run_emit([test_tool, "AU1", "--ip=%s" % ip, "--port=%s" % args.port,
+    verdict = run_emit([test_tool, "T1-17", "--ip=%s" % ip, "--port=%s" % args.port,
                         "--state=%s" % state_file, "--phase=2", "--count=%d" % args.count])
 
     # ------------------------------------------------- serial cross-check ----
@@ -228,9 +228,9 @@ def main():
 
     Section("result")
     if verdict != 0:
-        Fail("AU1 FAILED")
+        Fail("T1-17 FAILED")
         return 1
-    Ok("AU1 passed -- nonces are unique and the counter survived a real power cut")
+    Ok("T1-17 passed -- nonces are unique and the counter survived a real power cut")
     print("state kept at: %s" % state_file)
     return 0
 

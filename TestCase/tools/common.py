@@ -650,7 +650,7 @@ def banner(lines):
     _emit("")
     # Flush: stdout is block-buffered whenever it is not a terminal, and a
     # hands-on prompt sitting in a buffer is a prompt nobody acts on. Found
-    # 2026-09-01 running AU1 with the output piped -- the unplug banner never
+    # 2026-09-01 running T1-17 with the output piped -- the unplug banner never
     # appeared while the script sat waiting for the unplug.
     sys.stdout.flush()
 

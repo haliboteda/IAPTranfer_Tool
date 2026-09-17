@@ -11,7 +11,7 @@ package main
 //   takeown  <pubkey>                  claim; refused unless BOOT0 was held at startup
 //   setowner <gen> <pubkey> <sig>      hand over; refused unless the CURRENT owner signed
 //
-// See $PROD/docs/security/OWNERSHIP.md for why the first claim is
+// See $PROD/docs/modules/M2-ownership.md for why the first claim is
 // gated on a button and every later one on a signature.
 
 import (

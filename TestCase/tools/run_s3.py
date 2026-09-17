@@ -3,9 +3,9 @@
     python3 tools/run_s3.py --bin <app.bin>               corrupt that app on the board, then restore it
     python3 tools/run_s3.py --bin <app.bin> --no-restore  leave the board broken (don't)
 
-S1 also exercises the boot-time check, but only as a side effect of an upload
+T1-11 also exercises the boot-time check, but only as a side effect of an upload
 that failed -- and after SDRAM staging landed, a failed upload never touches the
-application region at all, so S1's boot-time half now proves nothing about an
+application region at all, so T1-11's boot-time half now proves nothing about an
 application that IS installed. This case is the only one that verifies the claim
 in C3: the application's signature is re-checked on EVERY boot, against the bytes
 actually in flash.

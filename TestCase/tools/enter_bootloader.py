@@ -1,4 +1,4 @@
-"""Leave the board sitting in the bootloader, which T1-T4 and S1 all require.
+"""Leave the board sitting in the bootloader, which T1-T4 and T1-11 all require.
 
     python tools/enter_bootloader.py
 

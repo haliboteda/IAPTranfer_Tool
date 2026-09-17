@@ -3,13 +3,13 @@ package testcase
 // The deadman, tested at the server rather than through a browser.
 //
 // This is the one piece of the panel that decides whether 24 V stays on, and
-// until now the only thing covering it was case H5 - a browser driving a real
+// until now the only thing covering it was case T4-02 - a browser driving a real
 // simulated board, which is slow, and which proves the happy path and little
 // else. What matters here is the unhappy ones: a run that nobody renews, a
 // second run started on top of the first, a verdict that has to stop everything
 // at once, and a board unplugged mid-run.
 //
-// The fake board answers from the H4 transcript, so every reply asserted on is
+// The fake board answers from the T4-01 transcript, so every reply asserted on is
 // one the real firmware actually printed - except pt.hold 6000, which the
 // server picks itself and which is registered below.
 

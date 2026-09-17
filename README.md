@@ -81,7 +81,7 @@ Revoking a colleague means handing the board to a new root
 (`IAPTool setowner`) and issuing fresh certificates to everyone still there:
 certificates from the old root stop verifying the moment the board's root
 changes, including on firmware already installed. See
-`OpenPLC_Docs/docs/security/OWNERSHIP.md`.
+`OpenPLC_Docs/docs/modules/M2-ownership.md`.
 
 ### Mismatch is caught before the transfer
 

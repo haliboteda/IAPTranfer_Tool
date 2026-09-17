@@ -1,6 +1,6 @@
 package testcase
 
-// The third part of H4: the panel's own HTTP surface, driven end to end
+// The third part of T4-01: the panel's own HTTP surface, driven end to end
 // against the same fake board.
 //
 // The page is built entirely from what /api/state reports, so a mistake here

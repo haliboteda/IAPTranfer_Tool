@@ -6,7 +6,7 @@
     python naive.py --port COM5 --peer rs485=COM16     bind an adapter by hand
     python naive.py --port COM5 --long          also the long-running cases
 
-Different question from run.py (case H5). H5 asks "does this control do what its
+Different question from run.py (case T4-02). H5 asks "does this control do what its
 code says". This asks "does somebody who opens a port and presses the buttons
 in the order they are printed get a sensible answer" - and it answers it by
 pressing them, in that order, and reading what comes back.

@@ -1,6 +1,6 @@
 # IAP Bootloader Host Test
 
-Case **H2**. Runs the *real* bootloader certificate and auth source
+Case **T1-16**. Runs the *real* bootloader certificate and auth source
 (`open_plc_cube_ide/IAPServer/`: `sha256.c`, `iap_keyderive.c`, `iap_cert.c`,
 `fw_verify.c` + the vendored micro-ecc, `iap_auth.c`) natively on a PC against
 a fake STM32 HAL and a fake owner slot (`stubs/`), instead of only being
@@ -42,7 +42,7 @@ Exit code is `0` iff every check passes.
 
 Every certificate and signature in `golden_vectors.h` was produced by the
 **shipping PC tool** (`IAPTool cert` / `signraw` / `genkey`), not by a second
-implementation written for the test. A passing H2 therefore means the
+implementation written for the test. A passing T1-16 therefore means the
 bootloader's C code and the Go tool agree on the wire format, rather than each
 being internally consistent.
 

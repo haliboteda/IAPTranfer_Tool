@@ -1,5 +1,5 @@
 """Builds and runs the port tool's command dispatcher natively, then checks the
-transcript it produced against the protocol contract. Case H4.
+transcript it produced against the protocol contract. Case T4-01.
 
     python build.py
 
@@ -10,7 +10,7 @@ follow, the panel silently mis-renders and nobody finds out until a board is on
 the bench. All of that is decidable on a PC, so it is decided here.
 
 Compiler, first match wins: $CC, then HOST_CC from config/machine.py, then gcc
-or clang on PATH -- same resolution order as case H2 next door.
+or clang on PATH -- same resolution order as case T1-16 next door.
 
 Writes the transcript to caps_golden.txt, which is the fixture the Go caps
 parser is tested against. Regenerating it is this script running; nobody types
@@ -106,7 +106,7 @@ def main():
     # --sim builds the same firmware and the same stubs behind a different
     # entry point: a real clock and a stdin/stdout command channel instead of a
     # fixed script. Sharing this source list is the point - a simulated board
-    # compiled from a list of its own would drift away from what H4 covers.
+    # compiled from a list of its own would drift away from what T4-01 covers.
     sim = "--sim" in sys.argv
 
     binary = HARNESS / (("porttool_simboard" if sim else "porttool_hosttest") + EXE)
@@ -507,7 +507,7 @@ def main():
     # per channel from this line, and a channel missing from it becomes a zero
     # - which is below the frequency floor, so the next command the panel sends
     # after somebody ticks that channel is refused outright. Caught against the
-    # board by case H5 on 2026-09-10.
+    # board by case T4-02 on 2026-09-10.
     short = [l for l in dvals if dict(parse_kv(l)).get("freq", "").count(":") != 8]
     check(not short,
           "caps lists a frequency for all eight outputs, whatever is selected",

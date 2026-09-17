@@ -23,7 +23,7 @@
  *   - stimulate() plays the peers: it answers the loop=link ports the way the
  *     RS485 adapter, the CAN adapter and a TCP peer would
  *
- * Build: python build.py --sim   (same sources and stubs as the H4 harness)
+ * Build: python build.py --sim   (same sources and stubs as the T4-01 harness)
  */
 
 #include "porttool.c"

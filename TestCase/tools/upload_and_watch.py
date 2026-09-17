@@ -1,6 +1,10 @@
 """Run a real upload through IAPTool while capturing the board's serial log, then
 judge it against what SDRAM staging is supposed to do.
 
+Exit code is the verdict: 0 every check passed, 1 at least one failed. Until
+2026-09-17 this always exited 0 because Fail() only colours text, so the
+verdict was printed and thrown away.
+
     python3 tools/upload_and_watch.py --bin <file.bin>              over ethernet, IP from config
     python3 tools/upload_and_watch.py --bin <file.bin> --ip 1.2.3.4
     python3 tools/upload_and_watch.py --bin <file.bin> --cdc COM6   over USB CDC
@@ -22,33 +26,55 @@ TAIL_S = 6
 
 
 def verdict(all_text, exit_code):
+    """Judge the captured log. Returns (failures, unknowns).
+
+    A failure is a check that ran and came out wrong. An unknown is a check
+    whose evidence never appeared -- it does not fail the run on its own, but
+    it is reported, because a silent unknown is how a check stops covering
+    anything without anybody noticing.
+    """
     Section("Verdict")
+    fails = unknowns = 0
+
     if "SDRAM staging buffer OK" in all_text:
         Ok("  self-test: staging buffer usable")
     elif "SDRAM SELF-TEST FAILED" in all_text:
         Fail("  self-test: FAILED")
+        fails += 1
     else:
         Warn("  self-test line not seen (did the board stay in the bootloader?)")
+        unknowns += 1
 
     if "Staging in SDRAM" in all_text:
         Ok("  staged instead of erasing up front")
     else:
         Warn("  no 'Staging in SDRAM' - is this the new bootloader?")
+        unknowns += 1
 
     # The whole point of staging: the erase must come after verification.
     i_erase = all_text.find("Erasing application region")
     i_verif = all_text.find("Transfer complete, verifying")
     if i_erase >= 0 and i_verif >= 0 and i_erase > i_verif:
         Ok("  erase happened AFTER verification - this is the change working")
+    elif i_erase >= 0 and i_verif >= 0:
+        # Erase before verification is staging not working, which is the one
+        # thing this script exists to catch.
+        Fail("  erase happened BEFORE verification - staging is not working")
+        fails += 1
     elif i_erase >= 0 and i_verif < 0:
-        Warn("  erased without a verification line before it")
-    elif i_erase < 0:
+        Fail("  erased with no verification line before it")
+        fails += 1
+    else:
         Warn("  no erase line - upload did not reach the commit step")
+        unknowns += 1
 
     if exit_code == 0:
         Ok("  IAPTool exit 0")
     else:
         Fail("  IAPTool exit %d" % exit_code)
+        fails += 1
+
+    return fails, unknowns
 
 
 def main():
@@ -103,7 +129,13 @@ def main():
         if text:
             print(text)
 
-    verdict("\n".join(buf.values()), rc)
+    fails, unknowns = verdict("\n".join(buf.values()), rc)
+    if unknowns:
+        Warn("  %d check(s) had no evidence either way" % unknowns)
+    if fails:
+        Fail("%d check(s) failed" % fails)
+        return 1
+    Ok("all checks passed")
     return 0
 
 

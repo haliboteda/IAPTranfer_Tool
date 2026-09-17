@@ -82,7 +82,7 @@ func (s *Server) handleHold(w http.ResponseWriter, r *http.Request) {
 	if b == nil {
 		// 200 rather than 4xx: losing the board is an ordinary bench event, and
 		// the page already says so in words. A 4xx would only add a red line to
-		// the browser console, which case H5 reads as a failure.
+		// the browser console, which case T4-02 reads as a failure.
 		writeJSON(w, 200, map[string]any{"error": "板子没连上，先连上再开始。"})
 		return
 	}

@@ -10,7 +10,7 @@ import (
 	"IAPTool/internal/ptproto"
 )
 
-// The fixture is the transcript case H4 captures by running the real firmware
+// The fixture is the transcript case T4-01 captures by running the real firmware
 // source natively (TestCase/host/porttool_caps). Testing against a hand-typed
 // copy of what the board "should" say would only prove this file agrees with
 // itself; testing against what the firmware actually printed is the point.

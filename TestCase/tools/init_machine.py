@@ -433,7 +433,7 @@ SETTINGS = [
     ("ARDUINO_CLI_CONFIG", "path", detect_arduino_cli_config, False, []),
 
     ("__section__", "host C compiler",
-     ["For host/bootloader_unit (case H2), which compiles the real bootloader C",
+     ["For host/bootloader_unit (case T1-16), which compiles the real bootloader C",
       "sources natively. Empty makes selfcheck report H2 as SKIP and name it,",
       "rather than pretending it passed.",
       "",

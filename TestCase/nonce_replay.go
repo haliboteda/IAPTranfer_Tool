@@ -1,4 +1,4 @@
-// AU1: the device must never issue the same authentication nonce twice, and in
+// T1-17: the device must never issue the same authentication nonce twice, and in
 // particular must not start over after losing power.
 //
 // The board has no hardware RNG, so the nonce is not random -- it is
@@ -38,7 +38,7 @@ import (
 
 func init() {
 	register(testCase{
-		id:     "AU1",
+		id:     "T1-17",
 		title:  "nonces do not repeat, and do not restart after a power cycle",
 		manual: true, // needs somebody to pull the plug between the two phases
 		run:    runAU1,

@@ -1,10 +1,10 @@
 """Run one TestCase case while capturing the board's serial log, and optionally
 reset afterwards to see what the board does on the next boot.
 
-    python3 tools/run_case.py --case N1
-    python3 tools/run_case.py --case S1 --bin <file.bin> --then-reset
+    python3 tools/run_case.py --case T1-01
+    python3 tools/run_case.py --case T1-11 --bin <file.bin> --then-reset
 
---then-reset is what turns S1 into G1: S1 proves the board refuses a bad image,
+--then-reset is what turns T1-11 into G1: T1-11 proves the board refuses a bad image,
 the reset afterwards proves the previously-installed application still boots.
 Before SDRAM staging that second half was impossible -- a rejected upload had
 already destroyed the running application.
@@ -62,7 +62,7 @@ def main():
     ap.add_argument("--case", required=True)
     ap.add_argument("--ip", default="")
     ap.add_argument("--bin", default="")
-    ap.add_argument("--key", default="", help="the key this board trusts; S1/S2 sign the challenge with it")
+    ap.add_argument("--key", default="", help="the key this board trusts; T1-11/T1-12 sign the challenge with it")
     ap.add_argument("--iaptool", default="")
     ap.add_argument("--then-reset", action="store_true")
     ap.add_argument("--reset-watch-seconds", type=int, default=RESET_WATCH_S)

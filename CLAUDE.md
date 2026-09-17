@@ -21,7 +21,7 @@
 | `internal/ptseq/` | 执行器。**六个通用字段的语义住在这里**：`execute_condition` 的门、重试、前后延时、超时。⚠️ 门看的是「上一个真正跑过的步骤」，所以被跳过的步骤不会把前面的失败洗掉 |
 | `internal/ptreport/` | 报告。三条规矩：**每次尝试都留**（重试不覆盖原失败）、**原始值都留**（限值会改，要能重判）、**超时与判定失败分开记**（前者多半是接线/探针，后者多半是板子） |
 | `iapcrypto/` | 加密原语。**测试用例 import 它，不重写** |
-| `$PROD/docs/tables/TEST-CASES.md` | **每个用例的判据、前置条件、怎么跑。**2026-09-16 搬进文档仓 |
+| `$PROD/docs/engineering/HOW-TO-RUN-TESTS.md` | **每个用例的判据、前置条件、怎么跑。**2026-09-16 搬进文档仓 |
 | `TestCase/tools/` | 自动化脚本（烧写、抓串口、跑用例、各种一致性检查） |
 | `TestCase/host/` | 不需要板子的检查：假板子、加密交叉验证、主机侧编译真实 bootloader C 源码 |
 | `TestCase/onboard/` | 跑在板子上的验证 sketch |

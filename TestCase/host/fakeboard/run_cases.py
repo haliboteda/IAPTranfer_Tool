@@ -1,6 +1,6 @@
 """Drives the real IAPTool against fake_board.py and checks the decision it
 makes about who may talk to this board -- before any firmware is sent. Cases
-K1-K7 (selfcheck runs them under that id).
+T1-18a-T1-18g (selfcheck runs them under that id).
 
 Why this cannot be done on a real board: the outcomes below differ only in
 which key the bootloader was compiled with, and in what key and certificate

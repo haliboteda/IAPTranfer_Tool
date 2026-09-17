@@ -396,7 +396,7 @@ func TestRetryKeepsTheFailureItReplaced(t *testing.T) {
 func TestRunStepReadsThroughTheChecksOwnProse(t *testing.T) {
 	// pt.run answers with one OK line, but the checks it performs print their
 	// own prose first. The executor has to judge the OK line and not the prose
-	// - this is the shape H4 locks down on the firmware side.
+	// - this is the shape T4-01 locks down on the firmware side.
 	rep, _ := runPlan(t,
 		`{"schema":1,"name":"sdram","limit_version":"v","steps":[
 		  {"id":"sdram","type":"PtRun","target":"sdram.probe","timeout_ms":2000,
@@ -944,7 +944,7 @@ func TestPlanRunTargetsUncheckedAgainstOlderFirmware(t *testing.T) {
 // station with an operator waiting.
 //
 // The frames below are the shapes the firmware really prints, copied from the
-// H4 transcript. That is the point: a fake board answering in some other shape
+// T4-01 transcript. That is the point: a fake board answering in some other shape
 // would let a broken plan pass here.
 func TestStation6PlanRuns(t *testing.T) {
 	plan, err := ptplan.Load(filepath.Join("..", "..", "plans", "station6-poweron.json"))

@@ -60,7 +60,7 @@ func register(c testCase) { cases[c.id] = c }
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage:\n  TestCase <case-id|all> --ip=<addr> [--port=56865] [--bin=<file.bin>]\n"+
 		"      [--iaptool=<path>] [--password-file=<iap_fixed_password.txt>] [--minutes=N]\n"+
-		"      [--state=<file> --phase=1|2 --count=N]   (AU1)\n\nCases:\n")
+		"      [--state=<file> --phase=1|2 --count=N]   (T1-17)\n\nCases:\n")
 	ids := make([]string, 0, len(cases))
 	for id := range cases {
 		ids = append(ids, id)

@@ -6,11 +6,11 @@ firmware moves:
 
 | Suite | Case | Covers | What it checks |
 |---|---|---|---|
-| `run_cases.py` | K1–K7 | C8 | which key and certificate this board will accept |
+| `run_cases.py` | T1-18a–T1-18g | R1-21 | which key and certificate this board will accept |
 
 ---
 
-# K1–K7 · the key-match decision
+# T1-18a–T1-18g · the key-match decision
 
 ## What this covers
 
@@ -46,7 +46,7 @@ logic. Here it is a command-line argument.
 
 `fake_board.py` verifies nothing at all. It answers protocol commands with fixed
 strings. **What is under test is IAPTool**; the device's own signature checking
-is case S1, against real hardware.
+is case T1-11, against real hardware.
 
 ## Running
 

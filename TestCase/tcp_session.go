@@ -12,22 +12,22 @@ import (
 const (
 	// The bootloader drops a connection that has been silent this long.
 	idleKickAfter = 60 * time.Second
-	// How far past the deadline T1 waits before calling it a miss.
+	// How far past the deadline T1-07 waits before calling it a miss.
 	idleKickSlack = 15 * time.Second
-	// How long T1b stays silent while expecting to survive.
+	// How long T1-08 stays silent while expecting to survive.
 	idleSurvive = 50 * time.Second
 
 	dialTimeout = 5 * time.Second
 )
 
 func init() {
-	register(testCase{id: "T1", title: "an idle connection is dropped after 60s", run: runT1})
-	register(testCase{id: "T1b", title: "an idle connection survives 50s", run: runT1b})
-	register(testCase{id: "T2", title: "a second connection is refused while one is open", run: runT2})
-	register(testCase{id: "T4", title: "a new connection is accepted after the first closes", run: runT4})
+	register(testCase{id: "T1-07", title: "an idle connection is dropped after 60s", run: runT1})
+	register(testCase{id: "T1-08", title: "an idle connection survives 50s", run: runT1b})
+	register(testCase{id: "T1-06", title: "a second connection is refused while one is open", run: runT2})
+	register(testCase{id: "T1-10", title: "a new connection is accepted after the first closes", run: runT4})
 
 	// Flashes the board, which then reboots into the application.
-	register(testCase{id: "T3", title: "a second connection does not disturb a running transfer",
+	register(testCase{id: "T1-09", title: "a second connection does not disturb a running transfer",
 		destructive: true, run: runT3})
 }
 

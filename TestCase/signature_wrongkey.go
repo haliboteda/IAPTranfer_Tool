@@ -1,7 +1,7 @@
-// S2: an image whose signature is perfectly well-formed, but made with a key
+// T1-12: an image whose signature is perfectly well-formed, but made with a key
 // this board does not trust.
 //
-// S1 sends a signature no key could have produced (64 zero bytes). S2 sends a
+// T1-11 sends a signature no key could have produced (64 zero bytes). T1-12 sends a
 // real ECDSA P-256 signature over the real image -- just from the wrong signer.
 // The board must refuse both, but for different reasons, and keeping them apart
 // is not pedantry: they were once tested as one case, and when it failed the
@@ -12,10 +12,10 @@
 // key, for the same reason the transfer cases launch IAPTool rather than
 // reimplementing the transfer: the only thing that should differ from a genuine
 // upload is the one variable under test. A hand-rolled signer here would also be
-// testing this file's idea of how r||s is encoded, which is X1/X2's job.
+// testing this file's idea of how r||s is encoded, which is T1-19/T1-20's job.
 //
 // IAPTool cannot produce this case on its own -- its getpubkey pre-check refuses
-// to send an image the board will not accept, which is exactly case K2.
+// to send an image the board will not accept, which is exactly case T1-18b.
 package main
 
 import (

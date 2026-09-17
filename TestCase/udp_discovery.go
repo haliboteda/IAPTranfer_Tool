@@ -21,11 +21,11 @@ const discoveryRateWindow = 2 * time.Second
 const toolReplyBudget = 2 * time.Second
 
 func init() {
-	register(testCase{id: "N1", title: "the board answers UDP discovery", run: runN1})
-	register(testCase{id: "N2", title: "discovery survives repeated queries", run: runN2})
-	register(testCase{id: "N3", title: "discovery replies arrive inside the tool's timeout", run: runN3})
-	register(testCase{id: "N4", title: "discovery holds up over a long soak", run: runN4})
-	register(testCase{id: "N5", title: "a flood is capped without killing discovery", run: runN5})
+	register(testCase{id: "T1-01", title: "the board answers UDP discovery", run: runN1})
+	register(testCase{id: "T1-02", title: "discovery survives repeated queries", run: runN2})
+	register(testCase{id: "T1-03", title: "discovery replies arrive inside the tool's timeout", run: runN3})
+	register(testCase{id: "T1-04", title: "discovery holds up over a long soak", run: runN4})
+	register(testCase{id: "T1-05", title: "a flood is capped without killing discovery", run: runN5})
 }
 
 // The device-wide ceiling on discovery replies, mirrored from

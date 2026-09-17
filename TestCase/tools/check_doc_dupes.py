@@ -78,6 +78,19 @@ ALLOWED = {
     # being shortened until the check stops noticing it.
     "产品文档在OpenPLC_Docs（$PROD）全部文档和待决的问题入口它的README.md（本机位置见DOCS_REPO）":
         "the product-docs pointer; every repo is meant to carry it",
+    # The four module documents share one skeleton, so the two rules about how
+    # to read them are stated once in M1 and pointed at from the other three.
+    # Each pointer is short, but three copies of the same short line still read
+    # as a repeated claim -- which is correct, and is why they are listed here
+    # rather than reworded until the check stops seeing them.
+    "状态一列的规矩见M1§5M1firmwareupgrade.md":
+        "module skeleton pointer: the status column rule lives in M1 §5",
+    "引用规矩见M1§6M1firmwareupgrade.md":
+        "module skeleton pointer: the cross-reference rule lives in M1 §6",
+    # A case lives in one file; the module test table says how to run it and
+    # ID-MAP says which group owns it. Both have to name the same script.
+    "$TOOL:TestCase/udp_discovery.go":
+        "the script path, named by both the test table and the id registry",
 }
 
 
@@ -97,17 +110,22 @@ def _walk_md(root, out):
 def docs():
     """Every prose document in the product, across all the repos that hold one.
 
-    The four CLAUDE.md files outside the bootloader repo were missing until
-    2026-08-24, and the gap was not theoretical: open_plc_arduino/CLAUDE.md held
-    a second copy of a rule that also lived in the bootloader's docs, and this
-    check could not see it. A document outside the walk is a document outside the
-    one-fact-one-file guarantee, so the list below has to name every home.
+    A document outside this walk is a document outside the one-fact-one-file
+    guarantee, so the list below has to name every home. $PROD (OpenPLC_Docs)
+    became the only home for product documents on 2026-09-16 and holds the bulk
+    of them.
+
+    Its maps/ tree is deliberately left out: a ticket's Answer section restates
+    conclusions that live elsewhere by design, so walking it would report those
+    pointers as duplicates.
     """
     boot = Path(cfg.BOOT_REPO)
     out = []
+    prod = Path(cfg.DOCS_REPO)
     named = [boot / "CLAUDE.md", boot / "RELEASE-NOTES.md",
-             TESTTOOL / "TEST-CASES.md", TESTTOOL / "acceptance" / "checklist.md",
-             TESTTOOL.parent / "CLAUDE.md"]
+             TESTTOOL.parent / "CLAUDE.md",
+             prod / "CLAUDE.md", prod / "README.md",
+             prod / "GLOSSARY.md", prod / "WHERE-THINGS-LIVE.md"]
     # The sibling repos' own CLAUDE.md. They state facts about themselves now,
     # which is exactly why a claim leaking between them has to fail here.
     for key in ("CORE_REPO", "HW_REPO", "REF_REPO"):
@@ -117,16 +135,21 @@ def docs():
     skills = skills_repo()
     if skills:
         named += [skills / "CLAUDE.md", skills / "README.md"]
+    # A named path that no longer exists used to be skipped silently. That is
+    # how this check scanned nothing from 2026-09-16 to 2026-09-17 and still
+    # reported PASS, so a missing entry is now a failure.
+    missing = [p for p in named if not p.is_file()]
     out += [p for p in named if p.is_file()]
 
     _walk_md(boot / "docs", out)
+    _walk_md(prod / "docs", out)
     if skills:
         # The product-level documents ($PROD) and the standing rules. AI-Skills
         # holds product facts from 2026-08-24 on, so it is inside the guard, not
         # beside it -- see its own CLAUDE.md for the placement rule.
         for sub in ("OpenPLC", "_shared"):
             _walk_md(skills / sub, out)
-    return sorted(set(out))
+    return sorted(set(out)), missing
 
 
 def scan(path, min_len):
@@ -156,7 +179,12 @@ def main():
     args = ap.parse_args()
 
     Section("one fact, one file")
-    files = docs()
+    files, missing = docs()
+    if missing:
+        for p in missing:
+            Fail("named document is gone: %s" % p)
+        print("  fix the path or drop the entry -- do not let it be skipped")
+        return 2
     if not files:
         Fail("no documents found -- is BOOT_REPO set in config/machine.py?")
         return 2

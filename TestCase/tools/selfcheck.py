@@ -23,7 +23,7 @@ nothing about what is now known to work.
 Everything prints in the order things actually happen: a child's output belongs
 before the banner that judges it, not after.
 
-K1-K7 / X1-X2 do not gate on finding "python" on PATH. This interpreter is
+T1-18a-T1-18g / T1-19-T1-20 do not gate on finding "python" on PATH. This interpreter is
 what runs them, so there is nothing to look up -- gating on the literal "python"
 is what would make those three SKIP on a python3-only machine.
 """
@@ -49,28 +49,29 @@ results = []
 # "covers" is the requirement id in $PROD/docs/tables/STATUS.md that this
 # case is the evidence for. A case that covers nothing should not exist.
 CATALOG = [
-    ("ENV",     "-",           "this machine has the toolchain"),
-    ("H1",      "C5",          "host Go tests (certificate issuance, serial counter, challenge signing)"),
-    ("H3",      "-",           "go vet over the whole module"),
-    ("P1",      "D7",          "firmware version agrees in all three places"),
-    ("P2",      "D8 A6 A7 C7 E1 E6", "cross-repo mirrored code has not diverged"),
-    ("P3",      "D9",          "Arduino core: live matches the git repo"),
-    ("P11",     "F1",          "the packaged IAPTool is not behind the repository"),
-    ("P6",      "C10",         "the published-root warning still recognises the published root"),
-    ("P7",      "-",           "STATUS.md and TEST-CASES.md name the same set of cases"),
-    ("P8",      "-",           "no claim is written out in more than one document"),
-    ("P9",      "-",           "every path a document names actually exists"),
-    ("P12",     "-",           "OpenPLC_Docs: tickets close honestly, placeholders have owners"),
-    ("H2",      "C5",          "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)"),
-    ("H4",      "-",           "port tool protocol contract (real porttool.c, then the Go parser)"),
-    ("K1-K7",   "C8",          "IAPTool key/certificate match against a stand-in board"),
-    ("X1-X2",   "C9",          "crypto cross-check against independent implementations"),
-    ("P4",      "E6",          "Arduino variant assertions (the FMC reserved-pin table)"),
+    ("ENV",          "-",                      "this machine has the toolchain"),
+    ("T1-15",        "R1-20",                  "host Go tests (certificate issuance, serial counter, challenge signing)"),
+    ("H3",           "-",                      "go vet over the whole module"),
+    ("P1",           "ENG-02",                 "firmware version agrees in all three places"),
+    ("P2",           "ENG-03 R1-06 R1-07 R2-01 R1-14 R3-04", "cross-repo mirrored code has not diverged"),
+    ("P3",           "ENG-04",                 "Arduino core: live matches the git repo"),
+    ("P11",          "ENG-05",                 "the packaged IAPTool is not behind the repository"),
+    ("T2-06",        "R2-02",                  "the published-root warning still recognises the published root"),
+    ("P7",           "-",                      "every cited case is defined, and every defined case is cited"),
+    ("P8",           "-",                      "no claim is written out in more than one document"),
+    ("P9",           "-",                      "every path a document names actually exists"),
+    ("P13",          "-",                      "no renamed id is still cited anywhere"),
+    ("P12",          "-",                      "OpenPLC_Docs: tickets close honestly, placeholders have owners"),
+    ("T1-16",        "R1-20",                  "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)"),
+    ("T4-01",        "-",                      "port tool protocol contract (real porttool.c, then the Go parser)"),
+    ("T1-18a-T1-18g", "R1-21",                  "IAPTool key/certificate match against a stand-in board"),
+    ("T1-19-T1-20",  "R1-24",                  "crypto cross-check against independent implementations"),
+    ("P4",           "R3-04",                  "Arduino variant assertions (the FMC reserved-pin table)"),
 ]
 COVERS = {cid: covers for cid, covers, _ in CATALOG}
 
 STATUS_DOC = "$PROD/docs/tables/STATUS.md"
-CRITERIA_DOC = "$PROD/docs/tables/TEST-CASES.md"
+CRITERIA_DOC = "$PROD/docs/engineering/HOW-TO-RUN-TESTS.md"
 
 
 def print_catalog():
@@ -84,7 +85,7 @@ def print_catalog():
     for cid, covers, name in CATALOG:
         print("  %-*s  covers %-*s  %s" % (width, cid, cov, covers, name))
     print("")
-    print("  %d steps. --quick skips H2 / H4 / K1-K7 / X1-X2 / P4." % len(CATALOG))
+    print("  %d steps. --quick skips T1-16 / T4-01 / T1-18a-T1-18g / T1-19-T1-20 / P4." % len(CATALOG))
     print("  P7, P8 and P9 check the documents, not the firmware.")
 
 
@@ -161,7 +162,7 @@ def main():
 
     tool_repo = cfg.TOOL_REPO
 
-    run_step("H1", "host Go tests (certificate issuance, serial counter, challenge signing)",
+    run_step("T1-15", "host Go tests (certificate issuance, serial counter, challenge signing)",
              ["go", "test", "./TestCase/..."], needs="go", cwd=tool_repo, indent=2)
 
     run_step("H3", "go vet over the whole module",
@@ -179,14 +180,14 @@ def main():
     run_step("P11", "the packaged IAPTool is not behind the repository",
              [python_exe(), HERE / "check_tool_sync.py"], cwd=tool_repo)
 
-    run_step("P6", "the published-root warning still recognises the published root",
+    run_step("T2-06", "the published-root warning still recognises the published root",
              [python_exe(), HERE / "check_public_root.py"], cwd=tool_repo)
 
     # These two guard the documents rather than the product. They are here because
     # a table that has drifted from the cases, or a fact claimed in two files, is
     # exactly as expensive to find later as a code divergence -- and 2026-08-22
     # proved nobody finds either by eye.
-    run_step("P7", "STATUS.md and TEST-CASES.md name the same set of cases",
+    run_step("P7", "every cited case is defined, and every defined case is cited",
              [python_exe(), HERE / "check_status_sync.py"], cwd=tool_repo)
 
     run_step("P8", "no claim is written out in more than one document",
@@ -194,6 +195,11 @@ def main():
 
     run_step("P9", "every path a document names actually exists",
              [python_exe(), HERE / "check_doc_paths.py"], cwd=tool_repo)
+
+    # P7 compares two name lists and P9 resolves paths, so neither can see an id
+    # left behind in prose or in a source comment. This is the only thing that can.
+    run_step("P13", "no renamed id is still cited anywhere",
+             [python_exe(), HERE / "check_no_stale_ids.py"], cwd=tool_repo)
 
     # The pre-commit hook in OpenPLC_Docs runs these too, but --no-verify skips
     # it and core.hooksPath is not under version control, so the gate lives here.
@@ -212,7 +218,7 @@ def main():
         # name.
         cc_need = getattr(cfg, "HOST_CC", "") or "gcc"
 
-        run_step("H2", "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)",
+        run_step("T1-16", "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)",
                  [python_exe(), TESTTOOL / "host" / "bootloader_unit" / "build.py"],
                  needs=cc_need, cwd=tool_repo)
 
@@ -220,15 +226,15 @@ def main():
         # source, then the Go test over the transcript it just wrote. They are
         # one step because running either alone lets the two drift apart, which
         # is the failure this case exists to prevent.
-        run_step("H4", "port tool protocol contract (real porttool.c, then the Go parser)",
+        run_step("T4-01", "port tool protocol contract (real porttool.c, then the Go parser)",
                  [python_exe(), TESTTOOL / "host" / "porttool_caps" / "build.py"],
                  needs=cc_need, cwd=tool_repo)
 
-        run_step("K1-K7", "IAPTool key/certificate match against a stand-in board",
+        run_step("T1-18a-T1-18g", "IAPTool key/certificate match against a stand-in board",
                  [python_exe(), TESTTOOL / "host" / "fakeboard" / "run_cases.py"],
                  cwd=tool_repo)
 
-        run_step("X1-X2", "crypto cross-check against independent implementations",
+        run_step("T1-19-T1-20", "crypto cross-check against independent implementations",
                  [python_exe(), TESTTOOL / "host" / "crypto_ref" / "run_checks.py",
                   "--rounds", "8"], cwd=tool_repo)
 

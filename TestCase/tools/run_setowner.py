@@ -1,4 +1,4 @@
-"""OW2 -- hand a claimed board to a new owner (requirement C10, M1 step 5).
+"""OW2 -- hand a claimed board to a new owner (requirement R2-02, M1 step 5).
 
     python3 tools/run_setowner.py --current-key <owner.pem>                 new key generated
     python3 tools/run_setowner.py --current-key <owner.pem> --new-key <next.pem>

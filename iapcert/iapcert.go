@@ -11,7 +11,7 @@
 // Simple mode (LeafPubHex == "") self-signs: the certificate says "this
 // root's own key is authorised", and the board's iap_cert_verify() has no
 // branch for that -- it is a certificate like any other, just one whose leaf
-// happens to equal its root. See $PROD/docs/security/OWNERSHIP.md for why having no
+// happens to equal its root. See $PROD/docs/modules/M2-ownership.md for why having no
 // special case is the whole point.
 package iapcert
 

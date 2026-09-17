@@ -61,7 +61,7 @@ def udp_server(stop):
             continue
         msg = data.decode(errors="replace").strip()
         log("UDP %r from %s" % (msg, addr))
-        # The four keywords a real board answers (case N1). Missing any of them
+        # The four keywords a real board answers (case T1-01). Missing any of them
         # here just makes the board look absent, which is a confusing way for a
         # key-match case to fail.
         if msg in ("openplc_server_where_r_y", "DISCOVER", "openplc_discover", "ping"):

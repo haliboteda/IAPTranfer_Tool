@@ -3,7 +3,7 @@
     python run.py --port COM12          the board's RS232 control port
     python run.py --port COM12 --show   watch it happen in a visible window
 
-Why a browser and not the HTTP API: case H4 already covers the protocol and the
+Why a browser and not the HTTP API: case T4-01 already covers the protocol and the
 parser, and the panel's own API is covered by the Go tests. What neither of them
 can see is whether the page a person actually looks at renders the right thing
 and whether its buttons do what they say - and that is where the bugs were

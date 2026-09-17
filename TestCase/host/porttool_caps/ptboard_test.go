@@ -1,6 +1,6 @@
 package testcase
 
-// The other half of H4: the same transcript, replayed through a fake serial
+// The other half of T4-01: the same transcript, replayed through a fake serial
 // port, exercising the code that will actually talk to a board.
 //
 // What this covers that the parser test cannot: a reply arriving in pieces, a

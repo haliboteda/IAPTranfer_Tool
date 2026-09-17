@@ -1,4 +1,4 @@
-// S1: the pure signature-verification path.
+// T1-11: the pure signature-verification path.
 //
 // IAPTool cannot produce this case by design -- its getpubkey pre-check refuses
 // to transfer an image the board will not accept. So this drives the protocol
@@ -28,20 +28,20 @@ func init() {
 	// Not destructive since SDRAM staging landed: the image is verified in the
 	// staging buffer and the application region is only erased once it passes,
 	// so a refused upload leaves the running application intact. Verified on
-	// hardware 2026-08-17 -- S1 refused the image, and the board booted its
+	// hardware 2026-08-17 -- T1-11 refused the image, and the board booted its
 	// existing application after a reset.
 	//
 	// Before staging this case did leave the board unable to boot, which is why
 	// it used to be flagged destructive and sorted last by "all".
-	register(testCase{id: "S1", title: "an image with an invalid signature is rejected",
+	register(testCase{id: "T1-11", title: "an image with an invalid signature is rejected",
 		destructive: false, run: runS1})
 
-	// S2 is kept apart from S1 on purpose. Both end in "the board refuses to
-	// run it", but they are different failures: S1 is a signature no key could
-	// have produced, S2 is a perfectly well-formed signature from the wrong
+	// T1-12 is kept apart from T1-11 on purpose. Both end in "the board refuses to
+	// run it", but they are different failures: T1-11 is a signature no key could
+	// have produced, T1-12 is a perfectly well-formed signature from the wrong
 	// key. Testing them together once led to a key rotation being diagnosed as
 	// a bug in the verification code.
-	register(testCase{id: "S2", title: "an image signed by a key the board does not trust is rejected",
+	register(testCase{id: "T1-12", title: "an image signed by a key the board does not trust is rejected",
 		destructive: false, run: runS2})
 }
 
@@ -101,6 +101,14 @@ func runS1(cfg config) result {
 // only defect is the signature it carries, and reports what the board said.
 // Everything except sigHex is exactly what IAPTool would send.
 func uploadWithSignature(cfg config, image []byte, sigHex string) result {
+	return uploadImage(cfg, image, sigHex, crc32.ChecksumIEEE(image), judgeVerdict)
+}
+
+// uploadImage is the shared upload path. checksum and judge are parameters so a
+// case can break exactly one thing and say what it expects back: the signature
+// cases send the real CRC, the CRC case sends a wrong one.
+func uploadImage(cfg config, image []byte, sigHex string, checksum uint32,
+	judge func(string) result) result {
 	conn, err := dial(cfg)
 	if err != nil {
 		return fail("could not connect: %v", err)
@@ -126,7 +134,6 @@ func uploadWithSignature(cfg config, image []byte, sigHex string) result {
 		return fail("could not issue a certificate with %s: %v", cfg.keyPath, err)
 	}
 
-	checksum := crc32.ChecksumIEEE(image)
 	authMsg := fmt.Sprintf("flash %d %x %s", len(image), checksum, sigHex)
 
 	nonceHex, err := ask(conn, "authchallenge", dialTimeout)
@@ -183,7 +190,7 @@ func uploadWithSignature(cfg config, image []byte, sigHex string) result {
 				}
 				verdict = strings.TrimSpace(string(buf[:n]))
 			}
-			return judgeVerdict(verdict)
+			return judge(verdict)
 		}
 	}
 	return fail("ran out of image without a verdict")
@@ -199,7 +206,7 @@ func judgeVerdict(verdict string) result {
 	switch {
 	case strings.Contains(verdict, "Signature Failed"), strings.Contains(verdict, "No Signature"):
 		return pass("board refused the image: %q. The application region was never touched, "+
-			"so the previously-installed application still boots -- reset to confirm (case G1)", verdict)
+			"so the previously-installed application still boots -- reset to confirm (case T1-14)", verdict)
 	case strings.Contains(verdict, "Checksum Failed"):
 		return fail("board reported a checksum failure (%q), so the signature check never ran -- "+
 			"the CRC this tool computed does not match what the board computed", verdict)

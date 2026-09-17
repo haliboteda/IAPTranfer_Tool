@@ -12,7 +12,7 @@
  * pt.handover; nothing in the harness source list named them any more, and
  * the build links clean without them.
  *
- * Why the rig is built this way: $PROD/docs/production/TEST-DESIGN.md.
+ * Why the rig is built this way: $PROD/docs/engineering/TEST-DESIGN.md.
  */
 
 #include <stdio.h>

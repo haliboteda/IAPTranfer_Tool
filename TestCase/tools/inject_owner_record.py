@@ -1,5 +1,5 @@
 """Put a hand-made owner record into the board's owner slot area, for testing the
-bootloader's record handling (requirement C10, module M1).
+bootloader's record handling (requirement R2-02, module M1).
 
     python3 tools/inject_owner_record.py                  one record, generation 1
     python3 tools/inject_owner_record.py --generation 7   pick the generation
