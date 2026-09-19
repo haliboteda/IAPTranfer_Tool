@@ -423,94 +423,33 @@ target voltage during the cut: 0.00V -- confirmed off
 也没有任何 GPIO/ADC 接到这个网络，**软件层面没有办法读出 `BAT1` 的电压**，
 唯一办法是万用表直接量它的两个焊盘。
 
-## 2026-09-19 · 万用表量了 `BAT1`：2.97V，电池是好的
+## 2026-09-19 · 根因是 RTC 时钟源不一致，不是电池
 
-用户实测 `BAT1`（`VL1220/1HF` 可充电纽扣电池）两端 **2.97V**。标称 3.0V。
+`BAT1` 实测 **2.97V**（`VL1220/1HF` 标称 3.0V），电池一直是好的。备份域是固件自己清的：
+bootloader 选 LSE、Arduino core 选 LSI，HAL 见 `RTCSEL` 要变就强制复位整个备份域。
+决定、理由和修法见 [DECISIONS.md 第 57 条](../../../OpenPLC_Docs/docs/tables/DECISIONS.md)。
 
-> ✅ **「电池没电 / 没焊上 / 充电回路没工作」这条排除了。**
-> 能稳定量到 2.97V 说明电池在位、有电、两个焊盘都接触良好，
-> 而且远高于 STM32H743 的 VBAT 下限（1.2V）。
+### 证据：不断电的对照实验
 
-**所以 `T1-17`（nonce 跨掉电不重复）的 FAIL 不是电池的问题。** 当天做了对照实验，
-直接定位到软件。
+SWD 只读寄存器。`RCC_BDCR` = `0x58024470`，`DR1` = `0x58004054`，`DR3` = `0x5800405C`。
 
-### 对照实验：全程不断电，备份域照样被清空
-
-SWD 只读寄存器，三个时刻各读一次。`RCC_BDCR` = `0x58024470`，
-`RTC_BKP1R`（`DR1` 计数器）= `0x58004054`，`RTC_BKP3R`（`DR3` witness）= `0x5800405C`。
-
-| 时刻 | 板上跑的是 | `RTCSEL` | `DR1` 计数器 | `DR3` witness |
-|---|---|---|---|---|
-| 1 起始 | app | **LSI** | 0 | 0 |
-| 2 `enter_bootloader.py` 之后 | bootloader | **LSE** | 1 | `0x56424154`（"VBAT"） |
-| 3 普通复位、板子跳回 app | app | **LSI** | **0** | **0** |
-
-**全程电源一次都没断** —— ST-Link 的 VTREF 一直是 3.25V，两次复位都是软复位。
-第 2 步的串口日志里 `Reset cause: SOFT`，紧接着照样打了
-`** Backup domain was lost - RTC battery absent or empty. **`。
-
-> ✅ **结论：备份域是被固件自己清掉的，跟 `BAT1` 没有任何关系。**
-> 每次 bootloader ↔ app 切换，`RTCSEL` 都在 LSE 和 LSI 之间翻转，
-> HAL 只要发现 `RTCSEL` 要变，就强制复位整个备份域，`DR1`–`DR31` 全清。
-
-### 三处出处
-
-| | 选的时钟源 | 位置 |
+| 板上跑的是 | 修复前 `RTCSEL` / `DR1` / `DR3` | 修复后 `RTCSEL` / `DR1` / `DR3` |
 |---|---|---|
-| bootloader | `RCC_RTCCLKSOURCE_LSE` | `open_plc_cube_ide/Core/Src/rtc.c:74` |
-| Arduino core（app） | `RCC_RTCCLKSOURCE_LSI` | `open_plc_arduino/libraries/SrcWrapper/src/stm32/rtc.c:73` |
-| HAL 在两者不等时清备份域 | `__HAL_RCC_BACKUPRESET_FORCE()` | `open_plc_cube_ide/Drivers/STM32H7xx_HAL_Driver/Src/stm32h7xx_hal_rcc_ex.c:913-921` |
+| app | LSI / 0 / 0 | LSE / 1 / `0x56424154` |
+| bootloader | LSE / 1 / `0x56424154` | LSE / 2 / `0x56424154` |
+| app（复位跳回） | **LSI / 0 / 0** | **LSE / 2 / `0x56424154`** |
 
-**时间对得上**：2026-09-10 把 bootloader 从 LSI 改成 LSE（[DECISIONS.md 第 36 条](../../../OpenPLC_Docs/docs/tables/DECISIONS.md)），
-Arduino core 那边没跟着改，从那天起两边就不一致了。
+全程没断电，VTREF 一直 3.25V。修复前 bootloader 每次打 `Backup domain was lost`，
+修复后打 `Backup domain retained`。
 
-⚠️ **`iap_auth.c:162` 那句 `RTC battery absent or empty` 现在是误导** ——
-它把一个软件问题报成了硬件问题，昨天整整一天的排查方向就是被这句话带偏的。
+### `T1-17` 真断电验收：通过
 
-### 2026-09-19 已修并验证
-
-用户拍板统一走 LSE（[DECISIONS.md 第 57 条](../../../OpenPLC_Docs/docs/tables/DECISIONS.md)）。
-改了一行：`$CORE_REPO/libraries/SrcWrapper/src/stm32/rtc.c:73` 的 `LSI` → `LSE`，
-`$CORE_LIVE` 已同步（`check_core_sync.py` 报 identical）。
-顺带把 `$BOOT/IAPServer/iap_auth.c:162` 那句甩锅电池的文案改成
-`VBAT supply or RTC clock source changed`。
-
-**upstream 顾虑解除**：那份 `rtc.c` 不是 upstream STM32duino 的文件，
-是本项目 `d41387b v0.1.1 add rtc support` 自己加的 105 行 CubeMX 文件
-（upstream 那份是完整 RTC 驱动，这里只有 `MX_RTC_Init` 等三个函数）。升级 core 不会冲掉。
-
-#### 验证：同样的往返，这次什么都没丢
-
-重编 `onboard/iap_probe` 用 IAP 传上板子，再走一遍原来必然清零的那条路：
-
-| 时刻 | 板上跑的是 | `RTCSEL` | `DR1` bootloader 计数器 | `DR2` app 计数器 | `DR3` witness |
-|---|---|---|---|---|---|
-| 新 app 刚跑起来 | app | **LSE** | 1 | 0 | `0x56424154` |
-| `enter_bootloader.py` 之后 | bootloader | **LSE** | **2** | **1** | `0x56424154` |
-| 复位跳回 app | app | **LSE** | 2 | 1 | `0x56424154` |
-| ST-Link 重烧 bootloader 之后 | app | **LSE** | 2 | 1 | `0x56424154` |
-
-> ✅ **`RTCSEL` 不再翻转，计数器只增不归零，witness 一直在。**
-> bootloader 这次打的是 **`Backup domain retained, nonce counter = 1`** ——
-> 修好之前它每次都打 `Backup domain was lost`。
-
-#### 真断电验收：`T1-17` 通过
-
-用户 2026-09-19 拔了电。ST-Link 量到 **0.00V**，独立证实电真的断了。
-
-| | 值 |
-|---|---|
-| 断电前最后一个计数器 | **11** |
-| 断电后第一个计数器 | **13**（gap 2 = 重启握手本身消耗的两次） |
-| 两阶段 16 个 nonce | **全不同，无一复用** |
-| bootloader 上电自报的计数器 | **11**，和断电前一致 —— 备份寄存器扛住了真断电 |
+ST-Link 量到 **0.00V** 确认真断电。断电前计数器 **11**，断电后从 **13** 续
+（gap 2 = 重启握手自己消耗的），两阶段 16 个 nonce 全不同。
 
 ```
 T1-17 passed -- nonces are unique and the counter survived a real power cut
 ```
-
-> ✅ **这条 bug 收尾。** 从 2026-09-18 的 ⛔ FAIL 到现在，改的是一行时钟源，
-> `BAT1` 从头到尾都是好的。
 
 ---
 
