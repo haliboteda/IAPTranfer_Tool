@@ -1,12 +1,12 @@
-"""One successful upload must consume exactly 5 journal slots.
+"""One successful upload must consume exactly 9 journal slots.
 
-Requirement D1. The bootloader prints its slot accounting on every boot
+Requirement R1-28. The bootloader prints its slot accounting on every boot
 (IAPServer/bootloader_state.c):
 
     Bootloader state: <used>/<total> journal slots used, metadata <absent|present>
 
 so the case is: read that line, do one upload, read it again, and require the
-difference to be 5.
+difference to be 9.
 
     python3 tools/run_journal_slot_accounting.py --bin <file.bin>
     python3 tools/run_journal_slot_accounting.py --judge-only --before a.log --after b.log

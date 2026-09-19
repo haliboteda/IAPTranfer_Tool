@@ -56,6 +56,11 @@ ALLOW = {
     "M2-ownership.md",
     # This file quotes the ambiguous tokens in its own ALLOW comments.
     "check_no_stale_ids.py",
+    # A dated run record. It quotes the board's own log verbatim, and the
+    # sketch that was installed prints "[M5] ready" -- a sketch name taken
+    # from the old case id, not a document citing one. Quoting the log is
+    # the evidence; rewording it would be rewriting what the board said.
+    "2026-09-18-boot-iap-full-run.md",
     # Third-party OpenAMP sources; A7 is a register field there.
     "mbox_ipcc.c", "mbox_ipcc_template.c",
 }
