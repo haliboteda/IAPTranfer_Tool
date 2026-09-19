@@ -1,0 +1,220 @@
+"""R1-29 -- a full journal sector is reclaimed, and the board recovers.
+
+    python3 tools/run_journal_reclaim.py --bin <app.bin>
+    python3 tools/run_journal_reclaim.py --bin <app.bin> --leave 4
+    python3 tools/run_journal_reclaim.py --inspect        read and report, change nothing
+
+Filling the journal by uploading is not an option: one upload costs 9 slots out
+of 4096, so it would take about 390 uploads and most of a day. This fills it
+directly instead, then drives one real upload and watches for the reclaim.
+
+HOW THE SECTOR IS FILLED, AND WHY NOT BY ERASING IT
+
+The sector holds the current firmware metadata -- app size, SHA-256, signature
+and certificate -- which cannot be forged here. So the existing content is read
+back first and kept verbatim; synthetic log records are appended after it. The
+board keeps its application, and only the free space changes.
+
+The whole 128K is then written as one image, because STM32_Programmer_CLI erases
+a sector before writing into it. Writing only the appended part would erase the
+metadata that was being preserved. (inject_owner_record.py learned the same
+lesson on the bootloader's own sector.)
+
+RECORD FORMAT
+
+One slot, 32 bytes, little-endian, from iap_log_rec_t in
+$BOOT/IAPServer/bootloader_state.c:
+
+    u8 type=0x4C('L')  u8 slots=1  u8 event  u8 method
+    u32 peer_ip  u32 tick_ms  u32 auth_counter  u32 detail
+    u8 prev_hash[12]
+
+prev_hash is SHA-256 over the PREVIOUS log record's raw 32 bytes, truncated to
+12; the first log record in the sector carries zeros. Verified against a real
+sector read on 2026-09-18: 85 records, 0 chain breaks.
+
+Criteria:
+    ** Journal full - new events are not being recorded.    the fill took
+    Reclaiming state sector (<n> slots discarded)           the reclaim ran
+    the board boots its application afterwards              it recovered
+
+Exit 0 = R1-29 holds, 1 = it does not, 2 = the run could not be set up.
+"""
+
+import argparse
+import hashlib
+import struct
+import subprocess
+import sys
+import time
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from common import (cfg, Section, Ok, Warn, Fail, close_ports,  # noqa: E402
+                    get_programmer_cli, get_scratch_file, open_log_ports,
+                    python_exe, read_log_ports)
+
+STATE_ADDR = 0x081E0000
+SECTOR_BYTES = 0x20000
+SLOT = 32
+TOTAL_SLOTS = SECTOR_BYTES // SLOT
+
+REC_BLANK = 0xFF
+REC_LOG = 0x4C
+
+EVT_UPDATE_OK = 1
+JOURNAL_FULL = "** Journal full - new events are not being recorded."
+RECLAIMING = "Reclaiming state sector"
+APP_MOD = "** APP Mod"
+
+
+def scan(data):
+    """(used_slots, last_log_record_bytes). Mirrors the bootloader's own walk."""
+    i = 0
+    last_log = None
+    while i < TOTAL_SLOTS:
+        rec = data[i * SLOT:(i + 1) * SLOT]
+        if rec[0] == REC_BLANK:
+            break
+        slots = rec[1]
+        if slots == 0:
+            break
+        if rec[0] == REC_LOG:
+            last_log = rec
+        i += slots
+    return i, last_log
+
+
+def make_log_record(prev_digest, event, tick_ms, counter):
+    prev = b"\x00" * 12 if prev_digest is None else prev_digest[:12]
+    return struct.pack("<BBBBIIII", REC_LOG, 1, event, 0, 0, tick_ms, counter, 0) + prev
+
+
+def fill(data, leave_free):
+    used, last_log = scan(data)
+    free = TOTAL_SLOTS - used
+    if free <= leave_free:
+        return data, used, 0
+    prev = hashlib.sha256(last_log).digest() if last_log else None
+    out = bytearray(data)
+    added = 0
+    slot = used
+    while TOTAL_SLOTS - slot > leave_free:
+        rec = make_log_record(prev, EVT_UPDATE_OK, 1000 + added, 1)
+        out[slot * SLOT:(slot + 1) * SLOT] = rec
+        prev = hashlib.sha256(rec).digest()
+        slot += 1
+        added += 1
+    return bytes(out), used, added
+
+
+def read_sector(cli, path):
+    r = subprocess.run([cli, "-c", "port=SWD", "mode=UR", "-r",
+                        hex(STATE_ADDR), hex(SECTOR_BYTES), str(path)],
+                       capture_output=True, text=True, timeout=180)
+    return r.returncode == 0 and Path(path).exists()
+
+
+def main():
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--bin", help="signed application image for the upload that triggers the reclaim")
+    ap.add_argument("--ip", default=None)
+    ap.add_argument("--ports", action="append")
+    ap.add_argument("--leave", type=int, default=4,
+                    help="free slots to leave; must be under the 9 a metadata "
+                         "record needs, or nothing reclaims (default 4)")
+    ap.add_argument("--inspect", action="store_true", help="report and change nothing")
+    args = ap.parse_args()
+
+    ports = args.ports or list(cfg.LOG_PORTS)
+    ip = args.ip or cfg.BOARD_IP
+    cli = str(get_programmer_cli())
+
+    Section("R1-29 -- reading the state sector")
+    raw = Path(get_scratch_file("journal_before.bin"))
+    if not read_sector(cli, raw):
+        Fail("could not read the state sector over SWD")
+        return 2
+    data = raw.read_bytes()
+    if len(data) != SECTOR_BYTES:
+        Fail("read %d bytes, expected %d" % (len(data), SECTOR_BYTES))
+        return 2
+
+    used, last_log = scan(data)
+    Ok("%d/%d slots used, %d free" % (used, TOTAL_SLOTS, TOTAL_SLOTS - used))
+
+    if args.inspect:
+        return 0
+    if not args.bin:
+        Fail("--bin is required: the reclaim only happens inside a metadata write")
+        return 2
+
+    Section("filling the journal")
+    filled, used, added = fill(data, args.leave)
+    if added == 0:
+        Warn("already within %d slots of full; nothing appended" % args.leave)
+    else:
+        Ok("appended %d synthetic log records, leaving %d free" % (added, args.leave))
+
+    out = Path(get_scratch_file("journal_filled.bin"))
+    out.write_bytes(filled)
+
+    Section("writing it back")
+    # One image for the whole sector: the programmer erases before writing, so a
+    # partial write would take the metadata with it.
+    w = subprocess.run([cli, "-c", "port=SWD", "mode=UR", "-w", str(out),
+                        hex(STATE_ADDR), "-rst"],
+                       capture_output=True, text=True, timeout=300)
+    if w.returncode != 0:
+        Fail("write failed (rc=%d)" % w.returncode)
+        for line in w.stdout.splitlines()[-6:]:
+            print("  " + line)
+        return 2
+    Ok("sector written")
+
+    Section("what the board says with a full journal")
+    handles = open_log_ports(ports)
+    time.sleep(1)
+    subprocess.run([cli, "-c", "port=SWD", "mode=UR", "-rst"],
+                   capture_output=True, text=True, timeout=120)
+    before = read_log_ports(handles, 12)
+    close_ports(handles)
+    before_text = "\n".join(before.values()) if isinstance(before, dict) else str(before)
+    for line in before_text.splitlines():
+        print("  " + line)
+
+    if JOURNAL_FULL not in before_text:
+        Warn("the board did not report a full journal")
+
+    Section("one real upload, which is where the reclaim happens")
+    handles = open_log_ports(ports)
+    up = subprocess.run([python_exe(), str(Path(__file__).with_name("upload_and_watch.py")),
+                         "--bin", args.bin, "--ip", ip],
+                        capture_output=True, text=True, timeout=900)
+    after = read_log_ports(handles, 10)
+    close_ports(handles)
+    after_text = (up.stdout or "") + "\n" + (
+        "\n".join(after.values()) if isinstance(after, dict) else str(after))
+
+    Section("verdict")
+    if RECLAIMING not in after_text:
+        Fail("no %r in the log -- the sector was not reclaimed" % RECLAIMING)
+        return 1
+    for line in after_text.splitlines():
+        if RECLAIMING in line:
+            Ok(line.strip())
+
+    post = Path(get_scratch_file("journal_after.bin"))
+    if read_sector(cli, post):
+        used_after, _ = scan(post.read_bytes())
+        Ok("journal after the reclaim: %d/%d slots used" % (used_after, TOTAL_SLOTS))
+
+    if APP_MOD in after_text:
+        Ok("R1-29 holds: the journal was reclaimed and the board booted its application")
+        return 0
+    Fail("reclaimed, but the board did not reach %r afterwards" % APP_MOD)
+    return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
