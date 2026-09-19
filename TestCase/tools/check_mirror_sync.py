@@ -111,6 +111,21 @@ tool_cert = TOOL / "iapcert/iapcert.go"
 boot_owner = BOOT / "IAPServer/owner_slot.h"
 core_owner = LIVE / "libraries/OpenPLC_IAP/src/owner_root_ro.c"
 tool_owner = TOOL / "owner.go"
+core_iface_win = LIVE / "tools/discovery/iface_windows.go"
+core_iface_lin = LIVE / "tools/discovery/iface_linux.go"
+core_iface_mac = LIVE / "tools/discovery/iface_darwin.go"
+tool_netiface = TOOL / "internal/netiface/netiface.go"
+tool_iface_win = TOOL / "internal/netiface/iface_windows.go"
+tool_iface_lin = TOOL / "internal/netiface/iface_linux.go"
+tool_iface_mac = TOOL / "internal/netiface/iface_darwin.go"
+
+# Whole function bodies, because these two are meant to be byte-identical
+# apart from the exported name. (?s) so . spans the body.
+BODY_IS_PHYSICAL = r"(?s)func %s\(iface net\.Interface\) bool \{(.*?)\n\}"
+BODY_CLASSIFY = (
+    r"(?s)func classifyHardware\(ifaces \[\]net\.Interface\) "
+    r"map\[string\]bool \{(.*?)\n\}"
+)
 
 Section("cross-repo mirrors")
 
@@ -321,6 +336,30 @@ for dr in sorted(claims):
         Ok("OK    %s <- %s" % (dr, claims[dr][0]))
 print("      (the allocation table in $PROD/docs/repo/ARCHITECTURE.md is the record; this only")
 print("       scans the two iap_auth.c files, not the core's backup.h or HID indices)")
+
+# --- physical interface selection -------------------------------------------
+# A VPN tunnel or a Docker switch can hold a better default route than the real
+# NIC, and then every probe leaves through it and times out -- which reads as
+# "the board is not answering". That cost a full test round on 2026-09-18.
+# Decision 51; item 10 of the mirror table in $PROD/docs/repo/ARCHITECTURE.md.
+compare_anchor("physical interface filter", {
+    "core tools/discovery/network_discovery.go": get_anchor(
+        core_disc, BODY_IS_PHYSICAL % "isPhysicalInterface"),
+    "tool internal/netiface/netiface.go": get_anchor(
+        tool_netiface, BODY_IS_PHYSICAL % "IsPhysical"),
+})
+
+# The three classifiers are what makes the rule work off Windows. Compared one
+# platform at a time so a failure names the platform that drifted.
+for _plat, _core, _tool in (
+    ("windows", core_iface_win, tool_iface_win),
+    ("linux", core_iface_lin, tool_iface_lin),
+    ("darwin", core_iface_mac, tool_iface_mac),
+):
+    compare_anchor("virtual-adapter classifier (%s)" % _plat, {
+        "core tools/discovery/iface_%s.go" % _plat: get_anchor(_core, BODY_CLASSIFY),
+        "tool internal/netiface/iface_%s.go" % _plat: get_anchor(_tool, BODY_CLASSIFY),
+    })
 
 # --- what this script does not check ----------------------------------------
 Section("not covered by this script -- still manual")

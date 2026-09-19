@@ -28,8 +28,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (cfg, Section, Ok, Warn, Fail, get_iap_tool,  # noqa: E402
-                    get_scratch_file, open_log_ports, read_log_ports,
-                    close_ports)
+                    get_scratch_file, local_ip_for, open_log_ports,
+                    read_log_ports, close_ports)
 
 # IAP_config.h: #define OPENPLC_SERVER_PORT 56865
 DISCOVERY_PORT = 56865
@@ -64,7 +64,16 @@ def probe_discovery(ip, seconds=LISTEN_S):
     or not the ethernet stack is up -- useless for a case whose whole
     question is "is it up".
     """
+    # Pinned to the physical interface on the board's subnet. Without it a
+    # VPN or other virtual adapter holding a better-metric default route can
+    # take the packet -- measured 2026-09-18, this is what made a live board
+    # read as absent. See $PROD/docs/tables/DECISIONS.md decision 51. Only
+    # called twice per run (once per mode), so resolving it here rather than
+    # caching is not worth the complexity.
+    local_ip = local_ip_for(ip)
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if local_ip:
+        s.bind((local_ip, 0))
     s.settimeout(0.5)
     replies = []
     try:
@@ -210,11 +219,17 @@ def main():
     print("  %d reply/replies" % len(cdc_replies))
 
     fails, unknowns = verdict(cdc_replies, ether_replies, cdc_log)
-    if unknowns:
-        Warn("  %d check(s) had no evidence either way" % unknowns)
     if fails:
         Fail("%d check(s) failed" % fails)
         return 1
+    # A check with no evidence is not a pass. Until 2026-09-18 this only warned
+    # and then returned 0, so a run that could not even confirm the board had
+    # entered CDC mode still reported "CDC mode leaves the ethernet stack down"
+    # -- measured that day by passing the wrong --cdc port.
+    if unknowns:
+        Warn("  %d check(s) had no evidence either way" % unknowns)
+        Fail("nothing was proven this run; fix the setup and try again")
+        return 2
     Ok("CDC mode leaves the ethernet stack down")
     return 0
 

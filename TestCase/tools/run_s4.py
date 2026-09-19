@@ -1,4 +1,4 @@
-"""S4a / S4b -- pull the power mid-upgrade and see what survives.
+"""T1-21 / T1-22 -- pull the power mid-upgrade and see what survives.
 
     python3 tools/run_s4.py --case a        transfer window: flash is untouched
     python3 tools/run_s4.py --case b        erase/write window: the risky one
@@ -9,16 +9,16 @@ staging moved the risk: during the transfer the application region is never
 touched, and only the few seconds spent erasing and copying out of SDRAM can
 leave it half-written. So:
 
-    S4a  cut between "Staging in SDRAM." and "Erasing application region"
-         expect: the old application still boots.            (E8, C4)
-    S4b  cut after  "Erasing application region"
-         expect: the board reports the app invalid, and a re-upload fixes it. (E8)
+    T1-21  cut between "Staging in SDRAM." and "Erasing application region"
+         expect: the old application still boots.            (R1-27, R1-25)
+    T1-22  cut after  "Erasing application region"
+         expect: the board reports the app invalid, and a re-upload fixes it. (R1-27)
 
 It never asks you to press Enter, and it never trusts you about the timing. It
 reads the board's own log to know which window it is in, tells you the moment
 the window opens, and then waits for the board to come back on its own. If you
 miss the window it says so and offers to retry rather than recording a pass for
-a cut that landed somewhere else -- that is the difference between testing E8
+a cut that landed somewhere else -- that is the difference between testing R1-27
 and testing nothing.
 
 ⚠ ST-Link may be feeding the target. STLINK-V3 can supply 3.3V, and if it is,
@@ -40,14 +40,15 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (cfg, Section, Ok, Warn, Fail, banner, get_iap_tool,  # noqa: E402
-                    get_programmer_cli, get_scratch_file, open_log_ports)
+                    get_programmer_cli, get_scratch_file, local_ip_for,
+                    open_log_ports, target_voltage)
 
 # Exactly the strings the bootloader prints. Anchored on IAPServer/IAP_server.c
 # so a wording change breaks the test loudly instead of making it wait forever:
 #   :350  ". Staging in SDRAM."                     transfer starts, flash safe
 #   :92   "Erasing application region ("            the risky window opens
 #   :431  "Checksum and signature OK. Rebooting..." the upgrade finished
-#   :573  "App signature invalid or absent"         the S4b verdict
+#   :573  "App signature invalid or absent"         the T1-22 verdict
 STAGING = "Staging in SDRAM"
 ERASING = "Erasing application region"
 FINISHED = "Checksum and signature OK"
@@ -110,27 +111,32 @@ class LogTail:
             return time.monotonic() - self.last_byte_at
 
 
-def target_voltage(cli):
-    """Volts the ST-Link measures on VTREF, or None when SWD cannot reach it.
+_local_ip_cache = {}
 
-    This is the only signal here that speaks about POWER rather than about
-    software. Serial silence and a missing UDP reply both also happen when the
-    board is merely busy erasing.
+
+def _cached_local_ip(ip):
+    """local_ip_for(ip), resolved at most once per address.
+
+    This is called from a poll loop (wait_for ticks every 0.2s by default),
+    and local_ip_for shells out to `go run` -- too slow to call every tick.
+    Caching per-ip, not once globally, still lets the fallback (no matching
+    physical interface -> None, i.e. let the OS route it) come out right if
+    this script is ever pointed at more than one address in ip's lifetime.
     """
-    try:
-        out = subprocess.run([str(cli), "-c", "port=SWD", "mode=HOTPLUG"],
-                             capture_output=True, text=True, timeout=30).stdout
-    except Exception:
-        return None
-    if re.search(r"No STM32 target found|Error", out, re.I) and \
-       not re.search(r"Voltage", out):
-        return None
-    m = re.search(r"Voltage\s*:\s*([\d.]+)", out)
-    return float(m.group(1)) if m else None
+    if ip not in _local_ip_cache:
+        _local_ip_cache[ip] = local_ip_for(ip)
+    return _local_ip_cache[ip]
 
 
 def discovery_answers(ip, port=56865, timeout=0.6):
+    # Pinned to the physical interface on the board's subnet. Without it a
+    # VPN or other virtual adapter holding a better-metric default route can
+    # take the packet -- measured 2026-09-18, this is what made a live board
+    # read as absent. See $PROD/docs/tables/DECISIONS.md decision 51.
+    local_ip = _cached_local_ip(ip)
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    if local_ip:
+        s.bind((local_ip, 0))
     s.settimeout(timeout)
     try:
         s.sendto(b"openplc_server_where_r_y", (ip, int(port)))
@@ -171,7 +177,7 @@ def pad_image(src, target_bytes):
     83 KB crosses the wire in well under a second, which no hand can hit. Zeros
     appended after the image are unused flash: the vector table and code sit at
     the start, so a padded application still boots. That matters because if the
-    S4a window is missed the erase goes ahead and this image IS written -- and
+    T1-21 window is missed the erase goes ahead and this image IS written -- and
     then the board should be left running something real, not a blob.
     """
     src = Path(src)
@@ -201,7 +207,7 @@ def ticker(label, expect=None):
 
     The operator has to act inside a window of a few seconds and cannot see the
     serial log, so counting in their head against somebody else's message is the
-    only cue they otherwise have -- which is how the first S4b attempts were
+    only cue they otherwise have -- which is how the first T1-22 attempts were
     missed by seconds in both directions. This puts the clock on their screen.
     """
     t0 = time.monotonic()
@@ -335,7 +341,7 @@ def run_once(case, args, cli, iaptool, image, ip):
                 Fail("during the transfer window. That contradicts staging.")
                 return "fail"
             if APP_MOD in after:
-                Ok("S4a PASS: the old application booted, flash was untouched")
+                Ok("T1-21 PASS: the old application booted, flash was untouched")
                 return "pass"
             Warn("neither %r nor %r appeared; read the log above" % (APP_MOD, APP_INVALID))
             return "fail"
@@ -359,7 +365,7 @@ def run_once(case, args, cli, iaptool, image, ip):
         time.sleep(args.settle)
         after2 = tail.snapshot()[mark2:]
         if rec.returncode == 0 and got_back and APP_INVALID not in after2:
-            Ok("S4b PASS: half-written app reported invalid, re-upload restored it")
+            Ok("T1-22 PASS: half-written app reported invalid, re-upload restored it")
             return "pass"
         Fail("the re-upload did not restore the board")
         print(rec.stdout[-600:])
@@ -392,7 +398,7 @@ def main():
                     help="seconds of log to collect after the board boots")
     ap.add_argument("--recover-timeout", type=int, default=300)
     ap.add_argument("--no-recover", action="store_true",
-                    help="S4b: stop before the recovery upload")
+                    help="T1-22: stop before the recovery upload")
     ap.add_argument("--pad-to", type=int, metavar="BYTES",
                     help="zero-pad the image so both windows last long enough to "
                          "hit by hand. Measured 2026-09-01 at the cap, 1835008 "
@@ -455,7 +461,7 @@ def main():
         result = run_once(args.case, args, cli, iaptool, image, ip)
         if result == "pass":
             Section("record it")
-            print("  $PROD/docs/tables/STATUS.md  E8 row: status, result, date")
+            print("  $PROD/docs/modules/M1-firmware-upgrade.md  R1-27 row: status, result, date")
             return 0
         if result in ("fail", "setup"):
             return 1 if result == "fail" else 2

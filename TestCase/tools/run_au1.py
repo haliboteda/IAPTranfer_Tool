@@ -29,18 +29,29 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (cfg, GOOS_DIR, EXE, Section, Ok, Warn, Fail,  # noqa: E402
-                    banner, close_ports, get_go_bin, get_scratch_file,
-                    open_log_ports, python_exe, read_log_ports, run_capture,
-                    run_emit)
+                    banner, close_ports, get_go_bin, get_programmer_cli,
+                    get_scratch_file, local_ip_for, open_log_ports,
+                    python_exe, read_log_ports, run_capture, run_emit,
+                    target_voltage)
 
 DISCOVERY = b"openplc_server_where_r_y"
 
 
-def probe_board(addr, udp_port, timeout=1.5):
+def probe_board(addr, udp_port, timeout=1.5, local_ip=None):
     """One UDP discovery query. Returns the identity string, or None when the
-    board does not answer -- which is how "the power is off" is detected."""
+    board does not answer -- which is how "the power is off" is detected.
+
+    local_ip, when given, pins the socket to that source address so the
+    packet leaves through the physical interface on the board's subnet
+    instead of whatever the routing table picks. Without it, a VPN or other
+    virtual adapter holding a better-metric default route can take the
+    packet -- measured 2026-09-18, this is what made a live board read as
+    absent. See $PROD/docs/tables/DECISIONS.md decision 51.
+    """
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as sk:
+            if local_ip:
+                sk.bind((local_ip, 0))
             sk.settimeout(timeout)
             sk.connect((addr, int(udp_port)))
             sk.send(DISCOVERY)
@@ -49,7 +60,7 @@ def probe_board(addr, udp_port, timeout=1.5):
         return None
 
 
-def wait_board_state(ip, udp_port, present, what, minutes):
+def wait_board_state(ip, udp_port, present, what, minutes, local_ip=None):
     """Wait for the board to go quiet (present=False) or come back (True).
 
     Requires three consecutive agreeing probes: a single missed datagram is
@@ -58,7 +69,7 @@ def wait_board_state(ip, udp_port, present, what, minutes):
     deadline = time.monotonic() + minutes * 60
     streak = 0
     while time.monotonic() < deadline:
-        reply = probe_board(ip, udp_port)
+        reply = probe_board(ip, udp_port, local_ip=local_ip)
         if (reply is not None) == present:
             streak += 1
             if streak >= 3:
@@ -100,6 +111,10 @@ def main():
 
     ports = list(args.ports if args.ports is not None else cfg.LOG_PORTS)
     ip = args.ip or getattr(cfg, "BOARD_IP", "")
+    # Resolved once, not per probe: this loop polls every 0.7s for up to
+    # --wait-minutes, and netifquery is a `go run` (compiles), too slow to
+    # call on every tick.
+    local_ip = local_ip_for(ip) if ip else None
     if not ip:
         Fail("need --ip (or set BOARD_IP in config/machine.py)")
         return 2
@@ -156,13 +171,30 @@ def main():
     print("  pass even on a board with a dead VBAT cell -- and that board is exactly")
     print("  what this case exists to catch.")
     print()
-    print("  Nothing to confirm afterwards: this script watches the board's own UDP")
-    print("  discovery go quiet, so it knows the power really went.")
+    print("  This script watches the board's own UDP discovery go quiet, then")
+    print("  cross-checks with the ST-Link's own voltage reading before trusting it --")
+    print("  UDP silence alone does not prove the power went; a network hiccup looks")
+    print("  identical from here. Measured 2026-09-18: it does not always.")
     print()
     print("  Waiting for the board to go quiet...")
 
-    if not wait_board_state(ip, args.port, False, "the board to stop answering", args.wait_minutes):
+    if not wait_board_state(ip, args.port, False, "the board to stop answering", args.wait_minutes, local_ip=local_ip):
         return 2
+
+    # UDP silence alone does not distinguish "the power went" from "the network
+    # hiccupped" -- both look like three missed probes from here. Cross-check
+    # with an independent electrical signal, the way run_s4.py already does for
+    # T1-21/T1-22, before this run gets to claim it tested anything.
+    cli = get_programmer_cli()
+    volts = target_voltage(cli) if cli else None
+    if volts is None:
+        Warn("  could not read the target voltage over SWD -- proceeding on UDP silence alone")
+    elif volts > 0.5:
+        Fail("  target still reads %.2fV -- the board did not lose power. "
+             "That was a network hiccup, not a power cut; nothing was tested. Try again." % volts)
+        return 2
+    else:
+        Ok("  target voltage during the cut: %.2fV -- confirmed off" % volts)
 
     banner(["PLUG THE BOARD BACK IN."])
     print("  Capturing the boot log while it comes up.")
@@ -172,7 +204,7 @@ def main():
     # report is captured. That line is independent corroboration: it is read
     # straight out of the backup register, not out of a nonce.
     open_ports = open_log_ports(ports)
-    if not wait_board_state(ip, args.port, True, "the board to answer again", args.wait_minutes):
+    if not wait_board_state(ip, args.port, True, "the board to answer again", args.wait_minutes, local_ip=local_ip):
         close_ports(open_ports)
         return 2
     boot_log = "".join(read_log_ports(open_ports, 3).values())

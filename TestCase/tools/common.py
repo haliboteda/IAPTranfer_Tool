@@ -203,6 +203,63 @@ def get_go_bin(name):
     return Path(cfg.TOOL_REPO) / "Output" / GOOS_DIR / (name + EXE)
 
 
+def target_voltage(cli=None):
+    """Volts the ST-Link measures on VTREF, or None when SWD cannot reach it.
+
+    This is the only signal here that speaks about POWER rather than about
+    software or network state. UDP silence -- from a script or a person --
+    also happens when the board is merely busy, or when the local network
+    hiccups without the board losing power at all. Measured 2026-09-18:
+    "the board stopped answering UDP" was mistaken for "the power went",
+    which cannot be told apart without an independent electrical signal.
+    """
+    cli = str(cli) if cli else str(get_programmer_cli())
+    try:
+        out = subprocess.run([cli, "-c", "port=SWD", "mode=HOTPLUG"],
+                             capture_output=True, text=True, timeout=30).stdout
+    except Exception:
+        return None
+    if re.search(r"No STM32 target found|Error", out, re.I) and \
+       not re.search(r"Voltage", out):
+        return None
+    m = re.search(r"Voltage\s*:\s*([\d.]+)", out)
+    return float(m.group(1)) if m else None
+
+
+def local_ip_for(target_ip):
+    """The local IP whose PHYSICAL interface can reach target_ip, or None.
+
+    None means either "let the OS route it normally" (no physical interface
+    shares that subnet -- the board is behind a router) or "could not tell"
+    (netifquery failed to build or run). Both cases are handled the same way
+    by every caller: fall back to an unbound socket.
+
+    Shells out to TestCase/tools/netifquery rather than reimplementing the
+    per-OS physical-vs-virtual classification here in Python. That logic
+    already exists in three platform-specific Go files
+    (internal/netiface/iface_*.go); writing a fourth copy is how the same
+    rule ends up unmaintained in one of its homes. See
+    $PROD/docs/tables/DECISIONS.md decision 51.
+
+    A VPN or other virtual adapter holding a better-metric default route is
+    exactly what this exists to route around: measured 2026-09-18, an
+    unbound socket to a board on the LAN went out through a VPN tunnel
+    instead, and on Windows the VPN endpoint completed the TCP handshake and
+    then reset it -- indistinguishable from the board itself failing.
+    """
+    try:
+        r = subprocess.run(
+            ["go", "run", "./TestCase/tools/netifquery", target_ip],
+            capture_output=True, text=True, timeout=15, cwd=cfg.TOOL_REPO,
+        )
+    except Exception:
+        return None
+    if r.returncode != 0:
+        return None
+    ip = r.stdout.strip()
+    return ip or None
+
+
 def _newest(pattern):
     hits = sorted(glob.glob(str(pattern)))
     return Path(hits[-1]) if hits else None

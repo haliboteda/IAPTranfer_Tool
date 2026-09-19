@@ -7,6 +7,8 @@ import (
 	"net"
 	"os/exec"
 	"time"
+
+	"IAPTool/internal/netiface"
 )
 
 const (
@@ -31,8 +33,25 @@ func init() {
 		destructive: true, run: runT3})
 }
 
+// dial pins the source address to the physical interface on the board's subnet
+// for the same reason dialBoard does, and with a sharper consequence: a VPN
+// endpoint will happily complete a TCP handshake for an address the board does
+// not even hold, so an unbound dial reports "the TCP server is up" for a board
+// that is switched off. Measured on 2026-09-18, and it made T1-01 blame the
+// board's UDP path. See $PROD/docs/tables/DECISIONS.md decision 51.
 func dial(cfg config) (net.Conn, error) {
-	return net.DialTimeout("tcp", net.JoinHostPort(cfg.ip, cfg.port), dialTimeout)
+	target := net.JoinHostPort(cfg.ip, cfg.port)
+	raddr, err := net.ResolveTCPAddr("tcp", target)
+	if err == nil {
+		if local := netiface.LocalIPFor(raddr.IP); local != nil {
+			d := net.Dialer{
+				LocalAddr: &net.TCPAddr{IP: local},
+				Timeout:   dialTimeout,
+			}
+			return d.Dial("tcp", target)
+		}
+	}
+	return net.DialTimeout("tcp", target, dialTimeout)
 }
 
 // alive reports whether the session still answers. "ping" is the cheapest
@@ -144,7 +163,12 @@ func runT3(cfg config) result {
 		return fail("needs --bin=<file.bin>: this case runs a real upload")
 	}
 
-	cmd := exec.Command(cfg.iapTool, "ether", cfg.binPath, cfg.ip, "--downgrade=refuse")
+	// No --downgrade flag: 382086d (2026-09-03) removed anti-rollback from
+	// IAPTool and cleaned up every other caller, but missed this one. The tool
+	// answers an unknown option with [FATAL], so this case could not run at all
+	// between then and 2026-09-18 -- while R1-02 and R1-18 still counted it as
+	// their evidence.
+	cmd := exec.Command(cfg.iapTool, "ether", cfg.binPath, cfg.ip)
 	out, err := cmd.StdoutPipe()
 	if err != nil {
 		return fail("could not capture IAPTool output: %v", err)
@@ -155,10 +179,53 @@ func runT3(cfg config) result {
 	}
 
 	transferred := make(chan bool, 1)
-	go watchForCompletion(out, transferred)
+	sending := make(chan struct{})
+	completed := make(chan struct{})
+	ended := make(chan struct{})
+	go watchForCompletion(out, transferred, sending, completed, ended)
 
-	// Let the transfer get going, then knock on the door.
-	time.Sleep(8 * time.Second)
+	// Knock once the data phase has demonstrably started, never on a timer.
+	//
+	// Until 2026-09-18 this slept 8s. An ethernet upload is four phases --
+	// signing, a preflight connection, a gap with no session open, then the
+	// data connection -- so a fixed delay landed in a different one each run
+	// and the case failed about half the time for two reasons that were both
+	// correct board behaviour: in the gap the board has no session, so it
+	// accepts the knock (read as "the intruder was served"), and the knock can
+	// then hold the slot that IAPTool's data connection needs (read as "the
+	// transfer failed"). Measured over 15 runs: 7 pass, 8 fail, and the board
+	// never once printed "Refused second connection."
+	select {
+	case <-sending:
+	case <-ended:
+		// IAPTool stopped without ever sending a chunk. Most often the board is
+		// still rebooting from the previous run's upload and this one arrived
+		// too early. Nothing was knocked against, so this says nothing about
+		// R1-18 -- report it as setup, not as a verdict.
+		_ = cmd.Wait()
+		<-transferred
+		return fail("IAPTool exited before sending any data -- nothing to knock " +
+			"against. Give the board time to finish rebooting between runs")
+	case <-time.After(3 * time.Minute):
+		return fail("IAPTool never reported sending data; nothing was knocked against")
+	}
+	// Knock immediately: the first "Sent" line means the data connection is open
+	// at this instant. There is no margin to spend waiting -- the PC-side send
+	// of a 1.75 MB image takes only a few seconds (the ~34s in run_s4.py is the
+	// board's staging-to-erase window, not the wire time), and even a 500ms
+	// pause lost the race half the time.
+	//
+	// The transfer can still finish first on a fast link or a small image. That
+	// is not a failure of R1-18, so it is reported as a setup problem -- but
+	// IAPTool has to be reaped either way, or the next run starts against a
+	// board that is still mid-upload.
+	if finishedBeforeKnock(completed) {
+		_ = cmd.Wait()
+		<-transferred
+		return fail("the transfer finished before the knock -- use a larger image " +
+			"(run_s4.py pads to IAP_APP_MAX_SIZE for the same reason)")
+	}
+
 	second, dialErr := dial(cfg)
 	intruderServed := false
 	if dialErr == nil {

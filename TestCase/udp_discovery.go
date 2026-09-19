@@ -9,7 +9,30 @@ import (
 	"net"
 	"strings"
 	"time"
+
+	"IAPTool/internal/netiface"
 )
+
+// dialBoard opens a UDP socket to the board with the source address pinned to
+// the physical interface on the board's subnet.
+//
+// Without the pin the routing table decides, and a VPN tunnel or a Docker
+// switch holding a better default route takes the datagram instead: every
+// probe then times out and the board reads as absent. That is exactly what
+// happened on 2026-09-18. See $PROD/docs/tables/DECISIONS.md decision 51.
+//
+// When no physical interface shares the board's subnet the board is reached
+// through a router, so the plain dial is correct and is used unchanged.
+func dialBoard(cfg config) (net.Conn, error) {
+	target := net.JoinHostPort(cfg.ip, cfg.port)
+	raddr, err := net.ResolveUDPAddr("udp", target)
+	if err == nil {
+		if local := netiface.LocalIPFor(raddr.IP); local != nil {
+			return net.DialUDP("udp", &net.UDPAddr{IP: local}, raddr)
+		}
+	}
+	return net.DialTimeout("udp", target, dialTimeout)
+}
 
 // The board rate-limits discovery replies per source address.
 const discoveryRateWindow = 2 * time.Second
@@ -38,7 +61,7 @@ const discoveryRepliesPerSec = 50
 func runN5(cfg config) result {
 	const floodFor = 3 * time.Second
 
-	conn, err := net.DialTimeout("udp", net.JoinHostPort(cfg.ip, cfg.port), dialTimeout)
+	conn, err := dialBoard(cfg)
 	if err != nil {
 		return fail("could not open a socket: %v", err)
 	}
@@ -145,7 +168,7 @@ func runN4(cfg config) result {
 
 // udpAsk sends one datagram and waits for the reply.
 func udpAsk(cfg config, msg string, timeout time.Duration) (string, error) {
-	conn, err := net.DialTimeout("udp", net.JoinHostPort(cfg.ip, cfg.port), dialTimeout)
+	conn, err := dialBoard(cfg)
 	if err != nil {
 		return "", err
 	}
@@ -187,8 +210,17 @@ func runN1(cfg config) result {
 	}
 
 	if len(answered) == 0 {
-		return fail("the board answered none of the %d discovery keywords, yet its TCP server is up "+
-			"-- the UDP path is down on its own", len(keywords))
+		// Until 2026-09-18 this said "yet its TCP server is up" without ever
+		// probing TCP. The claim was false on a board that was simply off, and
+		// it sent the reader after the UDP path instead. Ask before telling.
+		conn, err := dial(cfg)
+		if err != nil {
+			return fail("the board answered none of the %d discovery keywords, and its TCP port is "+
+				"not reachable either (%v) -- the board is absent, not a UDP fault", len(keywords), err)
+		}
+		conn.Close()
+		return fail("the board answered none of the %d discovery keywords, yet its TCP server accepts "+
+			"connections -- the UDP path is down on its own", len(keywords))
 	}
 	if len(answered) < len(keywords) {
 		missing := []string{}

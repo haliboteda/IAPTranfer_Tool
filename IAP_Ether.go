@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"IAPTool/iapcert"
+	"IAPTool/internal/netiface"
 )
 
 // UDP
@@ -261,38 +262,28 @@ func udpPingAndGetStatus(ip string) (string, error) {
 // Send UDP message and wait for a response within timeout.
 // Returns response bytes and error (nil if success).
 func sendUDPWithResponseOnPort(serverAddr, port, msg string, timeout time.Duration) ([]byte, *net.UDPAddr, error) {
-	// listen up from UDP port
-	localAddr := &net.UDPAddr{IP: net.IPv4zero, Port: 0}
-	conn, err := net.ListenUDP("udp4", localAddr)
+	conn, err := dialUDPBoard(serverAddr, port)
 	if err != nil {
-		return nil, nil, fmt.Errorf("UDP listen failed: %w", err)
+		return nil, nil, err
 	}
 	defer conn.Close()
 
-	// set read timeout
 	conn.SetDeadline(time.Now().Add(timeout))
 
-	// prepare broadcast address
-	remoteAddr, err := net.ResolveUDPAddr("udp4", serverAddr+":"+port)
-	if err != nil {
-		return nil, nil, fmt.Errorf("UDP ResolveUDPAddr failed: %w", err)
-	}
-
-	// broadcast send request
-	_, err = conn.WriteToUDP([]byte(msg), remoteAddr)
-	if err != nil {
-		return nil, nil, fmt.Errorf("UDP WriteToUDP failed: %w", err)
+	if _, err := conn.Write([]byte(msg)); err != nil {
+		return nil, nil, fmt.Errorf("UDP Write failed: %w", err)
 	}
 	logf("UDP sent: %s", msg)
 
-	// receive reply
+	// A connected socket only accepts datagrams from the address it dialed, so
+	// this can no longer be answered by some other device on the network.
 	buffer := make([]byte, Buf_s)
-	n, addr, err := conn.ReadFromUDP(buffer)
+	n, err := conn.Read(buffer)
 	if err != nil {
-		return nil, nil, fmt.Errorf("UDP ReadFromUDP Timeout: %w", err)
+		return nil, nil, fmt.Errorf("UDP Read Timeout: %w", err)
 	}
 
-	return buffer[:n], addr, nil
+	return buffer[:n], conn.RemoteAddr().(*net.UDPAddr), nil
 }
 
 // authenticatedUDPReboot performs the challenge-response handshake before
@@ -313,9 +304,9 @@ func authenticatedUDPReboot(ip string, id uploadIdentity) error {
 
 // Send UDP message without waiting for a response.
 func sendUDPNoResponseOnPort(serverAddr, port, msg string) error {
-	conn, err := net.Dial("udp", serverAddr+":"+port)
+	conn, err := dialUDPBoard(serverAddr, port)
 	if err != nil {
-		return fmt.Errorf("UDP connection failed: %w", err)
+		return err
 	}
 	defer conn.Close()
 
@@ -327,8 +318,63 @@ func sendUDPNoResponseOnPort(serverAddr, port, msg string) error {
 	return nil
 }
 
+// dialUDPBoard opens a UDP connection to the board with the source address
+// pinned to the physical interface on the board's subnet, for every unicast
+// exchange in this file: identify, reboot challenge, and the authenticated
+// reboot command. Until 2026-09-18 only the broadcast discovery function had
+// this pin (decision 51); these four calls are the ones a real upload
+// actually hits every single time, so an unpinned socket here is worse, not
+// better, than the broadcast case -- a VPN with a better-metric default route
+// can take the packet even though the user already gave a specific IP, and on
+// Windows a VPN endpoint has been observed to complete the connection and then
+// reset it, which is why a connected socket (not a bare listen) is used here:
+// it only accepts replies from the address it dialed.
+//
+// netiface.LocalIPFor and its platform classifiers already cover Windows,
+// Linux and macOS (build-tag gated in internal/netiface/iface_*.go); nothing
+// platform-specific is added here.
+//
+// When no physical interface shares the board's subnet, the board is reached
+// through a router, so the plain dial (nil local address) is correct.
+func dialUDPBoard(serverAddr, port string) (*net.UDPConn, error) {
+	raddr, err := net.ResolveUDPAddr("udp4", serverAddr+":"+port)
+	if err != nil {
+		return nil, fmt.Errorf("UDP ResolveUDPAddr failed: %w", err)
+	}
+	var laddr *net.UDPAddr
+	if local := netiface.LocalIPFor(raddr.IP); local != nil {
+		laddr = &net.UDPAddr{IP: local}
+	}
+	conn, err := net.DialUDP("udp4", laddr, raddr)
+	if err != nil {
+		return nil, fmt.Errorf("UDP connection failed: %w", err)
+	}
+	return conn, nil
+}
+
+// dialTCPBoard is dialUDPBoard's sibling for the flash channel: RunEther_TCP
+// dials it once for the whole upload, and an unpinned TCP dial to a specific
+// IP is exactly what let a VPN endpoint answer for the board on 2026-09-18
+// (measured: connect completed in 0.03s, then reset, from a host that was
+// never on the board's subnet).
+func dialTCPBoard(serverIP string) (net.Conn, error) {
+	target := serverIP + ":" + getPort()
+	raddr, err := net.ResolveTCPAddr("tcp", target)
+	if err == nil {
+		if local := netiface.LocalIPFor(raddr.IP); local != nil {
+			d := net.Dialer{LocalAddr: &net.TCPAddr{IP: local}, Timeout: Timeout}
+			return d.Dial("tcp", target)
+		}
+	}
+	return net.DialTimeout("tcp", target, Timeout)
+}
+
+// Only physical interfaces are broadcast to. A VPN tunnel or a Docker switch
+// answers nothing and its broadcast address merely costs a timeout, while its
+// default route can pull the probe off the real NIC entirely. See
+// $PROD/docs/tables/DECISIONS.md decision 51.
 func getDirectedBroadcastAddrs() ([]string, error) {
-	ifaces, err := net.Interfaces()
+	ifaces, err := netiface.Physical()
 	if err != nil {
 		return nil, err
 	}
@@ -336,9 +382,6 @@ func getDirectedBroadcastAddrs() ([]string, error) {
 	seen := make(map[string]struct{})
 	var addrs []string
 	for _, iface := range ifaces {
-		if iface.Flags&net.FlagUp == 0 || iface.Flags&net.FlagLoopback != 0 {
-			continue
-		}
 		ifaceAddrs, err := iface.Addrs()
 		if err != nil {
 			continue
@@ -371,33 +414,21 @@ func getDirectedBroadcastAddrs() ([]string, error) {
 }
 
 // TCP
+//
+// One connection for the whole upload: dial, ping, confirm the board accepts
+// this identity, then send the file. An earlier version opened a second,
+// separate connection for the identity check because that check used to also
+// confirm a downgrade with the operator, and the board drops idle connections
+// while a human is being asked something. That confirmation is gone (see
+// DECISIONS.md decision 54); the identity check is now a plain round trip
+// with nothing to wait on, so there is no longer a reason to split it off.
 func RunEther_TCP(filePath, serverIP string, id uploadIdentity) {
 	sigHex, err := signImageInMemory(filePath, id.key)
 	logf(err, "Failed to prepare signature for %s", filePath)
 
-	etherPreflight(serverIP, id)
-
 	logf("Trying to connect to TCP server at %s...", serverIP)
 
-	conn, err := net.DialTimeout("tcp", serverIP+":"+getPort(), Timeout)
-	if err != nil {
-		logf(true, "Failed to connect to server: %v", err)
-	}
-	defer conn.Close()
-
-	if err := ping(conn); err != nil {
-		logf(true, "Ping failed: %v", err)
-	}
-
-	if err := sendFile(conn, filePath, id, sigHex); err != nil {
-		logf(err, "File send failed")
-	}
-}
-
-// etherPreflight confirms, on a connection of its own, that the board will
-// accept this identity before the upload connection is opened.
-func etherPreflight(serverIP string, id uploadIdentity) {
-	conn, err := net.DialTimeout("tcp", serverIP+":"+getPort(), Timeout)
+	conn, err := dialTCPBoard(serverIP)
 	if err != nil {
 		logf(true, "Failed to connect to server: %v", err)
 	}
@@ -411,6 +442,10 @@ func etherPreflight(serverIP string, id uploadIdentity) {
 		return sendAndReadResponse(conn, []byte(CM_GetPubKey+"\n"))
 	}); err != nil {
 		logf(true, "Signing key check failed: %v", err)
+	}
+
+	if err := sendFile(conn, filePath, id, sigHex); err != nil {
+		logf(err, "File send failed")
 	}
 }
 
@@ -452,8 +487,8 @@ func ping(conn net.Conn) error {
 }
 
 // 文件发送函数（按 buffer 分块发送，每块等 ok）
-// sendFile carries no interactive step: everything that could wait on an
-// operator already happened in etherPreflight, on a connection since closed.
+// sendFile carries no interactive step: the identity check already ran on
+// this same connection, in RunEther_TCP, before this is called.
 func sendFile(conn net.Conn, filePath string, id uploadIdentity, sigHex string) error {
 	// Calculate checksum and file size
 	checksum, fileSize, file := CalculateCRC32(filePath)
