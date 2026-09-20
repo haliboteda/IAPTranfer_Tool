@@ -67,7 +67,7 @@ CATALOG = [
     ("T4-01",        "-",                      "port tool protocol contract (real porttool.c, then the Go parser)"),
     ("T1-18a-T1-18g", "R1-21",                  "IAPTool key/certificate match against a stand-in board"),
     ("T1-19-T1-20",  "R1-24",                  "crypto cross-check against independent implementations"),
-    ("P4",           "R3-04",                  "Arduino variant assertions (the FMC reserved-pin table)"),
+    ("P4",           "R3-04",                  "Arduino variant assertions (FMC reserved pins, UART routing)"),
 ]
 COVERS = {cid: covers for cid, covers, _ in CATALOG}
 
@@ -246,7 +246,7 @@ def main():
                  [python_exe(), TESTTOOL / "host" / "crypto_ref" / "run_checks.py",
                   "--rounds", "8"], cwd=tool_repo)
 
-        run_step("P4", "Arduino variant assertions (the FMC reserved-pin table)",
+        run_step("P4", "Arduino variant assertions (FMC reserved pins, UART routing)",
                  [python_exe(), TESTTOOL / "host" / "variant_check" / "build.py"],
                  needs=getattr(cfg, "ARDUINO_CLI", ""), cwd=tool_repo)
 
