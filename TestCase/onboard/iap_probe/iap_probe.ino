@@ -30,6 +30,21 @@
 
 #include "OpenPLC_IAP_Autostart.h"   // udp receive counters, see loop()
 
+// Stamped into the boot banner so a script can tell two builds of this sketch
+// apart. The five images built before 2026-09-21 all printed byte-identical
+// banners, so nothing could judge "did the upgrade take". Set it at build time:
+// tools/build_probe_image.py --ver v2. "dev" means nobody said.
+//
+// A BARE token, not a string: quotes do not survive the trip through
+// arduino-cli's --build-property into the compiler command line (measured
+// 2026-09-21: "missing terminating \" character"). PROBE_VER_STR does the
+// quoting here, where nothing can eat it.
+#ifndef PROBE_VER
+#define PROBE_VER dev
+#endif
+#define PROBE_VER_STR2(x) #x
+#define PROBE_VER_STR(x)  PROBE_VER_STR2(x)
+
 void setup() {
   // Open the RS232 transceiver. The core only does pinMode(PB_10, OUTPUT) and
   // never drives it, so the pin sits low and MAX3221's charge pump stays off --
@@ -46,18 +61,18 @@ void setup() {
   setvbuf(stdout, NULL, _IONBF, 0);
 
   Serial.begin(115200);
-  Serial.println("IAP_PROBE_APP up");
-  printf("IAP_PROBE_APP up (RS232 enabled)\r\n");
+  Serial.println("IAP_PROBE_APP up " PROBE_VER_STR(PROBE_VER));
+  printf("IAP_PROBE_APP up " PROBE_VER_STR(PROBE_VER) " (RS232 enabled)\r\n");
 }
 
 void loop() {
   Serial.println("IAP_PROBE_APP alive");
   // Also on RS232, so the library diagnostics and this heartbeat share one
   // channel -- Serial is USB CDC and never reaches the RS232 terminals.
-  // Serial_Test, not printf: printf has no output path in an application on
-  // this board -- DEBUG_UART resolves from PIN_SERIAL_TX (PH13, the expansion
-  // header), while the RS232 console is PC10/PC11. Measured 2026-09-20:
-  // printf 0 lines, Serial_Test 18, same function and same moment.
+  // Both channels on purpose: Serial_Test is the RS232 console directly, and
+  // printf is the path the IAP libraries use. They agreed 30 lines to 30 over
+  // the same window on 2026-09-21, once DEBUG_UART was pinned to USART3/PC10 --
+  // before that printf resolved to PH13, the expansion header, and was lost.
   Serial_Test.println("IAP_PROBE_APP alive");
   printf("IAP_PROBE_APP alive via printf\r\n");
 

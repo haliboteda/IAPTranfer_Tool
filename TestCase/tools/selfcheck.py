@@ -69,6 +69,7 @@ CATALOG = [
     ("T1-18a-T1-18g", "R1-21",                  "IAPTool key/certificate match against a stand-in board"),
     ("T1-19-T1-20",  "R1-24",                  "crypto cross-check against independent implementations"),
     ("P4",           "R3-04",                  "Arduino variant assertions (FMC reserved pins, UART routing)"),
+    ("P15",          "R1-33",                  "the application's start address stays 1024-aligned"),
     ("P16",          "R1-25",                  "the I-cache and the flash lock are restored on every exit"),
 ]
 COVERS = {cid: covers for cid, covers, _ in CATALOG}
@@ -88,7 +89,7 @@ def print_catalog():
     for cid, covers, name in CATALOG:
         print("  %-*s  covers %-*s  %s" % (width, cid, cov, covers, name))
     print("")
-    print("  %d steps. --quick skips T1-16 / T2-21 / T4-01 / T1-18a-T1-18g / T1-19-T1-20 / P4."
+    print("  %d steps. --quick skips T1-16 / T2-21 / T4-01 / T1-18a-T1-18g / T1-19-T1-20 / P4 / P15."
           % len(CATALOG))
     print("  P7, P8 and P9 check the documents, not the firmware.")
 
@@ -258,6 +259,10 @@ def main():
 
         run_step("P4", "Arduino variant assertions (FMC reserved pins, UART routing)",
                  [python_exe(), TESTTOOL / "host" / "variant_check" / "build.py"],
+                 needs=getattr(cfg, "ARDUINO_CLI", ""), cwd=tool_repo)
+
+        run_step("P15", "the application's start address stays 1024-aligned",
+                 [python_exe(), TESTTOOL / "host" / "vector_alignment" / "build.py"],
                  needs=getattr(cfg, "ARDUINO_CLI", ""), cwd=tool_repo)
 
     # -------------------------------------------------------------- summary
