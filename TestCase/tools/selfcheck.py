@@ -59,6 +59,7 @@ CATALOG = [
     ("T2-06",        "R2-02",                  "the published-root warning still recognises the published root"),
     ("P7",           "-",                      "every cited case is defined, and every defined case is cited"),
     ("P8",           "-",                      "no claim is written out in more than one document"),
+    ("P14",          "-",                      "no unfinished work lives only in a map's CHANGE-LIST"),
     ("P9",           "-",                      "every path a document names actually exists"),
     ("P13",          "-",                      "no renamed id is still cited anywhere"),
     ("P12",          "-",                      "OpenPLC_Docs: tickets close honestly, placeholders have owners"),
@@ -194,6 +195,9 @@ def main():
 
     run_step("P8", "no claim is written out in more than one document",
              [python_exe(), HERE / "check_doc_dupes.py"], cwd=tool_repo)
+
+    run_step("P14", "no unfinished work lives only in a map's CHANGE-LIST",
+             [python_exe(), HERE / "check_changelist_has_no_orphans.py"], cwd=tool_repo)
 
     run_step("P9", "every path a document names actually exists",
              [python_exe(), HERE / "check_doc_paths.py"], cwd=tool_repo)
