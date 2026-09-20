@@ -98,7 +98,7 @@ def main():
     def issue_cert(leaf_pub_hex, dest):
         out, rc = run_capture([iap_run, "cert", leaf_pub_hex, "--key=%s" % root_key], cwd=scratch)
         line = next((ln.strip() for ln in out.splitlines()
-                     if re.fullmatch(r"[0-9a-f]{264}", ln.strip())), None)
+                     if re.fullmatch(r"[0-9a-f]{256}", ln.strip())), None)
         if line is None:
             Fail("IAPTool cert produced no certificate (rc=%d):\n%s" % (rc, out))
             return False

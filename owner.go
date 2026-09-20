@@ -327,11 +327,20 @@ func RunRevoke(ip, currentKeyPath, leafPubHex string) {
 		logf(true, "The board refused: %s", reply)
 	}
 
-	gotGen, now, err := ownerReadState(ip)
+	// The board's OK already means it wrote the record, re-scanned the owner
+	// area and confirmed every name just written now reads back as revoked
+	// (owner_slot_revoke, IAPServer/owner_slot.c). Do NOT re-check the
+	// generation here: a revoke record never becomes the effective owner
+	// record, so the effective generation deliberately does not move, and
+	// requiring it to advance reports a successful revocation as a failure.
+	// What is worth reading back is that the root did not change -- a
+	// revocation must never hand the board to somebody else.
+	_, now, err := ownerReadState(ip)
 	logf(err, "revoked, but reading the state back failed")
-	if gotGen != next {
-		logf(true, "The board answered OK but reports generation %d, expected %d", gotGen, next)
+	if now != strings.ToLower(currentPub) {
+		logf(true, "The board answered OK but now trusts %s, not %s -\n"+
+			"a revocation must not change the root.", now, strings.ToLower(currentPub))
 	}
-	fmt.Printf("Done. Generation %d. The board still trusts %s;\n", gotGen, now)
+	fmt.Printf("Done. The board still trusts %s;\n", now)
 	fmt.Println("any firmware certified by the revoked leaf is refused from the next reset on.")
 }
