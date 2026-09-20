@@ -30,8 +30,7 @@ Exit 0 = the board ended up in the expected state, 1 = it did not, 2 = setup.
 import argparse
 import re
 import sys
-import tempfile
-import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -40,11 +39,18 @@ from common import (cfg, Section, Ok, Fail, banner,  # noqa: E402
 
 
 def genkey(iap):
-    """Run IAPTool genkey in a fresh directory and return the .pem path."""
-    scratch = Path(tempfile.gettempdir()) / ("takeown-" + uuid.uuid4().hex[:8])
-    scratch.mkdir(parents=True, exist_ok=True)
-    run_capture([iap, "genkey", "owner_key"], cwd=scratch)
-    return scratch / "owner_key.pem"
+    """Run IAPTool genkey in a fresh directory and return the .pem path.
+
+    NOT a temp directory: after the claim this key is the only one that can
+    sign firmware for this board, and a cleaned temp directory costs a
+    bootloader reflash. Output/ is gitignored, so the key does not reach git
+    either. Criterion T2-01, $PROD/docs/modules/M2-ownership.md.
+    """
+    where = (Path(cfg.TOOL_REPO) / "Output" / "owner-keys" /
+             datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ"))
+    where.mkdir(parents=True, exist_ok=True)
+    run_capture([iap, "genkey", "owner_key"], cwd=where)
+    return where / "owner_key.pem"
 
 
 def main():
@@ -93,7 +99,8 @@ def main():
         # that renders as mojibake is a warning nobody reads.
         print("  private key kept at: %s" % key)
         print("  NOTE: from now on that key is the only one that can sign firmware")
-        print("        this board will run. It is in a temp directory - move it.")
+        print("        this board will run. Back it up - losing it costs a")
+        print("        bootloader reflash (tools/flash_bootloader.py) and a new claim.")
     if not key.exists():
         Fail("no such key: %s" % key)
         return 2

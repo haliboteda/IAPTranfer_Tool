@@ -36,8 +36,7 @@ import argparse
 import re
 import struct
 import sys
-import tempfile
-import uuid
+from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -68,8 +67,14 @@ def signed_prefix(generation, new_key_hex, uid_hex):
 
 
 def genkey(iap, label):
-    """Run IAPTool genkey in a fresh directory. Returns (pem path, pubkey hex)."""
-    scratch = Path(tempfile.gettempdir()) / (label + "-" + uuid.uuid4().hex[:8])
+    """Run IAPTool genkey in a fresh directory. Returns (pem path, pubkey hex).
+
+    NOT a temp directory: once setowner succeeds this key is the only one that
+    can sign firmware for the board, and the previous owner's key stops working
+    the same moment. Criterion T2-03, $PROD/docs/modules/M2-ownership.md.
+    """
+    scratch = (Path(cfg.TOOL_REPO) / "Output" / "owner-keys" /
+               (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + label))
     scratch.mkdir(parents=True, exist_ok=True)
     out, _ = run_capture([iap, "genkey", "new_owner"], cwd=scratch)
     pub = "".join(re.findall(r"0x([0-9a-fA-F]{2})", out)).lower()

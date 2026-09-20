@@ -49,6 +49,9 @@ NOT_A_STATUS_ROW = {
     "P8":         "the one-fact-one-file check; also guards documents, not firmware",
     "P9":         "the documented-path check; also guards documents, not firmware",
     "P10":        "the allow-list hygiene check; advisory, guards local config, not firmware",
+    "P12":        "wayfinder ticket hygiene; guards the issue tracker, not firmware",
+    "P13":        "the stale-id check; also guards documents, not firmware",
+    "P14":        "the CHANGE-LIST orphan gate; guards the planning artefacts, not firmware",
     "S4":         "retired: SDRAM staging removed its meaning, split into T1-21 / T1-22",
     }
 
@@ -78,6 +81,43 @@ SPLIT_RE = re.compile(r"[\s,/+（）()\[\]、。，]+")
 RANGE_RE = re.compile(r"^([A-Z]\d-\d\d)([a-z])?[-–]([A-Z]\d-\d\d)([a-z])?$")
 # CHK-C1–CHK-C7: same idea, a different id shape.
 CHK_RANGE_RE = re.compile(r"^(CHK-[A-C])(\d+)[-–](?:CHK-[A-C])?(\d+)$")
+
+
+CRITERIA_DOC_NAME = "$PROD/docs/engineering/HOW-TO-RUN-TESTS.md"
+
+
+def catalog_ids():
+    """The step ids selfcheck actually runs, read from its CATALOG.
+
+    Parsed rather than imported: selfcheck.py probes the toolchain at import
+    time, and this check must work on a machine that has none of it.
+    """
+    src = (HERE / "selfcheck.py").read_text(encoding="utf-8", errors="replace")
+    body = src.split("CATALOG = [", 1)[1].split("]", 1)[0]
+    raw = {m.group(1) for m in re.finditer(r'\(\s*"([^"]+)"', body)} - {"ENV"}
+    out = set()
+    for label in raw:
+        out.update(expand_catalog_label(label))
+    return out
+
+
+def expand_catalog_label(label):
+    """One CATALOG row may stand for a run of cases: T1-18a-T1-18g, T1-19-T1-20.
+
+    Deliberately narrow -- only the two shapes selfcheck actually writes. A
+    label that is just one id comes back unchanged, and an unrecognised range
+    stays whole so it surfaces as undocumented rather than silently vanishing.
+    """
+    m = re.match(r"^(T\d-\d\d)([a-z])-(T\d-\d\d)([a-z])$", label)
+    if m and m.group(1) == m.group(3):
+        return ["%s%s" % (m.group(1), chr(c))
+                for c in range(ord(m.group(2)), ord(m.group(4)) + 1)]
+    m = re.match(r"^(T\d)-(\d\d)-(T\d)-(\d\d)$", label)
+    if m and m.group(1) == m.group(3):
+        lo, hi = int(m.group(2)), int(m.group(4))
+        if 0 < hi - lo < 20:
+            return ["%s-%02d" % (m.group(1), n) for n in range(lo, hi + 1)]
+    return [label]
 
 
 def ids_in(cell):
@@ -314,6 +354,21 @@ def main():
         problems += len(bad)
     else:
         Ok("  all resolve")
+
+    Section("every step selfcheck runs is documented")
+    # The third registration place. P7 used to read only the module tables, so a
+    # step could sit in selfcheck's CATALOG, run on every invocation, and appear
+    # in no document at all -- which is exactly how P14 stayed invisible from
+    # 2026-09-20 to 2026-09-21.
+    undocumented = sorted(catalog_ids() - defined_x - set(NOT_A_STATUS_ROW))
+    if undocumented:
+        for cid in undocumented:
+            Fail("  %-8s is in selfcheck's CATALOG but no document defines it" % cid)
+            Fail("     add a row to %s, or give it a reason in NOT_A_STATUS_ROW"
+                 % CRITERIA_DOC_NAME)
+        problems += len(undocumented)
+    else:
+        Ok("  every CATALOG step has a documented criterion")
 
     Section("result")
     print("  %d requirement(s), %d case(s) claimed, %d case(s) defined"

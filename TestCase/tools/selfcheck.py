@@ -69,6 +69,7 @@ CATALOG = [
     ("T1-18a-T1-18g", "R1-21",                  "IAPTool key/certificate match against a stand-in board"),
     ("T1-19-T1-20",  "R1-24",                  "crypto cross-check against independent implementations"),
     ("P4",           "R3-04",                  "Arduino variant assertions (FMC reserved pins, UART routing)"),
+    ("P16",          "R1-25",                  "the I-cache and the flash lock are restored on every exit"),
 ]
 COVERS = {cid: covers for cid, covers, _ in CATALOG}
 
@@ -206,6 +207,11 @@ def main():
     # left behind in prose or in a source comment. This is the only thing that can.
     run_step("P13", "no renamed id is still cited anywhere",
              [python_exe(), HERE / "check_no_stale_ids.py"], cwd=tool_repo)
+
+    # Reads the bootloader source, so it belongs with the always-run checks
+    # rather than behind --quick: it needs no toolchain, only the .c files.
+    run_step("P16", "the I-cache and the flash lock are restored on every exit",
+             [python_exe(), HERE / "check_icache_is_restored.py"], cwd=tool_repo)
 
     # The pre-commit hook in OpenPLC_Docs runs these too, but --no-verify skips
     # it and core.hooksPath is not under version control, so the gate lives here.
