@@ -57,5 +57,6 @@ void loop() {
   // header), while the RS232 console is PC10/PC11. Measured 2026-09-20:
   // printf 0 lines, Serial_Test 18, same function and same moment.
   Serial_Test.println("IAP_PROBE_APP alive");
+  printf("IAP_PROBE_APP alive via printf\r\n");
   delay(1000);
 }
