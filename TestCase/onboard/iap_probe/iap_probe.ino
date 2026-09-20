@@ -28,6 +28,8 @@
 // The board takes its address by DHCP, so a changed MAC also changes the IP.
 // That is the point of R1-13: find the board by broadcast and UID, not by MAC.
 
+#include "OpenPLC_IAP_Autostart.h"   // udp receive counters, see loop()
+
 void setup() {
   // Open the RS232 transceiver. The core only does pinMode(PB_10, OUTPUT) and
   // never drives it, so the pin sits low and MAX3221's charge pump stays off --
@@ -58,5 +60,14 @@ void loop() {
   // printf 0 lines, Serial_Test 18, same function and same moment.
   Serial_Test.println("IAP_PROBE_APP alive");
   printf("IAP_PROBE_APP alive via printf\r\n");
+
+  // UDP receive counters, straight from the IAP library (getters are already
+  // declared in OpenPLC_IAP_Autostart.h). A reboot request that never arrives
+  // leaves rx unchanged; one that arrives but fails to parse bumps rx and
+  // shows its length. That is the whole difference this probe exists to see.
+  printf("  udp rx=%lu len=%u tick=%lu\r\n",
+         openplc_udp_server_recv_count(),
+         (unsigned)openplc_udp_server_last_rx_len(),
+         openplc_udp_server_last_rx_tick());
   delay(1000);
 }
