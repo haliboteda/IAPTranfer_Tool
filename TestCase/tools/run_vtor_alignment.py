@@ -154,6 +154,9 @@ def main():
     ap.add_argument("--no-build", action="store_true")
     ap.add_argument("--bin", default="")
     ap.add_argument("--ip", default="")
+    ap.add_argument("--key", default="",
+                    help="the owner private key, when the board is claimed -- a "
+                         "claimed board starts only firmware signed by its root")
     ap.add_argument("--seconds", type=int, default=25)
     ap.add_argument("--ports", nargs="*", default=None)
     args = ap.parse_args()
@@ -176,11 +179,22 @@ def main():
         return 2
 
     Section("uploading the probe")
-    rc = subprocess.run([sys.executable, str(HERE / "upload_and_watch.py"),
-                         "--bin", str(image), "--ip", ip], text=True)
+    up = [sys.executable, str(HERE / "upload_and_watch.py"),
+          "--bin", str(image), "--ip", ip]
+    if args.key:
+        up += ["--key", args.key]
+    rc = subprocess.run(up, text=True, capture_output=True)
+    print(rc.stdout)
     if rc.returncode != 0:
         Fail("the upload did not succeed; nothing to measure")
         return 1
+
+    # The probe reports once, in the second after the board jumps into it, so
+    # the lines land in the upload step's own drain window -- a listen that
+    # starts afterwards catches only the heartbeat.
+    if REPORT.search(rc.stdout or ""):
+        Ok("the report arrived inside the upload's capture")
+        return judge(rc.stdout)
 
     Section("listening for the report")
     ports = args.ports if args.ports is not None else list(getattr(cfg, "LOG_PORTS", []))
@@ -188,8 +202,10 @@ def main():
     if not handles:
         Fail("no serial port opened -- the probe reports on RS232 (PC10/PC11)")
         return 1
-    text = read_log_ports(handles, args.seconds)
-    return judge(text)
+    captured = read_log_ports(handles, args.seconds)
+    if isinstance(captured, dict):      # name -> text, one entry per port
+        captured = "\n".join(captured.values())
+    return judge(captured)
 
 
 if __name__ == "__main__":

@@ -80,6 +80,8 @@ def verdict(all_text, exit_code):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--bin", required=True)
+    ap.add_argument("--key", default="",
+                    help="the owner private key this board is claimed for")
     ap.add_argument("--ip", default="")
     ap.add_argument("--cdc", default="")
     ap.add_argument("--tail-seconds", type=int, default=TAIL_S)
@@ -110,6 +112,11 @@ def main():
 
     Section("Upload")
     argv = ["cdc", str(image), args.cdc] if args.cdc else ["ether", str(image), ip]
+    # A claimed board only starts firmware signed by its owner root, so an
+    # upload to one needs that key named. Without it IAPTool signs with the
+    # published key and the board refuses the image after it has been written.
+    if args.key:
+        argv.append("--key=%s" % args.key)
     print("IAPTool %s" % " ".join(argv))
 
     # The board reboots into the application after a good upload, so keep
