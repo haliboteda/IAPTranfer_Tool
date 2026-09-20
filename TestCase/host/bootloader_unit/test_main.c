@@ -79,7 +79,7 @@ static void test_machine_id_hex_format(void)
 			"machine_id_hex is uppercase UIDW2||UIDW1||UIDW0");
 }
 
-/* Test 3: the certificate is three fields at fixed offsets and nothing else.
+/* Test 3: the certificate is two fields at fixed offsets and nothing else.
  * A compiler that pads it, or a field that moves, silently stops matching
  * what the tool puts on the wire -- and every signature check would still
  * "work", just over different bytes. */
@@ -87,57 +87,65 @@ static void test_cert_layout(void)
 {
 	const iap_cert_t *cert = as_cert(golden_cert_delegated);
 
-	CHECK(sizeof(iap_cert_t) == IAP_CERT_SIZE, "iap_cert_t is exactly 132 bytes");
-	CHECK(IAP_CERT_SIGNED_LEN == 68U, "the root signature covers leaf_pubkey||serial");
+	CHECK(sizeof(iap_cert_t) == IAP_CERT_SIZE, "iap_cert_t is exactly 128 bytes");
+	CHECK(IAP_CERT_SIGNED_LEN == 64U, "the root signature covers leaf_pubkey only");
 	CHECK(memcmp(cert->leaf_pubkey, golden_leaf_pub, 64) == 0,
 			"leaf_pubkey lands at offset 0 of the tool's certificate");
-	CHECK(cert->serial >= 1U, "serial decodes as a little-endian uint32");
-	CHECK(memcmp(golden_cert_delegated + 68, cert->root_sig, 64) == 0,
-			"root_sig lands at offset 68");
+	CHECK(memcmp(golden_cert_delegated + 64, cert->root_sig, 64) == 0,
+			"root_sig lands at offset 64");
 }
 
 /* Test 4: a certificate is accepted exactly when the root this board trusts
- * signed it -- delegated and self-signed alike, since there is no self-signed
- * branch in the code. */
+ * signed it and the leaf has not been revoked -- delegated and self-signed
+ * alike, since there is no self-signed branch in the code. */
 static void test_cert_verify(void)
 {
-	CHECK(iap_cert_verify(as_cert(golden_cert_delegated), golden_root_pub),
+	CHECK(iap_cert_verify(as_cert(golden_cert_delegated), golden_root_pub, false),
 			"a delegated certificate verifies against its root");
-	CHECK(iap_cert_verify(as_cert(golden_cert_self), golden_root_pub),
+	CHECK(iap_cert_verify(as_cert(golden_cert_self), golden_root_pub, false),
 			"simple mode: a self-signed certificate takes the same path and verifies");
-	CHECK(!iap_cert_verify(as_cert(golden_cert_foreign), golden_root_pub),
+	CHECK(!iap_cert_verify(as_cert(golden_cert_foreign), golden_root_pub, false),
 			"a certificate signed by another root is rejected");
-	CHECK(!iap_cert_verify(as_cert(golden_cert_delegated), golden_foreign_pub),
+	CHECK(!iap_cert_verify(as_cert(golden_cert_delegated), golden_foreign_pub, false),
 			"the same certificate is rejected once the board trusts a different root");
 }
 
-/* Test 5: tampering anywhere in the signed prefix must break the root
+/* Test 5: revocation short-circuits verification even when the signature and
+ * the root are both perfect -- and only for the leaf actually named. */
+static void test_cert_revoked(void)
+{
+	CHECK(iap_cert_verify(as_cert(golden_cert_delegated), golden_root_pub, false),
+			"CONTROL: not revoked, and everything else about it is unchanged from "
+			"test_cert_verify -- so the next line failing means revocation, not a "
+			"broken signature");
+	CHECK(!iap_cert_verify(as_cert(golden_cert_delegated), golden_root_pub, true),
+			"a certificate whose leaf has been revoked is rejected regardless of signature");
+	CHECK(iap_cert_verify(as_cert(golden_cert_self), golden_root_pub, false),
+			"revoking one leaf does not touch a certificate that was never revoked");
+}
+
+/* Test 6: tampering anywhere in the signed prefix must break the root
  * signature. Swapping the leaf key is the attack the signature exists to
- * stop; the serial matters because C12 revocation will name certificates by
- * it, and a serial that can be edited after issuance revokes nothing. */
+ * stop. */
 static void test_cert_tamper(void)
 {
 	iap_cert_t tampered;
 
 	memcpy(&tampered, golden_cert_delegated, IAP_CERT_SIZE);
 	memcpy(tampered.leaf_pubkey, golden_foreign_pub, 64);
-	CHECK(!iap_cert_verify(&tampered, golden_root_pub),
+	CHECK(!iap_cert_verify(&tampered, golden_root_pub, false),
 			"substituting another leaf key breaks the root signature");
 
 	memcpy(&tampered, golden_cert_delegated, IAP_CERT_SIZE);
-	tampered.serial ^= 1U;
-	CHECK(!iap_cert_verify(&tampered, golden_root_pub),
-			"editing the serial breaks the root signature");
-
-	memcpy(&tampered, golden_cert_delegated, IAP_CERT_SIZE);
 	tampered.root_sig[0] ^= 0x01U;
-	CHECK(!iap_cert_verify(&tampered, golden_root_pub),
+	CHECK(!iap_cert_verify(&tampered, golden_root_pub, false),
 			"a corrupted root signature is rejected");
 }
 
-/* Test 6: the two-step image check. Both halves must hold -- a valid
+/* Test 7: the two-step image check. Both halves must hold -- a valid
  * certificate says nothing about who signed this image, and a valid image
- * signature says nothing if the leaf was never certified. */
+ * signature says nothing if the leaf was never certified (or has since been
+ * revoked). */
 static void test_cert_verify_image(void)
 {
 	uint8_t hash[32];
@@ -145,25 +153,29 @@ static void test_cert_verify_image(void)
 	golden_image_hash(hash);
 
 	CHECK(iap_cert_verify_image(hash, golden_image_sig_leaf,
-			as_cert(golden_cert_delegated), golden_root_pub),
+			as_cert(golden_cert_delegated), golden_root_pub, false),
 			"certified leaf + its own signature over the image is accepted");
 	CHECK(iap_cert_verify_image(hash, golden_image_sig_root,
-			as_cert(golden_cert_self), golden_root_pub),
+			as_cert(golden_cert_self), golden_root_pub, false),
 			"simple mode: root's own signature under a self-signed certificate is accepted");
 	CHECK(!iap_cert_verify_image(hash, golden_image_sig_foreign,
-			as_cert(golden_cert_foreign), golden_root_pub),
+			as_cert(golden_cert_foreign), golden_root_pub, false),
 			"an uncertified leaf is rejected even though it did sign the image");
 	CHECK(!iap_cert_verify_image(hash, golden_image_sig_foreign,
-			as_cert(golden_cert_delegated), golden_root_pub),
+			as_cert(golden_cert_delegated), golden_root_pub, false),
 			"a certified leaf does not vouch for an image somebody else signed");
+	CHECK(!iap_cert_verify_image(hash, golden_image_sig_leaf,
+			as_cert(golden_cert_delegated), golden_root_pub, true),
+			"a leaf revoked after installing an image no longer boots it -- this is "
+			"what makes revocation retroactive, not just block future uploads");
 
 	hash[0] ^= 0x01U;
 	CHECK(!iap_cert_verify_image(hash, golden_image_sig_leaf,
-			as_cert(golden_cert_delegated), golden_root_pub),
+			as_cert(golden_cert_delegated), golden_root_pub, false),
 			"the signature does not carry over to a different image hash");
 }
 
-/* Test 7: the handover the whole scheme rests on -- change the root and
+/* Test 8: the handover the whole scheme rests on -- change the root and
  * firmware certified by the old one stops verifying, with nothing else
  * touched. This is what makes setowner retroactively invalidate an installed
  * image. */
@@ -173,10 +185,10 @@ static void test_root_change_invalidates(void)
 
 	golden_image_hash(hash);
 	CHECK(iap_cert_verify_image(hash, golden_image_sig_leaf,
-			as_cert(golden_cert_delegated), golden_root_pub),
+			as_cert(golden_cert_delegated), golden_root_pub, false),
 			"before the handover the installed image verifies");
 	CHECK(!iap_cert_verify_image(hash, golden_image_sig_leaf,
-			as_cert(golden_cert_delegated), golden_foreign_pub),
+			as_cert(golden_cert_delegated), golden_foreign_pub, false),
 			"after a handover to another root the same image no longer verifies");
 }
 
@@ -224,6 +236,23 @@ static void test_uncertified_signer_rejected(void)
 			"a certified certificate with somebody else's signature is rejected");
 }
 
+/* Test 9b: a revoked leaf cannot open a session either -- revocation has to
+ * stop BOTH doors (upload and session auth), not just the one this file's
+ * other tests happen to exercise most. */
+static void test_revoked_leaf_rejected_in_session_auth(void)
+{
+	char nonce_hex[IAP_AUTH_NONCE_SIZE * 2U + 1U];
+	const char *msg = GOLDEN_AUTH_MSG;
+
+	arrange_golden_board();
+	test_owner_revoke(golden_leaf_pub);
+	iap_auth_issue_challenge(nonce_hex);
+	CHECK(!iap_auth_verify_and_consume((const uint8_t *)msg, (uint32_t)strlen(msg),
+			as_cert(golden_cert_delegated), golden_auth_sig_leaf),
+			"a session challenge signed by a revoked leaf is rejected");
+	test_owner_clear_revocations();
+}
+
 /* Test 10: a challenge answered after IAP_AUTH_NONCE_TTL_MS is refused even
  * though the signature is perfect. */
 static void test_nonce_expiry(void)
@@ -257,11 +286,13 @@ int main(void)
 	test_machine_id_hex_format();
 	test_cert_layout();
 	test_cert_verify();
+	test_cert_revoked();
 	test_cert_tamper();
 	test_cert_verify_image();
 	test_root_change_invalidates();
 	test_challenge_response();
 	test_uncertified_signer_rejected();
+	test_revoked_leaf_rejected_in_session_auth();
 	test_nonce_expiry();
 	test_no_pending_nonce();
 

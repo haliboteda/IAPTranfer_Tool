@@ -21,8 +21,8 @@ first claim, and factory reset.
 
 What gets signed is the first 88 bytes of the record about to be written:
 
-    type 'O' | slots 5 | format_ver 2 | generation | flags | new public key | uid
-       1          1          2 (LE)      4 (LE)     4 (LE)      64            12
+    type 'O' | reserved0 | format_ver 3 | generation | flags | new public key | uid
+       1          1            2 (LE)      4 (LE)     4 (LE)      64            12
 
 The generation is inside the signature on purpose: without it a captured record
 could be replayed into a later slot and undo a subsequent handover. The uid is
@@ -56,8 +56,11 @@ def signed_prefix(generation, new_key_hex, uid_hex):
     uid = bytes.fromhex(uid_hex)
     if len(uid) != 12:
         raise ValueError("uid must be 24 hex characters, got %r" % uid_hex)
-    return (bytes([0x4F, 5])                      # type 'O', slots
-            + struct.pack("<H", 2)                # format_ver
+    # byte 1 was `slots` (always 5) through format_ver 2; v3 (2026-09-20)
+    # dropped it for a reserved byte, always 0, that keeps every later field
+    # at the same offset. See open_plc_cube_ide/IAPServer/owner_slot.h.
+    return (bytes([0x4F, 0])                      # type 'O', reserved0
+            + struct.pack("<H", 3)                # format_ver
             + struct.pack("<I", generation)
             + struct.pack("<I", 0)                # flags
             + bytes.fromhex(new_key_hex)          # root_pubkey, 64 B

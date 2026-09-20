@@ -31,6 +31,7 @@ type signingOptions struct {
 	outPrefix  string
 	currentKey string
 	newKey     string
+	leaf       string
 	// keyExplicit says --key was actually typed. takeown must not fall back to
 	// the firmware signing key from local_config.json: claiming a customer's
 	// board with the project's own key is not recoverable without an ST-Link.
@@ -48,10 +49,9 @@ const usageText = `Usage:
                    "cert" and "getpubkey" speak. Send this to whoever holds the
                    root when you need a certificate issued for your key.
   IAPTool cert   [<leafPubHex>]
-                   issues a 132-byte leaf certificate signed by the signing key,
+                   issues a 128-byte leaf certificate signed by the signing key,
                    hex on stdout. No argument = self-signed (simple mode: the key
                    authorises itself); a 128-hex-char public key = delegated leaf.
-                   The serial comes from a counter file kept next to the key.
   IAPTool signraw <hex> [<key.pem>]  raw r||s signature over SHA-256 of those
                    bytes, hex on stdout. For the bootloader's owner-record
                    chain (setowner), not for firmware images.
@@ -63,6 +63,11 @@ const usageText = `Usage:
   IAPTool setowner <ip> --current-key=<owner.pem> --new-key=<next.pem>
                    hands a claimed board over to another key. The handover is
                    signed by the current owner, so no button is needed.
+  IAPTool revoke   <ip> --key=<owner.pem> --leaf=<pubkey>
+                   revokes one leaf (128-hex-char public key), signed by the
+                   current owner. From the next reset on, firmware certified by
+                   that leaf is refused -- including firmware already installed.
+                   No button is needed. The root itself can never be revoked.
 
   --key            ECDSA P-256 private key (PEM). When omitted, falls back to
                    "signing_key" in local_config.json, then to keys/fw_signing_key.pem
@@ -140,7 +145,7 @@ func main() {
 		// cert [<leafPubHex>] -- issue a certificate with the signing key as
 		// root. With no argument it self-signs (simple mode: the root
 		// authorises its own key); with one it delegates to that leaf public
-		// key. Prints the 264-hex-char certificate on stdout, which is
+		// key. Prints the 256-hex-char certificate on stdout, which is
 		// exactly what cdc/ether put on the wire.
 		keyPath := findSigningKey()
 		if keyPath == "" {
@@ -195,6 +200,16 @@ func main() {
 		}
 		RunSetOwner(args[1], g_signing.currentKey, g_signing.newKey)
 
+	case "revoke":
+		if len(args) < 2 {
+			logf(true, usageText)
+		}
+		revokeKey := g_signing.currentKey
+		if revokeKey == "" && g_signing.keyExplicit {
+			revokeKey = g_signing.keyPath
+		}
+		RunRevoke(args[1], revokeKey, g_signing.leaf)
+
 	case ModeCDC:
 		if len(args) < 3 {
 			logf(true, usageText)
@@ -211,7 +226,7 @@ func main() {
 
 	default:
 		logf(true, "Invalid mode: %s. Use 'cdc', 'ether', 'sign', 'genkey', 'pubkey', "+
-			"'cert', 'signraw', 'getowner', 'takeown' or 'setowner'", mode)
+			"'cert', 'signraw', 'getowner', 'takeown', 'setowner' or 'revoke'", mode)
 	}
 }
 
@@ -249,6 +264,8 @@ func parseSigningFlags(args []string) ([]string, error) {
 			g_signing.currentKey = value
 		case "new-key":
 			g_signing.newKey = value
+		case "leaf":
+			g_signing.leaf = value
 		default:
 			return nil, fmt.Errorf("unknown option --%s", name)
 		}

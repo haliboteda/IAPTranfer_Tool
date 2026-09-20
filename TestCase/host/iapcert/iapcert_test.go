@@ -2,9 +2,8 @@
 // the IAP protocol runs on (see IAPTranfer_Tool/iapcert).
 //
 // What these pin down is the part the board cannot tell us about: the exact
-// bytes the root signature covers, and the serial counter, which lives only on
-// the issuing machine. The board's half of the same format is checked by H2,
-// against certificates this code produced.
+// bytes the root signature covers. The board's half of the same format is
+// checked by H2, against certificates this code produced.
 //
 // Run with: go test ./TestCase/...
 package testcase
@@ -15,7 +14,6 @@ import (
 	"crypto/rand"
 	"crypto/sha256"
 	"crypto/x509"
-	"encoding/binary"
 	"encoding/hex"
 	"encoding/pem"
 	"math/big"
@@ -46,20 +44,17 @@ func writeKey(t *testing.T, dir, name string) (string, *ecdsa.PrivateKey) {
 	return path, key
 }
 
-// TestIssue_LayoutAndSignedBytes locks in what the board parses: three fields
-// at fixed offsets, and a root signature over exactly the first 68 of them. If
+// TestIssue_LayoutAndSignedBytes locks in what the board parses: two fields
+// at fixed offsets, and a root signature over exactly the first 64 of them. If
 // the signature ever covered a different span, every check on the board would
 // still "work" -- over the wrong bytes.
 func TestIssue_LayoutAndSignedBytes(t *testing.T) {
 	dir := t.TempDir()
 	rootPath, root := writeKey(t, dir, "root")
 
-	certHex, warning, err := iapcert.Issue(rootPath, "")
+	certHex, err := iapcert.Issue(rootPath, "")
 	if err != nil {
 		t.Fatalf("Issue failed: %v", err)
-	}
-	if warning != "" {
-		t.Fatalf("unexpected warning: %s", warning)
 	}
 	cert, err := hex.DecodeString(certHex)
 	if err != nil {
@@ -73,23 +68,20 @@ func TestIssue_LayoutAndSignedBytes(t *testing.T) {
 	if got := cert[:64]; string(got) != string(wantLeaf) {
 		t.Errorf("self-signed leaf_pubkey is not the root's own key:\n got %x\nwant %x", got, wantLeaf)
 	}
-	if got := binary.LittleEndian.Uint32(cert[64:68]); got != iapcert.SelfSignedSerial {
-		t.Errorf("self-signed serial is %d, want %d", got, uint32(iapcert.SelfSignedSerial))
-	}
 
 	digest := sha256.Sum256(cert[:iapcert.SignedLen])
-	r := new(big.Int).SetBytes(cert[68:100])
-	s := new(big.Int).SetBytes(cert[100:132])
+	r := new(big.Int).SetBytes(cert[64:96])
+	s := new(big.Int).SetBytes(cert[96:128])
 	if !ecdsa.Verify(&root.PublicKey, digest[:], r, s) {
-		t.Error("root_sig does not verify over sha256(cert[0:68]) -- the signed span moved")
+		t.Error("root_sig does not verify over sha256(cert[0:64]) -- the signed span moved")
 	}
 
-	// A signature over the whole certificate, or over the leaf key alone,
-	// would both pass the check above by accident if the span were wrong in
-	// only one direction. Verify it fails over a deliberately wrong span.
-	otherDigest := sha256.Sum256(cert[:64])
+	// A signature over the whole certificate would pass the check above by
+	// accident if the span were wrong. Verify it fails over a deliberately
+	// wrong span.
+	otherDigest := sha256.Sum256(cert)
 	if ecdsa.Verify(&root.PublicKey, otherDigest[:], r, s) {
-		t.Error("root_sig also verifies over just the leaf key -- the serial is not covered")
+		t.Error("root_sig also verifies over the whole certificate -- SignedLen is not pinned")
 	}
 }
 
@@ -102,7 +94,7 @@ func TestIssue_Delegated(t *testing.T) {
 	_, leaf := writeKey(t, dir, "leaf")
 
 	leafPubHex := iapcert.PublicKeyHex(&leaf.PublicKey)
-	certHex, _, err := iapcert.Issue(rootPath, leafPubHex)
+	certHex, err := iapcert.Issue(rootPath, leafPubHex)
 	if err != nil {
 		t.Fatalf("Issue failed: %v", err)
 	}
@@ -118,107 +110,9 @@ func TestIssue_RejectsMalformedLeafKey(t *testing.T) {
 	rootPath, _ := writeKey(t, dir, "root")
 
 	for _, bad := range []string{"abcd", "zz" + hex.EncodeToString(make([]byte, 63))} {
-		if _, _, err := iapcert.Issue(rootPath, bad); err == nil {
+		if _, err := iapcert.Issue(rootPath, bad); err == nil {
 			t.Errorf("Issue accepted %q as a leaf public key", bad)
 		}
-	}
-}
-
-// TestNextSerial_CountsUpAndPersists covers the decision recorded in
-// $PROD/docs/modules/M2-ownership.md: serials come from a counter file kept beside the
-// root private key. Two certificates sharing a serial would make a future
-// revocation (C12) revoke both, so "never the same twice for one root" is the
-// property, and it survives the process exiting.
-func TestNextSerial_CountsUpAndPersists(t *testing.T) {
-	dir := t.TempDir()
-	rootPath, _ := writeKey(t, dir, "root")
-
-	first, _, err := iapcert.NextSerial(rootPath)
-	if err != nil {
-		t.Fatalf("NextSerial failed: %v", err)
-	}
-	if first != 1 {
-		t.Errorf("first serial is %d, want 1", first)
-	}
-
-	second, _, err := iapcert.NextSerial(rootPath)
-	if err != nil {
-		t.Fatalf("NextSerial failed: %v", err)
-	}
-	if second != first+1 {
-		t.Errorf("second serial is %d, want %d", second, first+1)
-	}
-
-	// The counter is a file, not process state: a fresh read has to continue
-	// where the last one stopped.
-	data, err := os.ReadFile(iapcert.CounterPath(rootPath))
-	if err != nil {
-		t.Fatalf("no counter file beside the key: %v", err)
-	}
-	if len(data) == 0 {
-		t.Fatal("the counter file is empty")
-	}
-
-	third, _, err := iapcert.NextSerial(rootPath)
-	if err != nil {
-		t.Fatalf("NextSerial failed: %v", err)
-	}
-	if third != second+1 {
-		t.Errorf("third serial is %d, want %d", third, second+1)
-	}
-}
-
-// TestIssue_SerialLandsLittleEndian: the board reads the serial as a
-// little-endian uint32 at offset 64 with no parsing step, so the byte order
-// here is the format, not an implementation detail.
-func TestIssue_SerialLandsLittleEndian(t *testing.T) {
-	dir := t.TempDir()
-	rootPath, _ := writeKey(t, dir, "root")
-	_, leaf := writeKey(t, dir, "leaf")
-
-	if err := os.WriteFile(iapcert.CounterPath(rootPath), []byte("258\n"), 0644); err != nil {
-		t.Fatalf("could not seed the counter: %v", err)
-	}
-	certHex, _, err := iapcert.Issue(rootPath, iapcert.PublicKeyHex(&leaf.PublicKey))
-	if err != nil {
-		t.Fatalf("Issue failed: %v", err)
-	}
-	cert, _ := hex.DecodeString(certHex)
-
-	if got := binary.LittleEndian.Uint32(cert[64:68]); got != 259 {
-		t.Errorf("serial reads back as %d, want 259", got)
-	}
-}
-
-// TestIssue_SelfSignedDoesNotDrawANumber is the property that keeps a
-// revocation aimed at one delegated leaf from taking the root's own uploads
-// with it -- and that keeps an upload from writing to the directory the
-// private key lives in, which for an Arduino install is inside the board
-// package.
-func TestIssue_SelfSignedDoesNotDrawANumber(t *testing.T) {
-	dir := t.TempDir()
-	rootPath, _ := writeKey(t, dir, "root")
-	_, leaf := writeKey(t, dir, "leaf")
-
-	for i := 0; i < 3; i++ {
-		if _, _, err := iapcert.Issue(rootPath, ""); err != nil {
-			t.Fatalf("Issue failed: %v", err)
-		}
-	}
-	if _, err := os.Stat(iapcert.CounterPath(rootPath)); !os.IsNotExist(err) {
-		t.Errorf("self-signing created %s; it must leave the counter alone",
-			iapcert.CounterPath(rootPath))
-	}
-
-	// The first delegated certificate still starts at 1: the self-signed ones
-	// did not consume anything.
-	certHex, _, err := iapcert.Issue(rootPath, iapcert.PublicKeyHex(&leaf.PublicKey))
-	if err != nil {
-		t.Fatalf("Issue failed: %v", err)
-	}
-	cert, _ := hex.DecodeString(certHex)
-	if got := binary.LittleEndian.Uint32(cert[64:68]); got != 1 {
-		t.Errorf("first delegated serial is %d, want 1", got)
 	}
 }
 

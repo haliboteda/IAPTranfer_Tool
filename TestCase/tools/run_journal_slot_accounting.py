@@ -1,4 +1,4 @@
-"""One successful upload must consume exactly 9 journal slots.
+"""One successful upload must consume exactly 8 journal slots.
 
 Requirement R1-28. The bootloader prints its slot accounting on every boot
 (IAPServer/bootloader_state.c):
@@ -6,7 +6,7 @@ Requirement R1-28. The bootloader prints its slot accounting on every boot
     Bootloader state: <used>/<total> journal slots used, metadata <absent|present>
 
 so the case is: read that line, do one upload, read it again, and require the
-difference to be 9.
+difference to be 8.
 
     python3 tools/run_journal_slot_accounting.py --bin <file.bin>
     python3 tools/run_journal_slot_accounting.py --judge-only --before a.log --after b.log
@@ -32,8 +32,8 @@ STATE_RE = re.compile(
     "[ ]*metadata[ ]+(absent|present)")
 
 # 8 slots of metadata + 1 of log. The M record grew from 4 slots to 8 so the
-# whole 132-byte certificate fits; see $PROD/docs/modules/M1/JOURNAL.md.
-SLOTS_PER_UPLOAD = 9
+# whole 128-byte certificate fits; see $PROD/docs/modules/M1/JOURNAL.md.
+SLOTS_PER_UPLOAD = 8
 TAIL_S = 6
 
 

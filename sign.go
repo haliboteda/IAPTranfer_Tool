@@ -28,12 +28,11 @@ const sigLen = 64
 const keysDirName = "keys"
 const defaultKeyName = "fw_signing_key.pem"
 
-// A certificate lives at "<the key it covers>.cert" -- the same rule
-// iapcert.CounterPath uses for the serial counter, and for the same reason:
-// state derived from a key belongs beside that key, where it cannot be paired
-// with the wrong one. A fixed path like keys/fw_cert.txt would attach itself
-// to whichever key happened to be selected, including one --key pointed
-// somewhere else entirely.
+// A certificate lives at "<the key it covers>.cert": state derived from a key
+// belongs beside that key, where it cannot be paired with the wrong one. A
+// fixed path like keys/fw_cert.txt would attach itself to whichever key
+// happened to be selected, including one --key pointed somewhere else
+// entirely.
 //
 // The Arduino IDE passes no options at all (see platform.txt), so this has to
 // be findable by convention: it resolves the key to <exe dir>/keys/

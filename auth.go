@@ -83,7 +83,7 @@ func resolveUploadIdentity() (uploadIdentity, error) {
 	}
 
 	if id.delegated {
-		logf("Using certificate %s (serial %d) for %s", certPath, id.cert.Serial, keyPath)
+		logf("Using certificate %s for %s", certPath, keyPath)
 	}
 	return id, nil
 }

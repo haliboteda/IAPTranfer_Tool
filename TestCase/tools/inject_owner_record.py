@@ -5,7 +5,7 @@ bootloader's record handling (requirement R2-02, module M1).
     python3 tools/inject_owner_record.py --generation 7   pick the generation
     python3 tools/inject_owner_record.py --cleared        a factory-reset record
     python3 tools/inject_owner_record.py --corrupt        wrong format_ver, must be ignored
-    python3 tools/inject_owner_record.py --v1             the previous format, must be ignored
+    python3 tools/inject_owner_record.py --v1             the pre-2026-09-20 format (v2), must be ignored
     python3 tools/inject_owner_record.py --wrong-uid      another board's uid, must be ignored
     python3 tools/inject_owner_record.py --restore        put the plain bootloader back
 
@@ -46,23 +46,32 @@ from common import (cfg, Section, Ok, Fail,  # noqa: E402
 OWNER_BASE = 0x0801E000
 OWNER_OFFSET = OWNER_BASE - 0x08000000      # 0x1E000 = 122880
 RECORD_SIZE = 160
-OWNER_FORMAT_VER = 2
+OWNER_FORMAT_VER = 3
+# The format this firmware no longer accepts, for --v1 -- named for the flag,
+# not for what it writes: v2 was the format immediately before this one, and
+# is exactly as rejected as an actual v1 record would be (record_is_structurally_valid()
+# only ever compares against the CURRENT OWNER_FORMAT_VER, so any wrong number
+# proves the same thing).
+PREVIOUS_FORMAT_VER = 2
 UID_LEN = 12
 
 INTERESTING = re.compile(r"Owner slot|Bootloader state|APP Mod|UPLOAD Mod|"
                          r"NOT in effect|Reset cause|PUBLISHED|Claim it")
 
 
-def record(generation, format_ver, flags, key_hex, filler, uid=b""):
+def record(generation, format_ver, flags, key_hex, filler, uid=b"", record_type=0x4F):
     """One 160-byte owner record. prev_sig and reserved stay zero.
 
-    v2 put uid between root_pubkey and prev_sig, so the offsets below are the
-    v2 ones; a v1 record is the same 160 bytes with those 12 held at zero,
-    which is what --v1 produces.
+    Byte 1 was `slots` through format_ver 2; v3 dropped it (nothing ever read
+    it) in favour of a reserved byte that keeps every later field at the same
+    offset, so this always writes 0 there regardless of which format_ver is
+    being produced -- a --v1 record differs from a real one only in the
+    format_ver field itself, which is the one thing record_is_structurally_valid()
+    actually checks.
     """
     rec = bytearray(RECORD_SIZE)
-    rec[0] = 0x4F                                       # type 'O'
-    rec[1] = 5                                          # slots
+    rec[0] = record_type                                # 'O' (0x4F) or 'R' (0x52)
+    rec[1] = 0                                          # reserved0
     rec[2:4] = struct.pack("<H", format_ver)
     rec[4:8] = struct.pack("<I", generation)
     rec[8:12] = struct.pack("<I", flags)
@@ -129,9 +138,10 @@ def main():
     else:
         Section("building bootloader + owner record")
 
-        # format_ver: 2 normally, 99 for --corrupt and 1 for --v1, both of
-        # which the scanner must reject rather than try to interpret.
-        ver = 99 if args.corrupt else (1 if args.v1 else OWNER_FORMAT_VER)
+        # format_ver: 3 normally, 99 for --corrupt and 2 (PREVIOUS_FORMAT_VER)
+        # for --v1, both of which the scanner must reject rather than try to
+        # interpret.
+        ver = 99 if args.corrupt else (PREVIOUS_FORMAT_VER if args.v1 else OWNER_FORMAT_VER)
         flags = 1 if args.cleared else 0
 
         # A v2 record only counts on the board whose uid it carries. Cleared
@@ -167,7 +177,7 @@ def main():
                 filler = 0xAA
         rec = record(args.generation, ver, flags, key_hex, filler, uid)
 
-        print("  type 'O', slots 5, format_ver %d, generation %d, flags %d"
+        print("  type 'O', format_ver %d, generation %d, flags %d"
               % (ver, args.generation, flags))
 
         # 0xFF for the gap, so the unused part of the area still reads as erased.

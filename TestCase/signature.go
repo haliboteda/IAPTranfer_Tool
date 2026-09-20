@@ -129,7 +129,7 @@ func uploadImage(cfg config, image []byte, sigHex string, checksum uint32,
 	if err != nil {
 		return fail("could not use %s: %v", cfg.keyPath, err)
 	}
-	certHex, _, err := iapcert.Issue(cfg.keyPath, "")
+	certHex, err := iapcert.Issue(cfg.keyPath, "")
 	if err != nil {
 		return fail("could not issue a certificate with %s: %v", cfg.keyPath, err)
 	}
