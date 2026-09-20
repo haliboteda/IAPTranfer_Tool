@@ -63,6 +63,7 @@ CATALOG = [
     ("P13",          "-",                      "no renamed id is still cited anywhere"),
     ("P12",          "-",                      "OpenPLC_Docs: tickets close honestly, placeholders have owners"),
     ("T1-16",        "R1-20",                  "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)"),
+    ("T2-21",        "R2-04",                  "the root in force cannot revoke itself (real owner_root_ro.c over a fake record area)"),
     ("T4-01",        "-",                      "port tool protocol contract (real porttool.c, then the Go parser)"),
     ("T1-18a-T1-18g", "R1-21",                  "IAPTool key/certificate match against a stand-in board"),
     ("T1-19-T1-20",  "R1-24",                  "crypto cross-check against independent implementations"),
@@ -85,7 +86,8 @@ def print_catalog():
     for cid, covers, name in CATALOG:
         print("  %-*s  covers %-*s  %s" % (width, cid, cov, covers, name))
     print("")
-    print("  %d steps. --quick skips T1-16 / T4-01 / T1-18a-T1-18g / T1-19-T1-20 / P4." % len(CATALOG))
+    print("  %d steps. --quick skips T1-16 / T2-21 / T4-01 / T1-18a-T1-18g / T1-19-T1-20 / P4."
+          % len(CATALOG))
     print("  P7, P8 and P9 check the documents, not the firmware.")
 
 
@@ -220,6 +222,12 @@ def main():
 
         run_step("T1-16", "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)",
                  [python_exe(), TESTTOOL / "host" / "bootloader_unit" / "build.py"],
+                 needs=cc_need, cwd=tool_repo)
+
+        # The owner slot T1-16 sees is a stub, so the real resolve_chain() runs
+        # nowhere else on the host. This is the only step that exercises R4.
+        run_step("T2-21", "the root in force cannot revoke itself (real owner_root_ro.c over a fake record area)",
+                 [python_exe(), TESTTOOL / "host" / "owner_revoke" / "build.py"],
                  needs=cc_need, cwd=tool_repo)
 
         # build.py runs both halves: the C harness against the real firmware
