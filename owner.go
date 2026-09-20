@@ -198,9 +198,19 @@ func RunTakeOwn(ip, keyPath string) {
 
 	gen, was, err := ownerReadState(ip)
 	logf(err, "cannot read this board's ownership state")
+	// Reported, not enforced. "getowner" answers a generation and nothing else,
+	// so a board cleared by a factory reset is indistinguishable here from a
+	// claimed one -- its generation keeps counting. Refusing on gen != 0 turned
+	// a board that the bootloader would have accepted (owner_slot_claim()
+	// allows a cleared record) into one that could not be claimed at all.
+	// The board makes the decision and says why; this only says what we saw.
+	// Issue: $PROD/maps/owner-revoke-and-boot-upgrade/issues/OWN-11-getowner-cannot-say-cleared.md
 	if gen != 0 {
-		logf(true, "This board is already claimed (generation %d, key %s...).\n"+
-			"Use setowner with the current owner's key to hand it over.", gen, was[:32])
+		fmt.Printf("This board reports generation %d, key %s...\n", gen, was[:32])
+		fmt.Println("If it is still claimed the board will refuse, and setowner with the")
+		fmt.Println("current owner's key is the way to hand it over. If it was cleared by a")
+		fmt.Println("factory reset the claim goes through -- the board decides, not this tool.")
+		fmt.Println()
 	}
 
 	fmt.Println("About to claim this board for:")

@@ -86,7 +86,12 @@ def main():
 
     Section("before")
     was = tcp_command(ip, args.port, "getpubkey")
+    # The generation BEFORE, because the claim is judged on a delta, not on a
+    # fixed number: owner_slot_claim() writes "past everything already
+    # written", so a board that was factory-reset comes back at 6, not at 1.
+    was_gen = tcp_command(ip, args.port, "getowner")
     print("  getpubkey: %s" % was)
+    print("  getowner:  %s" % was_gen)
     if not re.fullmatch(r"[0-9a-fA-F]{128}", was):
         Fail("the board did not answer getpubkey with a key -- is it in the bootloader?")
         return 2
@@ -147,13 +152,20 @@ def main():
         Fail("  claimed  %s" % claimed)
         Fail("  reports  %s" % now)
         return 1
-    if gen != "1":
-        Fail("the board reports generation %s, expected 1" % gen)
+    try:
+        want = int(was_gen.strip()) + 1
+        got = int(gen.strip())
+    except ValueError:
+        Fail("cannot read the generation: before=%r after=%r" % (was_gen, gen))
         return 1
-    Ok("claimed: the board now reports the new key as its root, at generation 1")
+    if got != want:
+        Fail("the board reports generation %d; it was %s before, so %d was due"
+             % (got, was_gen.strip(), want))
+        return 1
+    Ok("claimed: the board now reports the new key as its root, at generation %d" % got)
     print()
     print("Next: reset the board. The published-root warning should be gone, the boot")
-    print("log should say 'claimed at generation 1', and an application signed by the")
+    print("log should say 'claimed at generation %d', and an application signed by the" % got)
     print("OLD key must now be refused - that is what proves the new key is in use.")
     print("To undo: python3 tools/flash_bootloader.py  (erases the sector the records live in)")
     return 0
