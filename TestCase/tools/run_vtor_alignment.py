@@ -183,7 +183,7 @@ def main():
         return 1
 
     Section("listening for the report")
-    ports = args.ports if args.ports is not None else [getattr(cfg, "LOG_PORT", "")]
+    ports = args.ports if args.ports is not None else list(getattr(cfg, "LOG_PORTS", []))
     handles = open_log_ports([p for p in ports if p])
     if not handles:
         Fail("no serial port opened -- the probe reports on RS232 (PC10/PC11)")
