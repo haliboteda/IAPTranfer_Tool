@@ -129,7 +129,7 @@ func ownerSignedPrefix(generation uint32, pubKeyHex string, uidHex string) ([]by
 // target board's own uid. Same shape as ownerSignedPrefix(), same reason: the
 // board fills uid in from its own hardware UID, so the signature has to cover
 // the exact bytes it will end up with.
-func ownerRevokeSignedPrefix(generation uint32, leafPrefixHex string, uidHex string) ([]byte, error) {
+func ownerRevokeSignedPrefix(leafPrefixHex string, uidHex string) ([]byte, error) {
 	prefix, err := hex.DecodeString(leafPrefixHex)
 	if err != nil || len(prefix) != ownerRevokePrefixLen {
 		return nil, fmt.Errorf("the leaf prefix must be %d hex characters", ownerRevokePrefixLen*2)
@@ -145,7 +145,10 @@ func ownerRevokeSignedPrefix(generation uint32, leafPrefixHex string, uidHex str
 	b.WriteByte(ownerRecordTypeRevoke)
 	b.WriteByte(ownerRecordReserved0)
 	binary.Write(&b, binary.LittleEndian, uint16(ownerRecordFormatVer))
-	binary.Write(&b, binary.LittleEndian, generation)
+	// generation is fixed at 0: an 'R' record is not a link in the ownership
+	// chain, so it has no position in one. The board writes 0 too, and the
+	// signature covers these bytes, so both sides must agree on the value.
+	binary.Write(&b, binary.LittleEndian, uint32(0))
 	binary.Write(&b, binary.LittleEndian, uint32(0)) // flags: unused for 'R'
 	b.Write(payload)
 	b.Write(uid)
@@ -310,17 +313,16 @@ func RunRevoke(ip, currentKeyPath, leafPubHex string) {
 	uidHex, err := ownerGetUID(ip)
 	logf(err, "cannot read this board's UID")
 
-	next := gen + 1
-	prefix, err := ownerRevokeSignedPrefix(next, leafPrefixHex, uidHex)
+	prefix, err := ownerRevokeSignedPrefix(leafPrefixHex, uidHex)
 	logf(err, "cannot build the revocation record")
 
 	sig, err := signRawHex(hex.EncodeToString(prefix), currentKeyPath)
 	logf(err, "cannot sign the revocation")
 
-	fmt.Printf("Revoking at generation %d -> %d\n", gen, next)
+	fmt.Printf("Revoking one leaf on the board owned at generation %d\n", gen)
 	fmt.Printf("  leaf (first %d bytes): %s\n", ownerRevokePrefixLen, leafPrefixHex)
 
-	reply, err := ownerCommand(ip, fmt.Sprintf("revoke %d %s %s", next, leafPrefixHex, strings.TrimSpace(sig)))
+	reply, err := ownerCommand(ip, fmt.Sprintf("revoke %s %s", leafPrefixHex, strings.TrimSpace(sig)))
 	logf(err, "the revoke command did not get through")
 	reply = strings.TrimSpace(reply)
 	if !strings.Contains(reply, Rsp_OK) {
@@ -340,6 +342,9 @@ func RunRevoke(ip, currentKeyPath, leafPubHex string) {
 	if now != strings.ToLower(currentPub) {
 		logf(true, "The board answered OK but now trusts %s, not %s -\n"+
 			"a revocation must not change the root.", now, strings.ToLower(currentPub))
+	}
+	if strings.Contains(reply, "already revoked") {
+		fmt.Println("That leaf was already revoked; nothing was written.")
 	}
 	fmt.Printf("Done. The board still trusts %s;\n", now)
 	fmt.Println("any firmware certified by the revoked leaf is refused from the next reset on.")

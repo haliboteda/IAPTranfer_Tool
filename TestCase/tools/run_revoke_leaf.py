@@ -263,6 +263,60 @@ def move_to_bootloader(iap, ip, port, key, cert, ports):
                         tcp_command(ip, port, "getpubkey")) is not None
 
 
+def board_free_slots_from(log):
+    """Free owner-record slots parsed out of a boot log already captured."""
+    m = re.search(r"Owner slot: (\d+)/\d+ slot\(s\) free", log)
+    return int(m.group(1)) if m else None
+
+
+def board_revoked_count_from(log):
+    """How many leaves the board reports as revoked, from a captured boot log.
+
+    Judged as a DELTA, never against a fixed number: a board accumulates
+    revocations across runs and they cannot be erased without reflashing the
+    bootloader, so "expected exactly 2" is only ever true on a fresh board.
+    """
+    m = re.search(r"(\d+) leaf\(s\) revoked", log)
+    return int(m.group(1)) if m else None
+
+
+def board_free_slots(ip, port, cli, ports, seconds):
+    """Free owner-record slots, read off a boot log. None when unreadable.
+
+    The count only appears on the serial log ("Owner slot: N/51 slot(s) free"),
+    so this costs a reset -- there is no TCP command that reports it.
+    """
+    log = reset_and_capture(cli, ports, seconds)
+    m = re.search(r"Owner slot: (\d+)/\d+ slot\(s\) free", log)
+    return int(m.group(1)) if m else None
+
+
+
+def move_to_bootloader_selfsigned(iap, ip, port, owner_key, ports):
+    """Bring a running application to the bootloader using the OWNER key alone.
+
+    Same mechanism as move_to_bootloader (oversize image, real authenticated
+    reboot), but self-signed: no leaf certificate involved. Used where the point
+    is only to reach the bootloader, so a leaf that cannot drive the handshake
+    would otherwise fail a case about something else entirely. See the ticket on
+    leaf certificates that cannot drive the reboot handshake.
+    """
+    big = Path(get_scratch_file("t2_rev_oversize.bin"))
+    if not big.exists() or big.stat().st_size < OVERSIZE_BYTES:
+        with open(str(big), "wb") as fh:
+            fh.truncate(OVERSIZE_BYTES)
+    open_ports = open_log_ports(ports)
+    out_path = get_scratch_file("t2_rev_self.out")
+    err_path = get_scratch_file("t2_rev_self.err")
+    run_while_draining([iap, "ether", str(big), ip, "--key=%s" % owner_key],
+                       open_ports, out_path, err_path)
+    read_log_ports(open_ports, 3)
+    if not wait_for_board(ip, timeout=30.0, port=port):
+        return False
+    return re.fullmatch(r"[0-9a-fA-F]{128}",
+                        tcp_command(ip, port, "getpubkey")) is not None
+
+
 def board_generation(ip, port):
     """The board's current owner generation as an int, or None."""
     gen = tcp_command(ip, port, "getowner")
@@ -281,6 +335,22 @@ def build_precondition(st, args):
     if not wait_for_board(st["ip"], timeout=60.0, port=args.port):
         Fail("the board did not answer UDP discovery at %s" % st["ip"])
         return False
+
+    # Everything below talks to the bootloader. A board running its application
+    # answers none of it, so bring it over first -- self-signed with the owner
+    # key, which needs no leaf certificate to exist yet.
+    if board_generation(st["ip"], args.port) is None:
+        print("  the board is running its application - bringing it to the bootloader")
+        big = Path(get_scratch_file("t2_rev_oversize.bin"))
+        if not big.exists() or big.stat().st_size < OVERSIZE_BYTES:
+            with open(str(big), "wb") as fh:
+                fh.truncate(OVERSIZE_BYTES)
+        run_capture([st["iap"], "ether", str(big), st["ip"],
+                     "--key=%s" % args.current_key])
+        if not wait_for_board(st["ip"], timeout=30.0, port=args.port):
+            Fail("  the board did not come back after the reboot request")
+            return False
+
     gen = board_generation(st["ip"], args.port)
     root = tcp_command(st["ip"], args.port, "getpubkey").lower()
     print("  generation: %s" % gen)
@@ -308,8 +378,8 @@ def build_precondition(st, args):
         return False
     Ok("  claimed at generation %d, and --current-key is its root" % gen)
 
-    Section("Precondition 2/4  issue TWO leaf certificates from the current root")
-    for tag in ("doomed_leaf", "spared_leaf"):
+    Section("Precondition 2/4  issue THREE leaf certificates from the current root")
+    for tag in ("doomed_leaf", "spared_leaf", "third_leaf"):
         pem = iap_genkey(st["iap"], st["keydir"], tag)
         if pem is None:
             return False
@@ -388,7 +458,7 @@ def case_t2_18(st, args):
     # not at all -- so this one goes over raw TCP, the same exception T2-04 makes.
     prefix = st["doomed_leaf"]["pub"][:2 * REVOKE_PREFIX_LEN]
     bogus = "11" * 64
-    cmd = "revoke %d %s %s" % (before + 1, prefix, bogus)
+    cmd = "revoke %s %s" % (prefix, bogus)
     print("  -> %s" % cmd)
     reply = (tcp_command(st["ip"], args.port, cmd) or "").strip()
     print("  <- %s" % reply)
@@ -519,6 +589,88 @@ def case_t2_17(st, args):
     return verdict
 
 
+def case_t2_19_20(st, args):
+    """Revoke a SECOND, different leaf -- and prove a repeat revoke is idempotent.
+
+    This is the case whose absence let a real defect through: T2-15 to T2-18 all
+    passed while a board could only ever be revoked once, because not one of them
+    revoked twice. See OWN-06 in $PROD/maps/owner-revoke-and-boot-upgrade/.
+
+    Runs last: it needs the board in the bootloader and it spends owner slots.
+    """
+    Section("T2-19  a second, different leaf can also be revoked")
+    if not move_to_bootloader_selfsigned(st["iap"], st["ip"], args.port,
+                                         args.current_key, st["ports"]):
+        Fail("  could not get the board into the bootloader")
+        return SETUP
+
+    before_log = reset_and_capture(st["cli"], st["ports"], args.seconds)
+    revoked_before = board_revoked_count_from(before_log)
+    if revoked_before is None:
+        Fail("  could not read the revoked count before the second revocation")
+        return SETUP
+    if not move_to_bootloader_selfsigned(st["iap"], st["ip"], args.port,
+                                         args.current_key, st["ports"]):
+        Fail("  could not get the board back into the bootloader")
+        return SETUP
+
+    out, rc = run_capture([st["iap"], "revoke", st["ip"],
+                           "--key=%s" % args.current_key,
+                           "--leaf=%s" % st["spared_leaf"]["pub"]])
+    for line in nonblank_lines(out):
+        print("    T | " + line)
+    verdict = PASS
+    if rc != 0:
+        Fail("  revoking the second leaf failed (IAPTool exit %d)" % rc)
+        verdict = FAIL
+
+    log = reset_and_capture(st["cli"], st["ports"], args.seconds)
+    if LOG_CAPTURE_PROOF not in log:
+        Fail("  no boot log captured")
+        return SETUP
+    revoked_after = board_revoked_count_from(log)
+    if revoked_after is None:
+        Fail("  could not read the revoked count back")
+        return SETUP
+    if revoked_after != revoked_before + 1:
+        Fail("  revoked count went %d -> %d, expected +1: the second one did not take"
+             % (revoked_before, revoked_after))
+        verdict = FAIL
+    else:
+        Ok("  revoked count %d -> %d, the second leaf took effect"
+           % (revoked_before, revoked_after))
+
+    Section("T2-20  revoking the same leaf again is idempotent")
+    # The reset above left the board in the bootloader: the running app was
+    # signed by spared_leaf, which is now revoked, so it no longer starts.
+    free_mid = board_free_slots_from(log)
+    out, rc = run_capture([st["iap"], "revoke", st["ip"],
+                           "--key=%s" % args.current_key,
+                           "--leaf=%s" % st["spared_leaf"]["pub"]])
+    for line in nonblank_lines(out):
+        print("    T | " + line)
+    if rc != 0:
+        Fail("  a repeat revoke should succeed, got exit %d" % rc)
+        verdict = FAIL
+    elif "already revoked" not in out:
+        Fail("  the tool did not report that the leaf was already revoked")
+        verdict = FAIL
+    else:
+        Ok("  the board answered 'already revoked'")
+
+    free_after = board_free_slots(st["ip"], args.port, st["cli"], st["ports"], args.seconds)
+    if (free_mid is None) or (free_after is None):
+        Fail("  could not read the free-slot count around the repeat")
+        return SETUP
+    if free_after != free_mid:
+        Fail("  a repeat revoke spent a slot: %d -> %d" % (free_mid, free_after))
+        verdict = FAIL
+    else:
+        Ok("  no slot was spent (%d free, unchanged)" % free_after)
+    return verdict
+
+
+
 # -------------------------------------------------------------------- main
 def main():
     ap = argparse.ArgumentParser(add_help=True)
@@ -531,6 +683,8 @@ def main():
     ap.add_argument("--stop-after", choices=["T2-18", "T2-15", "T2-16", "T2-17"],
                     default="T2-17",
                     help="stopping before T2-17 leaves the board without a runnable app")
+    ap.add_argument("--second-leaf", action="store_true",
+                    help="also run T2-19/T2-20: revoke a SECOND leaf, then repeat it; spends two more owner slots and leaves the board without a runnable app")
     ap.add_argument("--compare-bytes", default="0",
                     help="bytes of the application region to read back; 0 = all of it")
     ap.add_argument("--seconds", type=int, default=10, help="boot log capture window")
@@ -615,6 +769,12 @@ def main():
     if args.stop_after == "T2-17" and "T2-17" not in ran and \
             (not results or results[-1][1] != SETUP):
         ran["T2-17"] = case_t2_17(st, args)
+
+    if args.second_leaf and (ran.get("T2-17") == PASS):
+        ran["T2-19/T2-20"] = case_t2_19_20(st, args)
+        order = order + ["T2-19/T2-20"]
+    elif args.second_leaf:
+        Warn("T2-19/T2-20 skipped: the control T2-17 did not pass first")
 
     Section("Verdict")
     for name in order:
