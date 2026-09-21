@@ -41,6 +41,20 @@ func RunCDC(portName, filePath string) {
 	logf("[PATH] start cdc upgrade flow, target=%s", portName)
 
 	board, ok := cdcIdentify(portName)
+	if ok {
+		// Runs, but on this path it can only ever let the upload through: a
+		// board that answers cdcIdentify is already in the bootloader, and the
+		// bootloader reports "-" for the app version. A board still running the
+		// application answers nothing at all (see cdcIdentify below), so there
+		// is no moment on the CDC path at which the installed version is
+		// readable.
+		//
+		// => THE VERSION GATE DOES NOT PROTECT CDC UPLOADS. Only the ethernet
+		// path can compare. The call is kept so the one-shot force marker is
+		// still reset by an upload without --force, and so this stays correct
+		// if the CDC path ever learns to reach the application.
+		checkVersionGate(filePath, board, true, g_forceFlash)
+	}
 	if !ok {
 		logf("No bootloader answered. Asking the application to reboot into it...")
 		triggerPortResetAndWait(portName, getRebootWaitDuration())

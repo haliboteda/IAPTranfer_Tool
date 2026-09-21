@@ -19,11 +19,16 @@ const (
 )
 
 type boardInfo struct {
-	UID     string
-	IP      string
-	Role    string
-	Version string
-	Raw     string
+	UID  string
+	IP   string
+	Role string
+	// Version is the board package release (identity field 4) -- the same for
+	// every sketch built with one package. AppVersion is the sketch's own
+	// (field 5), which is what the version gate compares. Firmware older than
+	// 2026-09-21 sends four fields and leaves AppVersion empty.
+	Version    string
+	AppVersion string
+	Raw        string
 }
 
 const bootloaderDiscoveryRetries = 3
@@ -50,6 +55,12 @@ func RunEtherUpgrade(filePath, ip string) {
 
 	targetUID := board.UID
 	logf("[PATH] target device UID=%s cached for this upgrade", targetUID)
+
+	// Has to run here, before anything asks the board to leave the
+	// application: in the bootloader the app-version field is "-" and what is
+	// currently installed can no longer be read. A board that never answered
+	// has already exited above, so reaching this line means discovery worked.
+	checkVersionGate(filePath, board, true, g_forceFlash)
 
 	// Resolved once and reused: a run that starts from the application state
 	// authenticates twice (the reboot, then the flash), and issuing a fresh
@@ -191,12 +202,18 @@ func parseBoardInfoFromReply(reply, fallbackIP string) (boardInfo, bool) {
 		return boardInfo{}, false
 	}
 
+	appVersion := ""
+	if len(parts) >= 5 {
+		appVersion = strings.TrimSpace(parts[4])
+	}
+
 	return boardInfo{
-		UID:     uid,
-		IP:      ip,
-		Role:    role,
-		Version: strings.Join(parts[3:], "_"),
-		Raw:     raw,
+		UID:        uid,
+		IP:         ip,
+		Role:       role,
+		Version:    strings.TrimSpace(parts[3]),
+		AppVersion: appVersion,
+		Raw:        raw,
 	}, true
 }
 
@@ -525,6 +542,10 @@ func sendFile(conn net.Conn, filePath string, id uploadIdentity, sigHex string) 
 		}
 		if readErr == io.EOF {
 			logf("File transfer complete.")
+			// Only now is the one-shot force marker written: a transfer that
+			// failed above never reaches this line, so retrying a failed
+			// forced flash is not blocked.
+			noteFlashSucceeded()
 			break
 		}
 		if readErr != nil {

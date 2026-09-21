@@ -184,6 +184,16 @@ func RunGetOwner(ip string) {
 	}
 	fmt.Printf("Trusted key: %s\n", key)
 	fmt.Println("Only firmware signed by that key will start.")
+
+	// Without these lines the output reads like a dead end. It is not: a board
+	// that was just factory-reset still reports a non-zero generation (the reset
+	// writes a record of its own), so "Claimed at generation N" on its own
+	// misleads. The wire protocol cannot say "cleared" and deliberately will not
+	// be extended to -- see $PROD/docs/modules/M2-ownership.md.
+	fmt.Println()
+	fmt.Println("To hand this board to a different key:")
+	fmt.Println("  setowner - signed by the current owner's key, no button needed")
+	fmt.Println("  takeown  - after a factory reset (hold BOOT0), physical presence required")
 }
 
 // RunTakeOwn claims an unclaimed board for the key in keyPath.

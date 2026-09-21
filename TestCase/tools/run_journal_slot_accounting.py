@@ -1,12 +1,12 @@
-"""One successful upload must consume exactly 8 journal slots.
+"""One successful upload must consume exactly 7 metadata slots.
 
 Requirement R1-28. The bootloader prints its slot accounting on every boot
 (IAPServer/bootloader_state.c):
 
-    Bootloader state: <used>/<total> journal slots used, metadata <absent|present>
+    Bootloader state: <used>/<total> metadata slots used, metadata <absent|present>
 
 so the case is: read that line, do one upload, read it again, and require the
-difference to be 8.
+difference to be 7.
 
     python3 tools/run_journal_slot_accounting.py --bin <file.bin>
     python3 tools/run_journal_slot_accounting.py --judge-only --before a.log --after b.log
@@ -24,16 +24,19 @@ from common import (cfg, Section, Ok, Warn, Fail, close_ports,  # noqa: E402
                     get_iap_tool, get_programmer_cli, get_scratch_file, open_log_ports,
                     read_log_ports, read_text, run_while_draining)
 
-# bootloader_state.c prints: "Bootloader state: %u/%u journal slots used, metadata %s".
+# bootloader_state.c prints: "Bootloader state: %u/%u metadata slots used, metadata %s".
 # Spelled with explicit classes rather than shorthand so the pattern survives
 # being copied through shells and generators.
 STATE_RE = re.compile(
-    "Bootloader state:[ ]*([0-9]+)[ ]*/[ ]*([0-9]+)[ ]+journal slots used,"
+    "Bootloader state:[ ]*([0-9]+)[ ]*/[ ]*([0-9]+)[ ]+metadata slots used,"
     "[ ]*metadata[ ]+(absent|present)")
 
 # 8 slots of metadata + 1 of log. The M record grew from 4 slots to 8 so the
-# whole 128-byte certificate fits; see $PROD/docs/modules/M1/JOURNAL.md.
-SLOTS_PER_UPLOAD = 8
+# whole 128-byte certificate fits; see $PROD/docs/modules/M1/SECTOR-15.md.
+# 7 = the metadata record alone. It was 8 until 2026-09-21, when the eighth
+# slot -- the UPDATE_OK event -- went away with the event log
+# ($PROD/docs/modules/M1/SECTOR-15.md).
+SLOTS_PER_UPLOAD = 7
 TAIL_S = 6
 
 

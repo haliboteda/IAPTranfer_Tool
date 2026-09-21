@@ -1,3 +1,8 @@
+/* Required by the core since 2026-09-21: a sketch without a version does not
+ * link. Test fixtures all use 1.0.0 -- the upload gate lets equal versions
+ * through, so this never blocks re-flashing a fixture. */
+OPENPLC_APP_VERSION(1, 0, 0);
+
 // Minimal app image for boot + IAP acceptance runs.
 // Prints a banner the test scripts can anchor on, then idles.
 //

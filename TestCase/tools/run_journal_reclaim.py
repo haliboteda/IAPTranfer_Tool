@@ -5,7 +5,7 @@
     python3 tools/run_journal_reclaim.py --inspect        read and report, change nothing
 
 Filling the journal by uploading is not an option: one upload costs 9 slots out
-of 4096, so it would take about 390 uploads and most of a day. This fills it
+of 3840, so it would take about 540 uploads and most of a day. This fills it
 directly instead, then drives one real upload and watches for the reclaim.
 
 HOW THE SECTOR IS FILLED, AND WHY NOT BY ERASING IT
@@ -54,17 +54,24 @@ from common import (cfg, Section, Ok, Warn, Fail, close_ports,  # noqa: E402
                     get_programmer_cli, get_scratch_file, open_log_ports,
                     python_exe, read_log_ports)
 
-STATE_ADDR = 0x081E0000
+# Sector 15 is split since 2026-09-21: the first 8 KiB is calibration data,
+# the metadata area starts after it. Erasing still takes the whole sector, so
+# SECTOR_ADDR is what gets erased while METADATA_ADDR is what gets counted.
+# See $PROD/docs/modules/M1/SECTOR-15.md and DECISIONS.md #61.
+SECTOR_ADDR = 0x081E0000
 SECTOR_BYTES = 0x20000
+CALIB_BYTES = 0x2000
+STATE_ADDR = SECTOR_ADDR + CALIB_BYTES
 SLOT = 32
-TOTAL_SLOTS = SECTOR_BYTES // SLOT
+METADATA_BYTES = SECTOR_BYTES - CALIB_BYTES
+TOTAL_SLOTS = METADATA_BYTES // SLOT
 
 REC_BLANK = 0xFF
 REC_LOG = 0x4C
 
 EVT_UPDATE_OK = 1
-JOURNAL_FULL = "** Journal full - new events are not being recorded."
-RECLAIMING = "Reclaiming state sector"
+JOURNAL_FULL = "** Metadata area full - the next successful update reclaims it."
+RECLAIMING = "Reclaiming metadata area"
 APP_MOD = "** APP Mod"
 
 
@@ -110,7 +117,7 @@ def fill(data, leave_free):
 
 def read_sector(cli, path):
     r = subprocess.run([cli, "-c", "port=SWD", "mode=UR", "-r",
-                        hex(STATE_ADDR), hex(SECTOR_BYTES), str(path)],
+                        hex(STATE_ADDR), hex(METADATA_BYTES), str(path)],
                        capture_output=True, text=True, timeout=180)
     return r.returncode == 0 and Path(path).exists()
 
@@ -136,8 +143,8 @@ def main():
         Fail("could not read the state sector over SWD")
         return 2
     data = raw.read_bytes()
-    if len(data) != SECTOR_BYTES:
-        Fail("read %d bytes, expected %d" % (len(data), SECTOR_BYTES))
+    if len(data) != METADATA_BYTES:
+        Fail("read %d bytes, expected %d" % (len(data), METADATA_BYTES))
         return 2
 
     used, last_log = scan(data)

@@ -78,6 +78,10 @@ const usageText = `Usage:
                    key>.cert", and with no certificate there the signing key
                    certifies itself - which is what one person with one key wants.
   --out            Output prefix for "sign". Defaults to the .bin path without its extension.
+  --force          Flash even when the image is older than what the board runs.
+                   One-shot: refused again until an upload arrives without it.
+                   The Arduino IDE passes this from
+                   Tools > Force flash (allow older version).
 
 To rotate the signing key, run IAPServer/keys/rotate_keys.sh.`
 
@@ -244,6 +248,14 @@ func parseSigningFlags(args []string) ([]string, error) {
 		}
 
 		name, value, hasValue := strings.Cut(strings.TrimPrefix(arg, "--"), "=")
+
+		// Boolean flag: it takes no value, so it must not swallow the next
+		// argument the way the value-taking options below do.
+		if name == "force" {
+			g_forceFlash = true
+			continue
+		}
+
 		if !hasValue {
 			if i+1 >= len(args) {
 				return nil, fmt.Errorf("option --%s needs a value", name)
