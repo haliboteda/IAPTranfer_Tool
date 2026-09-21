@@ -22,6 +22,12 @@ Two things it refuses to hand over a broken image for:
     reach the compiler would leave the banner unchanged, and the upgrade
     criterion would then pass or fail for reasons nobody could see.
 
+--ver stamps the banner only. Both images keep the sketch's own
+OPENPLC_APP_VERSION(1, 0, 0), because the five-path test proves that each upload
+path works, not that the version gate bites -- and a path that re-flashes an
+earlier image would be refused if the versions differed. Only the .bin is handed
+over anyway, so the .version file the gate reads never reaches it.
+
 Exit 0 = built and checked, 1 = something was wrong with it, 2 = setup missing.
 """
 

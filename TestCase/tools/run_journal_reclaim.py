@@ -1,11 +1,11 @@
-"""R1-29 -- a full journal sector is reclaimed, and the board recovers.
+"""R1-29 -- a full metadata area is reclaimed, and the board recovers.
 
     python3 tools/run_journal_reclaim.py --bin <app.bin>
     python3 tools/run_journal_reclaim.py --bin <app.bin> --leave 4
     python3 tools/run_journal_reclaim.py --inspect        read and report, change nothing
 
-Filling the journal by uploading is not an option: one upload costs 9 slots out
-of 3840, so it would take about 540 uploads and most of a day. This fills it
+Filling the area by uploading is not an option: one upload costs 7 slots out of
+3840, so it would take about 548 uploads and most of a day. This fills it
 directly instead, then drives one real upload and watches for the reclaim.
 
 HOW THE SECTOR IS FILLED, AND WHY NOT BY ERASING IT
@@ -20,23 +20,16 @@ a sector before writing into it. Writing only the appended part would erase the
 metadata that was being preserved. (inject_owner_record.py learned the same
 lesson on the bootloader's own sector.)
 
-RECORD FORMAT
+FILLER FORMAT
 
-One slot, 32 bytes, little-endian, from iap_log_rec_t in
-$BOOT/IAPServer/bootloader_state.c:
-
-    u8 type=0x4C('L')  u8 slots=1  u8 event  u8 method
-    u32 peer_ip  u32 tick_ms  u32 auth_counter  u32 detail
-    u8 prev_hash[12]
-
-prev_hash is SHA-256 over the PREVIOUS log record's raw 32 bytes, truncated to
-12; the first log record in the sector carries zeros. Verified against a real
-sector read on 2026-09-18: 85 records, 0 chain breaks.
+One slot, 32 bytes, type 0x4C ('L'). The bootloader no longer knows this type,
+and a record it cannot read is what makes it declare the area unusable -- which
+is the state R1-29 is about.
 
 Criteria:
-    ** Journal full - new events are not being recorded.    the fill took
-    Reclaiming state sector (<n> slots discarded)           the reclaim ran
-    the board boots its application afterwards              it recovered
+    ** Metadata area full - the next successful update reclaims it. **  fill took
+    Reclaiming metadata area (<n> slots discarded)                      reclaim ran
+    the board boots its application afterwards                          it recovered
 
 Exit 0 = R1-29 holds, 1 = it does not, 2 = the run could not be set up.
 """
