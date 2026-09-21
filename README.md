@@ -6,6 +6,7 @@ For OpenPLC transfer bin file
 ```
 IAPTool cdc    <file.bin> <port>       [--key=<key.pem>] [--cert=<cert.txt>]
 IAPTool ether  <file.bin> <ip>         [--key=<key.pem>] [--cert=<cert.txt>]
+IAPTool flashboot <boot.bin> <ip>      --key=<owner.pem>
 IAPTool sign   <file.bin> [<key.pem>]  [--key=<key.pem>] [--out=<prefix>]
 IAPTool genkey [<name>]
 IAPTool pubkey [<key.pem>]
@@ -126,6 +127,23 @@ IAPTool getowner 192.168.0.30        # which key does this board trust?
 IAPTool takeown  192.168.0.30 --key=owner.pem
 IAPTool setowner 192.168.0.30 --current-key=owner.pem --new-key=next.pem
 ```
+
+## Replacing the bootloader
+
+`flashboot` writes a new bootloader into sector 0 without an ST-Link, carrying
+the owner records across so the board stays claimed.
+
+```sh
+IAPTool flashboot boot.bin 192.168.0.30 --key=owner.pem
+```
+
+The key has to be the owner root itself: the board checks a bootloader image
+against the root, not against a leaf certificate. An unclaimed board has no
+root to check, so it demands BOOT0 held through its current boot instead.
+
+**Do not cut power during it.** The board is running out of the sector being
+rewritten; an interruption leaves it unable to boot, and only an ST-Link gets
+it back.
 
 `takeown` is refused unless BOOT0 was held through the board's current boot.
 The first claim carries no signature -- there is no owner yet to produce one --

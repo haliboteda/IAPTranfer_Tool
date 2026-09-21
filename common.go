@@ -19,6 +19,7 @@ const (
 	Buf_s = 1024     // smnall buffer
 
 	CM_Flash           = "flash"                           // Flash command
+	CM_FlashBoot       = "flashboot"                       // replace the bootloader in place; same frame as CM_Flash
 	CM_PullIP          = "openplc_server_where_r_y"        // command to get server IP
 	CM_Reboot          = "openplc_server_reboot"           //command to reboot server
 	CM_RebootChallenge = "openplc_server_reboot_challenge" // request a nonce before CM_Reboot
@@ -50,8 +51,9 @@ const defaultRebootWaitSeconds = 4
 
 // Mode constants
 const (
-	ModeCDC   = "cdc"
-	ModeEther = "ether"
+	ModeCDC       = "cdc"
+	ModeEther     = "ether"
+	ModeFlashBoot = "flashboot"
 )
 
 func logf(args ...any) {

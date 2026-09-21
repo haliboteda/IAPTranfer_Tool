@@ -40,6 +40,18 @@ PROJECT = "open_plc_cube_ide/Debug"
 
 # The intentional marker DECISIONS.md 14 requires the tool image to carry. It
 # is a warning on purpose, so it cannot be missed in a build log.
+# Warnings that are a consequence of a deliberate design choice, matched on an
+# exact substring so nothing else hides behind them.
+KNOWN_WARNINGS = (
+    # .RamFunc puts the flashboot erase routine in .data, which makes that LOAD
+    # segment writable and executable. That is the point: the code has to keep
+    # running while sector 0 is erased. Nothing marks RAM_D1 execute-never --
+    # MPU region 0's sub-region 1 is disabled, so 0x24000000 falls back to the
+    # default map, where SRAM is executable.
+    # $PROD/docs/modules/M1/FLASHBOOT.md
+    "LOAD segment with RWX permissions",
+)
+
 TOOL_MARKER = "PORTTOOL_ENABLE=1: this image is the hardware test tool"
 
 # The two linker scripts. The bootloader's bounds FLASH at 120K because an
@@ -137,11 +149,14 @@ def build(porttool, clean):
         return None
 
     # The tool image's one expected warning is that marker.
-    expected = 1 if porttool else 0
+    expected = (1 if porttool else 0) + sum(
+        1 for line in out.splitlines()
+        if any(k in line for k in KNOWN_WARNINGS))
     if int(warnings) > expected:
         Warn("%s warnings (expected %d)" % (warnings, expected))
         for line in out.splitlines():
-            if "warning:" in line and TOOL_MARKER not in line:
+            if ("warning:" in line and TOOL_MARKER not in line
+                    and not any(k in line for k in KNOWN_WARNINGS)):
                 print("    %s" % line)
     else:
         Ok("0 errors, %s warning(s) - as expected" % warnings)

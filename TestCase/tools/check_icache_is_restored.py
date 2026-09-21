@@ -40,6 +40,7 @@ BOOT = Path(cfg.BOOT_REPO)
 SCANNED = [
     Path("Core/Src/usbd_cdc_flash.c"),
     Path("IAPServer/IAP_server.c"),
+    Path("IAPServer/boot_selfupgrade.c"),
 ]
 
 # site -> why it never re-enables. The jump leaves this image for good, so there
@@ -47,6 +48,9 @@ SCANNED = [
 # decides its cache state.
 EXEMPT = {
     "server_jump_to_app": "jumps into the app and never returns",
+    # Same shape, one step further: the sector holding this code is about to
+    # be erased, so there is no "after" here either -- it resets the board.
+    "boot_selfupgrade_commit": "rewrites sector 0 from RAM and resets",
 }
 
 DISABLE = "SCB_DisableICache()"

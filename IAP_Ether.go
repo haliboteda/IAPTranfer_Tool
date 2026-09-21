@@ -38,8 +38,25 @@ const bootloaderDiscoveryRetries = 3
 // with the same silence, so the wait has to clear that window to be worth anything.
 const identifyRetryDelay = 2500 * time.Millisecond
 
+// RunEtherUpgrade sends an application image. RunEtherFlashBoot sends a
+// bootloader image over the same path -- see $PROD/docs/modules/M1/FLASHBOOT.md
+// for what the board does differently with it.
 func RunEtherUpgrade(filePath, ip string) {
-	logf("[PATH] start ether upgrade flow, target=%s", ip)
+	runEtherFlow(filePath, ip, CM_Flash)
+}
+
+// RunEtherFlashBoot replaces the board's bootloader.
+//
+// The key it signs with has to be the owner root itself: the board checks a
+// bootloader image against the root, not against the certificate's leaf. The
+// same key also serves as the session identity, so one --key is enough.
+func RunEtherFlashBoot(filePath, ip string) {
+	logf("** flashboot replaces the bootloader in place. Do not cut power. **")
+	runEtherFlow(filePath, ip, CM_FlashBoot)
+}
+
+func runEtherFlow(filePath, ip, verb string) {
+	logf("[PATH] start ether %s flow, target=%s", verb, ip)
 
 	resp, err := udpIdentifyWithRetry(ip)
 	if err != nil {
@@ -60,7 +77,11 @@ func RunEtherUpgrade(filePath, ip string) {
 	// application: in the bootloader the app-version field is "-" and what is
 	// currently installed can no longer be read. A board that never answered
 	// has already exited above, so reaching this line means discovery worked.
-	checkVersionGate(filePath, board, true, g_forceFlash)
+	// Skipped for flashboot: a bootloader image carries no sketch version,
+	// and the field the gate reads describes the application.
+	if verb == CM_Flash {
+		checkVersionGate(filePath, board, true, g_forceFlash)
+	}
 
 	// Resolved once and reused: a run that starts from the application state
 	// authenticates twice (the reboot, then the flash), and issuing a fresh
@@ -75,11 +96,11 @@ func RunEtherUpgrade(filePath, ip string) {
 	switch strings.ToUpper(board.Role) {
 	case "BOOTLD-INVALID":
 		logf("[PATH] %s is bootloader with NO valid signed app installed (previous update failed, was rejected, or flash was tampered with) -> proceeding to flash a new image", ip)
-		RunEther_TCP(filePath, ip, id)
+		RunEther_TCP(filePath, ip, id, verb)
 
 	case "BOOTLD":
 		logf("[PATH] %s is bootloader -> tcp transfer", ip)
-		RunEther_TCP(filePath, ip, id)
+		RunEther_TCP(filePath, ip, id, verb)
 
 	case "CUSAPP":
 		logf("[PATH] %s is app -> reboot to bootloader", ip)
@@ -97,7 +118,7 @@ func RunEtherUpgrade(filePath, ip string) {
 			return
 		}
 		logf("[PATH] bootloader found at %s (uid=%s) -> tcp transfer", bootBoard.IP, bootBoard.UID)
-		RunEther_TCP(filePath, bootBoard.IP, id)
+		RunEther_TCP(filePath, bootBoard.IP, id, verb)
 
 	default:
 		logf(true, "Unexpected role %q from %s, exiting.", board.Role, ip)
@@ -439,7 +460,7 @@ func getDirectedBroadcastAddrs() ([]string, error) {
 // while a human is being asked something. That confirmation is gone (see
 // DECISIONS.md decision 54); the identity check is now a plain round trip
 // with nothing to wait on, so there is no longer a reason to split it off.
-func RunEther_TCP(filePath, serverIP string, id uploadIdentity) {
+func RunEther_TCP(filePath, serverIP string, id uploadIdentity, verb string) {
 	sigHex, err := signImageInMemory(filePath, id.key)
 	logf(err, "Failed to prepare signature for %s", filePath)
 
@@ -461,7 +482,7 @@ func RunEther_TCP(filePath, serverIP string, id uploadIdentity) {
 		logf(true, "Signing key check failed: %v", err)
 	}
 
-	if err := sendFile(conn, filePath, id, sigHex); err != nil {
+	if err := sendFile(conn, filePath, id, sigHex, verb); err != nil {
 		logf(err, "File send failed")
 	}
 }
@@ -506,13 +527,13 @@ func ping(conn net.Conn) error {
 // 文件发送函数（按 buffer 分块发送，每块等 ok）
 // sendFile carries no interactive step: the identity check already ran on
 // this same connection, in RunEther_TCP, before this is called.
-func sendFile(conn net.Conn, filePath string, id uploadIdentity, sigHex string) error {
+func sendFile(conn net.Conn, filePath string, id uploadIdentity, sigHex, verb string) error {
 	// Calculate checksum and file size
 	checksum, fileSize, file := CalculateCRC32(filePath)
 	defer file.(io.Closer).Close()
 	logf("CRC Checksum: %x", checksum)
 
-	authMsg := fmt.Sprintf("%s %d %x %s", CM_Flash, fileSize, checksum, sigHex)
+	authMsg := fmt.Sprintf("%s %d %x %s", verb, fileSize, checksum, sigHex)
 
 	nonceResp, err := sendAndReadResponse(conn, []byte(CM_AuthChallenge+"\n"))
 	if err != nil {

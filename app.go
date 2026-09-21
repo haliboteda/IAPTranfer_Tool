@@ -43,6 +43,11 @@ var g_signing signingOptions
 const usageText = `Usage:
   IAPTool cdc    <file.bin> <port>       [--key=<key.pem>] [--cert=<cert.txt>]
   IAPTool ether  <file.bin> <ip>         [--key=<key.pem>] [--cert=<cert.txt>]
+  IAPTool flashboot <boot.bin> <ip> --key=<owner.pem>
+                   replaces the board's bootloader in place. --key must be the
+                   owner root: a leaf certificate cannot authorise this. An
+                   unclaimed board needs BOOT0 held through its current boot
+                   instead. Do not cut power during it.
   IAPTool sign   <file.bin> [<key.pem>]  [--key=<key.pem>] [--out=<prefix>]
   IAPTool genkey [<name>]    writes <name>.pem, prints keys/fw_pubkey.inc on stdout
   IAPTool pubkey [<key.pem>] the key's public half as 128 hex characters, the form
@@ -228,9 +233,16 @@ func main() {
 		defer AcquireUploadLock()()
 		RunEtherUpgrade(args[1], args[2])
 
+	case ModeFlashBoot:
+		if len(args) < 3 {
+			logf(true, usageText)
+		}
+		defer AcquireUploadLock()()
+		RunEtherFlashBoot(args[1], args[2])
+
 	default:
-		logf(true, "Invalid mode: %s. Use 'cdc', 'ether', 'sign', 'genkey', 'pubkey', "+
-			"'cert', 'signraw', 'getowner', 'takeown', 'setowner' or 'revoke'", mode)
+		logf(true, "Invalid mode: %s. Use 'cdc', 'ether', 'flashboot', 'sign', 'genkey', "+
+			"'pubkey', 'cert', 'signraw', 'getowner', 'takeown', 'setowner' or 'revoke'", mode)
 	}
 }
 
