@@ -7,6 +7,9 @@ the running application into the bootloader as its first step, and only then
 offers the image -- which the board refuses at the size check, before erasing or
 staging anything. So the board ends up in the bootloader with nothing written.
 
+⚠ A CLAIMED board needs --key: the reboot request is signed, and one signed by
+the published root is rejected. Without it this script just times out.
+
 Every step here is shipping code: IAPTool's real authenticated reboot, and the
 board's real size check (IAPServer/IAP_server.c:206). Nothing about the protocol
 is reimplemented, which is the whole reason to do it this way rather than poking
@@ -47,6 +50,10 @@ def main():
     ap.add_argument("--ip", default=None)
     ap.add_argument("--seconds", type=int, default=6)
     ap.add_argument("--ports", nargs="*", default=None)
+    ap.add_argument("--key", default=None,
+                    help="owner private key (PEM). Required once the board is claimed: the "
+                         "reboot request is signed, and a claimed board rejects one signed "
+                         "by the published root. Omit it only for an unclaimed board.")
     args = ap.parse_args()
 
     ports = args.ports if args.ports else cfg.LOG_PORTS
@@ -63,7 +70,10 @@ def main():
     out_file = get_scratch_file("eb.out")
     err_file = get_scratch_file("eb.err")
     with open(str(out_file), "wb") as so, open(str(err_file), "wb") as se:
-        proc = subprocess.Popen([str(get_iap_tool()), "ether", str(big), ip], stdout=so, stderr=se)
+        cmd = [str(get_iap_tool()), "ether", str(big), ip]
+        if args.key:
+            cmd += ["--key", args.key]
+        proc = subprocess.Popen(cmd, stdout=so, stderr=se)
 
         # Drain while IAPTool runs: the driver's buffer overruns on a long
         # transfer and the interesting lines are the ones lost.
@@ -98,6 +108,22 @@ def main():
     if "UPLOAD Mod" in allof:
         Warn("board entered upload mode, but the refusal line was not seen - check the log")
         return 0
+    # The board says why, and this script already has its log. Not reading it
+    # was the whole problem: "does not appear to be in the bootloader" sent
+    # people looking at cabling when the board had answered in plain words.
+    if "Rejected unauthenticated" in allof:
+        Fail("the board refused the reboot request: it is CLAIMED, and this "
+             "request was signed by the published root")
+        if args.key:
+            print("  --key was passed (%s) but the board still refused it." % args.key)
+            print("  That key is not the one this board trusts - check with:")
+        else:
+            print("  Pass the owner key:  --key <owner.pem>")
+            print("  Which key this board trusts:")
+        print("    IAPTool getowner %s      (needs the board in the bootloader)" % ip)
+        print("  Or hold BOOT0 through startup, which needs nobody's signature.")
+        return 1
+
     Fail("board does not appear to be in the bootloader")
     try:
         lines = err_file.read_text(encoding="utf-8", errors="replace").splitlines()
