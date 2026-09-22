@@ -33,6 +33,19 @@ type boardInfo struct {
 
 const bootloaderDiscoveryRetries = 3
 
+// How many times to ask a running application to reboot into the bootloader.
+//
+// The handshake is three UDP datagrams with no acknowledgement of its own --
+// challenge out, nonce back, signed reboot out -- and until 2026-09-22 it got
+// exactly one try, while the identify step next to it got three. A few percent
+// of loss is therefore almost invisible on identify and lands squarely on this,
+// which is what made "the reboot works sometimes" look like a certificate
+// problem for weeks (OWN-08).
+//
+// Asking twice is harmless: a board that already rebooted is in its bootloader,
+// which has no reboot command and ignores the datagram.
+const rebootAttempts = 3
+
 // The device replies to a given source at most once per DISCOVERY_MIN_REPLY_INTERVAL_MS
 // (2s, see IAPServer/udp_server.c). Retrying sooner than that would be answered
 // with the same silence, so the wait has to clear that window to be worth anything.
@@ -104,17 +117,33 @@ func runEtherFlow(filePath, ip, verb string) {
 
 	case "CUSAPP":
 		logf("[PATH] %s is app -> reboot to bootloader", ip)
-		if err := authenticatedUDPReboot(ip, id); err != nil {
-			logf(err, "Failed to send authenticated reboot command to %s", ip)
+		// Ask, wait, look -- and ask again if it is still running. Nothing in
+		// this handshake is acknowledged, so a lost datagram is only ever
+		// visible as "the board did not come back".
+		var bootBoard boardInfo
+		var ok bool
+		for attempt := 1; attempt <= rebootAttempts; attempt++ {
+			if err := authenticatedUDPReboot(ip, id); err != nil {
+				logf("Reboot request %d/%d did not get through: %v",
+					attempt, rebootAttempts, err)
+				continue
+			}
+
+			wait := getRebootWaitDuration()
+			logf("Waiting %.1f seconds for reboot...", wait.Seconds())
+			time.Sleep(wait)
+
+			if bootBoard, ok = discoverBootloader(bootloaderDiscoveryRetries, targetUID); ok {
+				break
+			}
+			if attempt < rebootAttempts {
+				logf("%s is still running its application; asking it to reboot again (%d/%d)",
+					ip, attempt+1, rebootAttempts)
+			}
 		}
-
-		wait := getRebootWaitDuration()
-		logf("Waiting %.1f seconds for reboot...", wait.Seconds())
-		time.Sleep(wait)
-
-		bootBoard, ok := discoverBootloader(bootloaderDiscoveryRetries, targetUID)
 		if !ok {
-			logf(true, "No bootloader with UID=%s found after %d attempts, exiting.", targetUID, bootloaderDiscoveryRetries)
+			logf(true, "No bootloader with UID=%s found after %d reboot request(s), exiting.",
+				targetUID, rebootAttempts)
 			return
 		}
 		logf("[PATH] bootloader found at %s (uid=%s) -> tcp transfer", bootBoard.IP, bootBoard.UID)
