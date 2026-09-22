@@ -96,11 +96,11 @@ func runEtherFlow(filePath, ip, verb string) {
 	switch strings.ToUpper(board.Role) {
 	case "BOOTLD-INVALID":
 		logf("[PATH] %s is bootloader with NO valid signed app installed (previous update failed, was rejected, or flash was tampered with) -> proceeding to flash a new image", ip)
-		RunEther_TCP(filePath, ip, id, verb)
+		RunEther_TCP(filePath, ip, id, verb, targetUID)
 
 	case "BOOTLD":
 		logf("[PATH] %s is bootloader -> tcp transfer", ip)
-		RunEther_TCP(filePath, ip, id, verb)
+		RunEther_TCP(filePath, ip, id, verb, targetUID)
 
 	case "CUSAPP":
 		logf("[PATH] %s is app -> reboot to bootloader", ip)
@@ -118,7 +118,7 @@ func runEtherFlow(filePath, ip, verb string) {
 			return
 		}
 		logf("[PATH] bootloader found at %s (uid=%s) -> tcp transfer", bootBoard.IP, bootBoard.UID)
-		RunEther_TCP(filePath, bootBoard.IP, id, verb)
+		RunEther_TCP(filePath, bootBoard.IP, id, verb, targetUID)
 
 	default:
 		logf(true, "Unexpected role %q from %s, exiting.", board.Role, ip)
@@ -192,7 +192,10 @@ func discoverBoardsViaDirectedBroadcast(expectedRole string) ([]boardInfo, error
 			logf("Ignore invalid discovery response from %s: %q", addr.IP.String(), strings.TrimSpace(string(buffer[:n])))
 			continue
 		}
-		if !strings.EqualFold(info.Role, expectedRole) {
+		// An empty expectedRole means "whatever it is now": used to confirm a
+		// board came back after a write, when which role it lands in is the
+		// thing that depends on what was written.
+		if expectedRole != "" && !strings.EqualFold(info.Role, expectedRole) {
 			logf("Ignore %s response from %s while waiting for %s: %s", info.Role, info.IP, expectedRole, info.Raw)
 			continue
 		}
@@ -460,7 +463,7 @@ func getDirectedBroadcastAddrs() ([]string, error) {
 // while a human is being asked something. That confirmation is gone (see
 // DECISIONS.md decision 54); the identity check is now a plain round trip
 // with nothing to wait on, so there is no longer a reason to split it off.
-func RunEther_TCP(filePath, serverIP string, id uploadIdentity, verb string) {
+func RunEther_TCP(filePath, serverIP string, id uploadIdentity, verb, targetUID string) {
 	sigHex, err := signImageInMemory(filePath, id.key)
 	logf(err, "Failed to prepare signature for %s", filePath)
 
@@ -482,7 +485,7 @@ func RunEther_TCP(filePath, serverIP string, id uploadIdentity, verb string) {
 		logf(true, "Signing key check failed: %v", err)
 	}
 
-	if err := sendFile(conn, filePath, id, sigHex, verb); err != nil {
+	if err := sendFile(conn, filePath, id, sigHex, verb, targetUID); err != nil {
 		logf(err, "File send failed")
 	}
 }
@@ -527,7 +530,7 @@ func ping(conn net.Conn) error {
 // 文件发送函数（按 buffer 分块发送，每块等 ok）
 // sendFile carries no interactive step: the identity check already ran on
 // this same connection, in RunEther_TCP, before this is called.
-func sendFile(conn net.Conn, filePath string, id uploadIdentity, sigHex, verb string) error {
+func sendFile(conn net.Conn, filePath string, id uploadIdentity, sigHex, verb, targetUID string) error {
 	// Calculate checksum and file size
 	checksum, fileSize, file := CalculateCRC32(filePath)
 	defer file.(io.Closer).Close()
@@ -562,6 +565,14 @@ func sendFile(conn net.Conn, filePath string, id uploadIdentity, sigHex, verb st
 			}
 		}
 		if readErr == io.EOF {
+			// The board has every byte now, but it has not judged them yet:
+			// it verifies the staged image and only then says whether it
+			// took it. Reading that verdict is the difference between
+			// "uploaded" and "accepted" -- without it a refused image was
+			// reported as a successful transfer.
+			if err := readFinalVerdict(conn, verb, targetUID); err != nil {
+				return err
+			}
 			logf("File transfer complete.")
 			// Only now is the one-shot force marker written: a transfer that
 			// failed above never reaches this line, so retrying a failed
@@ -574,6 +585,65 @@ func sendFile(conn net.Conn, filePath string, id uploadIdentity, sigHex, verb st
 		}
 	}
 	return nil
+}
+
+// After the last chunk the board verifies the image, and only then decides.
+// It answers ONLY to refuse -- "Signature Failed", "No Signature",
+// "Flash Failed". Both success paths reset the board instead, and a reset
+// takes the MAC down before anything queued for the peer leaves it, so there
+// is no "OK" to wait for and there cannot be one (measured 2026-09-22).
+//
+// So success is confirmed the only way it can be: the board comes back and
+// answers discovery again.
+const (
+	// The whole window. Long because a refusal from the flash write itself
+	// arrives only after the application region has been erased and written.
+	verdictTimeout = 90 * time.Second
+	// One slice of TCP listening before looking for the board on the network
+	// instead. Short: a refusal that is coming is already on its way.
+	verdictPoll = 2 * time.Second
+)
+
+// readFinalVerdict decides whether the board took the image.
+//
+// Returns nil only on evidence: either the board said OK (no path does today,
+// but a refusal-shaped silence must not be read as one), or it came back on
+// the network, which only happens after it reset, which only happens when it
+// accepted. Anything the board says other than OK is a refusal.
+func readFinalVerdict(conn net.Conn, verb, targetUID string) error {
+	deadline := time.Now().Add(verdictTimeout)
+
+	for time.Now().Before(deadline) {
+		// Errors here are not failures: a reset board yields a timeout or a
+		// dropped connection, and that is one of the expected outcomes.
+		resp, _ := readWithIdleGap(conn, verdictPoll)
+		if said := strings.TrimSpace(string(resp)); said != "" {
+			if said == Rsp_OK {
+				return nil
+			}
+			return fmt.Errorf("the board refused the image: %s", said)
+		}
+		if boardCameBack(targetUID) {
+			logf("The board reset and is answering again - the image was accepted.")
+			return nil
+		}
+	}
+	return fmt.Errorf("the board neither refused the image nor came back within %s. "+
+		"It was NOT confirmed: check its log before assuming anything was written", verdictTimeout)
+}
+
+// boardCameBack reports whether the target is answering discovery again, in
+// whatever role the thing just written leaves it in.
+func boardCameBack(targetUID string) bool {
+	if targetUID == "" {
+		return false
+	}
+	boards, err := discoverBoardsViaDirectedBroadcast("")
+	if err != nil {
+		return false
+	}
+	_, ok := selectDiscoveredBoard(boards, targetUID)
+	return ok
 }
 
 // readWithIdleGap accumulates reads from conn until it goes quiet for

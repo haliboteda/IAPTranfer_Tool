@@ -109,8 +109,16 @@ def fill(data, leave_free):
 
 
 def read_sector(cli, path):
+    """The WHOLE sector, calibration bytes included.
+
+    Not just the metadata half, even though that is all this case fills:
+    STM32_Programmer_CLI erases the whole 128 KiB sector before writing any
+    part of it, so writing back only the metadata half destroys the
+    calibration area -- which is exactly what the carry-over this case is
+    supposed to be able to observe. Read it all, put it all back.
+    """
     r = subprocess.run([cli, "-c", "port=SWD", "mode=UR", "-r",
-                        hex(STATE_ADDR), hex(METADATA_BYTES), str(path)],
+                        hex(SECTOR_ADDR), hex(SECTOR_BYTES), str(path)],
                        capture_output=True, text=True, timeout=180)
     return r.returncode == 0 and Path(path).exists()
 
@@ -118,6 +126,11 @@ def read_sector(cli, path):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--bin", help="signed application image for the upload that triggers the reclaim")
+    ap.add_argument("--key",
+                    help="owner private key this board is claimed for. Without "
+                         "it IAPTool signs with the published root, a claimed "
+                         "board refuses the upload, and the reclaim this case "
+                         "is about never happens.")
     ap.add_argument("--ip", default=None)
     ap.add_argument("--ports", action="append")
     ap.add_argument("--leave", type=int, default=4,
@@ -135,7 +148,8 @@ def main():
     if not read_sector(cli, raw):
         Fail("could not read the state sector over SWD")
         return 2
-    data = raw.read_bytes()
+    sector = raw.read_bytes()
+    calib, data = sector[:CALIB_BYTES], sector[CALIB_BYTES:]
     if len(data) != METADATA_BYTES:
         Fail("read %d bytes, expected %d" % (len(data), METADATA_BYTES))
         return 2
@@ -157,13 +171,14 @@ def main():
         Ok("appended %d synthetic log records, leaving %d free" % (added, args.leave))
 
     out = Path(get_scratch_file("journal_filled.bin"))
-    out.write_bytes(filled)
+    out.write_bytes(calib + filled)
 
     Section("writing it back")
-    # One image for the whole sector: the programmer erases before writing, so a
-    # partial write would take the metadata with it.
+    # One image for the whole sector, calibration bytes and all: the programmer
+    # erases the whole sector before writing any part of it, so anything left
+    # out of this image is gone.
     w = subprocess.run([cli, "-c", "port=SWD", "mode=UR", "-w", str(out),
-                        hex(STATE_ADDR), "-rst"],
+                        hex(SECTOR_ADDR), "-rst"],
                        capture_output=True, text=True, timeout=300)
     if w.returncode != 0:
         Fail("write failed (rc=%d)" % w.returncode)
@@ -188,9 +203,11 @@ def main():
 
     Section("one real upload, which is where the reclaim happens")
     handles = open_log_ports(ports)
-    up = subprocess.run([python_exe(), str(Path(__file__).with_name("upload_and_watch.py")),
-                         "--bin", args.bin, "--ip", ip],
-                        capture_output=True, text=True, timeout=900)
+    upload = [python_exe(), str(Path(__file__).with_name("upload_and_watch.py")),
+              "--bin", args.bin, "--ip", ip]
+    if args.key:
+        upload += ["--key", args.key]
+    up = subprocess.run(upload, capture_output=True, text=True, timeout=900)
     after = read_log_ports(handles, 10)
     close_ports(handles)
     after_text = (up.stdout or "") + "\n" + (
@@ -206,7 +223,7 @@ def main():
 
     post = Path(get_scratch_file("journal_after.bin"))
     if read_sector(cli, post):
-        used_after, _ = scan(post.read_bytes())
+        used_after, _ = scan(post.read_bytes()[CALIB_BYTES:])
         Ok("journal after the reclaim: %d/%d slots used" % (used_after, TOTAL_SLOTS))
 
     if APP_MOD in after_text:
