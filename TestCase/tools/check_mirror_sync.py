@@ -496,10 +496,21 @@ compare_anchor("iap_auth.c: bytes the challenge signature covers", {
     "core OpenPLC_IAP/src/iap_auth.c": get_signed_bytes_recipe(_core_auth),
 })
 
+# The machine ID is what a board calls itself on the wire and what its MAC is
+# derived from, so the two copies disagreeing means one board answering to two
+# identities depending on which image is running. Only the includes differ
+# (main.h here, Arduino.h there), so the bodies compare cleanly.
+Section("iap_keyderive.c: the machine ID both copies derive")
+for _fn in ("iap_keyderive_get_machine_id", "iap_keyderive_get_machine_id_hex"):
+    compare_anchor("iap_keyderive.c %s()" % _fn, {
+        "bootloader IAPServer/iap_keyderive.c": get_function_body(
+            BOOT / "IAPServer/iap_keyderive.c", _fn),
+        "core OpenPLC_IAP/src/iap_keyderive.c": get_function_body(
+            LIVE / "libraries/OpenPLC_IAP/src/iap_keyderive.c", _fn),
+    })
+
 # --- what this script does not check ----------------------------------------
 Section("not covered by this script -- still manual")
-print("  - iap_keyderive: the two C copies are NEVER compared. host/bootloader_unit")
-print("      compiles the bootloader copy only, so a one-sided edit here is silent.")
 print("  - fw_pubkey.inc: bootloader-only by design, nothing to compare")
 print("  - $CORE_LIVE vs $CORE_REPO: use tools/check_core_sync.py")
 
