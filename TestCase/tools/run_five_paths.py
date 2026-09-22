@@ -93,6 +93,20 @@ class Round(object):
         print("    key %s -> %s" % (name, pem))
         return pem
 
+    def ensure_bootloader(self, key):
+        """Get the board out of its application and into the bootloader.
+
+        Every command this round sends to the bootloader -- takeown, setowner,
+        getpubkey -- is answered only by the bootloader, and a board that just
+        finished an upload is running the application instead. Without this a
+        step "fails" having never reached the board, which proves nothing and
+        reads exactly like the board misbehaving.
+        """
+        if self.args.dry_run:
+            print("    $ enter_bootloader.py (if an application is running)")
+            return True
+        return self.tool("enter_bootloader.py", "--key", key, "--seconds", "6") == 0
+
     def hold_boot0(self, why):
         banner(["HOLD BOOT0 NOW: press RESET, hold BOOT0 through the relay",
                 "clicks (about 2 s), then let go.", why])
@@ -128,6 +142,15 @@ def path_1(r):
 def path_2(r):
     Section("2 · claim the board, then burn and upgrade")
     ok = True
+
+    # Path 1 left an application running, and it owns the port the bootloader
+    # would answer on. The board is still unclaimed here, so its owner area is
+    # empty and the application falls back to the published root -- which is
+    # therefore the key that can ask it to step aside.
+    published = Path(cfg.BOOT_REPO) / "IAPServer" / "keys" / "fw_signing_key.TEST_ONLY.pem"
+    if not r.ensure_bootloader(published):
+        return r.record("2-a/T2-02", SETUP,
+                        "could not reach the bootloader; nothing was attempted")
 
     ok &= r.record("2-a/T2-02", PASS if r.tool(
         "run_takeown.py", "--expect-refused") == 0 else FAIL,
