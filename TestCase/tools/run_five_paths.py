@@ -52,7 +52,8 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from common import (Fail, Ok, Section, Warn, banner, cfg,  # noqa: E402
-                    get_iap_tool, python_exe, run_capture)
+                    get_iap_tool, get_programmer_cli, get_scratch_file,
+                    python_exe, run_capture, run_while_draining)
 
 PASS, FAIL, SETUP = "PASS", "FAIL", "SETUP"
 
@@ -128,6 +129,27 @@ class Round(object):
         Warn("  no key could ask the application to step aside")
         return False
 
+    def boot0_is_held(self):
+        """Did the board come up with BOOT0 held?
+
+        Step 2-a needs it NOT held and step 2-b needs it held, in that order.
+        An operator who presses when they are first told to has pressed before
+        2-a runs, and 2-a then claims the board instead of being refused --
+        a green light on the wrong thing. Ask the board rather than assume.
+        """
+        if self.args.dry_run:
+            return False
+        from common import LOG_BOOT0_UPLOAD, close_ports, open_log_ports
+        ports = list(self.args.ports if getattr(self.args, "ports", None)
+                     else cfg.LOG_PORTS)
+        handles = open_log_ports(ports)
+        _, buf = run_while_draining(
+            [str(get_programmer_cli()), "-c", "port=SWD", "mode=UR", "-rst"],
+            handles, get_scratch_file("boot0_probe.out"),
+            get_scratch_file("boot0_probe.err"), tail_seconds=6)
+        close_ports(handles)
+        return LOG_BOOT0_UPLOAD in "\n".join(buf.values())
+
     def hold_boot0(self, why):
         banner(["HOLD BOOT0 NOW: press RESET, hold BOOT0 through the relay",
                 "clicks (about 2 s), then let go.", why])
@@ -172,6 +194,14 @@ def path_2(r):
     if not r.ensure_bootloader(published, Path(cfg.BOOT_REPO) / ROTATED_ROOT_KEY):
         return r.record("2-a/T2-02", SETUP,
                         "could not reach the bootloader; nothing was attempted")
+
+    # 2-a is the negative case: it needs BOOT0 NOT held. Asking the operator
+    # to press before this point turns it into a successful claim, which is
+    # a failure of this case reported as if the board had misbehaved.
+    if r.boot0_is_held():
+        return r.record("2-a/T2-02", SETUP,
+                        "BOOT0 is held right now; 2-a needs it released. "
+                        "Reset without touching it and run this path again.")
 
     ok &= r.record("2-a/T2-02", PASS if r.tool(
         "run_takeown.py", "--expect-refused") == 0 else FAIL,

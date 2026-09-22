@@ -62,8 +62,11 @@ def main():
     ap.add_argument("--expect-refused", action="store_true")
     ap.add_argument("--boot0-timeout", type=int, default=180,
                     help="how long to wait for the operator to do the BOOT0 "
-                         "gesture; ignored with --expect-refused, which needs "
-                         "the opposite")
+                         "gesture. 0 means a caller has already confirmed it "
+                         "-- the board announces the gesture once per boot, so "
+                         "waiting for it twice in one boot never succeeds. "
+                         "Ignored with --expect-refused, which needs the "
+                         "opposite.")
     ap.add_argument("--ports", nargs="*", default=None)
     args = ap.parse_args()
 
@@ -92,7 +95,10 @@ def main():
     # immediately after printing the banner, so an unattended run raced the
     # human and always saw "not held" -- the refusal looked like the case
     # failing rather than like nobody having pressed anything yet.
-    if not args.expect_refused:
+    # 0 means a caller has already seen the gesture. The board prints
+    # "UPLOAD Mod ... (BOOT0 held)" once per boot, so a second script waiting
+    # for it in the same boot waits for something that will never come again.
+    if not args.expect_refused and args.boot0_timeout > 0:
         ports = list(args.ports if args.ports is not None else cfg.LOG_PORTS)
         Section("waiting for BOOT0")
         print("  up to %d s for the board to print %r" % (args.boot0_timeout, LOG_BOOT0_UPLOAD))

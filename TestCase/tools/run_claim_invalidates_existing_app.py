@@ -200,7 +200,11 @@ def main():
 
     Section("Claim  (through tools/run_takeown.py, the case that owns that step)")
     print("  It prints the BOOT0 instruction again -- that part is already done.")
-    argv = [python_exe(), str(HERE / "run_takeown.py"), "--ip", ip]
+    # --boot0-timeout 0: the gesture was confirmed above, and the board says
+    # so only once per boot. Letting run_takeown.py wait for it again waits
+    # for a line that has already gone past.
+    argv = [python_exe(), str(HERE / "run_takeown.py"), "--ip", ip,
+            "--boot0-timeout", "0"]
     if args.key:
         argv += ["--key", args.key]
     rc = subprocess.run(argv).returncode
