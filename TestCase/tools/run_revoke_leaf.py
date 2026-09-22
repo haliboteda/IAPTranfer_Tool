@@ -545,12 +545,22 @@ def case_t2_15(st, args):
     return verdict
 
 
-def app_revoked_says(st, expect_revoked):
+def app_revoked_says(st, args, expect_revoked):
     """Ask the board whether its installed image's signer has been revoked.
 
     Returns PASS/FAIL. Both answers are checked by the same code on purpose:
     a board that always says REVOKED is as useless as one that never does.
+
+    getapprevoked is a BOOTLOADER command, and every caller reaches this after
+    a case that deliberately left the board running its application -- which is
+    the whole point of T2-15. Without this step the command cannot reach the
+    board at all, and the case reports a product failure having asked nothing.
+    Self-signed, because the leaf under test is revoked by now.
     """
+    if not move_to_bootloader_selfsigned(st["iap"], st["ip"], args.port,
+                                         args.current_key, st["ports"]):
+        Fail("  could not reach the bootloader; nothing was asked")
+        return SETUP
     out, rc = run_capture([st["iap"], "getapprevoked", st["ip"]])
     for line in nonblank_lines(out):
         print("    T | " + line)
@@ -579,7 +589,7 @@ def case_t2_26(st, args):
     given an image signed by a leaf nobody revoked.
     """
     Section("T2-26  the board reports that its app's signer was revoked")
-    return app_revoked_says(st, True)
+    return app_revoked_says(st, args, True)
 
 
 def case_t2_16(st, args):
@@ -650,7 +660,7 @@ def case_t2_17(st, args):
     # image is installed.
     if verdict == PASS:
         Section("T2-26 (negative half)  and it stops saying so once a good image is installed")
-        if app_revoked_says(st, False) != PASS:
+        if app_revoked_says(st, args, False) != PASS:
             verdict = FAIL
     return verdict
 
