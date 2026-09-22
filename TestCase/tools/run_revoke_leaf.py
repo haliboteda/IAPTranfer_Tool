@@ -1,4 +1,4 @@
-"""T2-15 / T2-16 / T2-17 / T2-18 -- revoking ONE leaf by name.
+"""T2-15 / T2-16 / T2-17 / T2-18 / T2-26 -- revoking ONE leaf by name.
 
     python tools/run_revoke_leaf.py --bin <app.bin> --current-key <owner.pem>
     python tools/run_revoke_leaf.py ... --compare-bytes 0x40000
@@ -14,7 +14,8 @@ leaf has been named) is not something an operator should carry between four
 invocations by hand.
 
   T2-18  a revocation with a bad signature does not get recorded
-  T2-15  after revoking, the board refuses to start the app that leaf signed
+  T2-15  after revoking, the board STILL starts the app that leaf signed
+  T2-26  ...and says so, so the operator can find the boards wanting a re-upload
   T2-16  after revoking, that leaf cannot upload either, and the application
          region is not touched by the attempt
   T2-17  a DIFFERENT leaf of the same root still uploads and boots
@@ -496,8 +497,13 @@ def case_t2_18(st, args):
 
 
 def case_t2_15(st, args):
-    """After revoking, the board refuses to start the app that leaf signed."""
-    Section("T2-15  revoking retroactively invalidates the installed app")
+    """After revoking, the board still starts the app that leaf signed.
+
+    Inverted 2026-09-22 with decision 60: revocation only blocks the next
+    upload. What used to be this case's pass -- the board refusing the
+    installed image -- is now its failure.
+    """
+    Section("T2-15  revoking leaves the installed app running (only future uploads are blocked)")
     before = board_generation(st["ip"], args.port)
     out, rc = run_capture([st["iap"], "revoke", st["ip"],
                            "--key=%s" % args.current_key,
@@ -525,17 +531,55 @@ def case_t2_15(st, args):
         Fail("  no boot log captured (%d bytes)" % len(log))
         return SETUP
     verdict = PASS
-    if LOG_APP_REJECTED not in log:
-        Fail("  the board did not say %r" % LOG_APP_REJECTED)
+    if LOG_APP_REJECTED in log:
+        Fail("  the board rejected the installed app (%r)." % LOG_APP_REJECTED)
+        Fail("  That is the PRE-decision-60 behaviour -- is this bootloader current?")
         verdict = FAIL
     else:
-        Ok("  the board refused the installed app: %r" % LOG_APP_REJECTED)
-    if LOG_APP_STARTED in log:
-        Fail("  the board started the app anyway (%r)" % LOG_APP_STARTED)
+        Ok("  the board did not reject the installed app")
+    if LOG_APP_STARTED not in log:
+        Fail("  but it did not start it either -- expected %r" % LOG_APP_STARTED)
         verdict = FAIL
     else:
-        Ok("  and it did not start it")
+        Ok("  and it started it: %r" % LOG_APP_STARTED)
     return verdict
+
+
+def app_revoked_says(st, expect_revoked):
+    """Ask the board whether its installed image's signer has been revoked.
+
+    Returns PASS/FAIL. Both answers are checked by the same code on purpose:
+    a board that always says REVOKED is as useless as one that never does.
+    """
+    out, rc = run_capture([st["iap"], "getapprevoked", st["ip"]])
+    for line in nonblank_lines(out):
+        print("    T | " + line)
+    if rc != 0:
+        Fail("  IAPTool getapprevoked exited %d" % rc)
+        return FAIL
+    said_revoked = "REVOKED" in out
+    if said_revoked != expect_revoked:
+        Fail("  expected the board to report %s, it reported %s"
+             % ("REVOKED" if expect_revoked else "not revoked",
+                "REVOKED" if said_revoked else "not revoked"))
+        return FAIL
+    Ok("  the board reported %s, as expected"
+       % ("REVOKED" if expect_revoked else "not revoked"))
+    return PASS
+
+
+def case_t2_26(st, args):
+    """The board can still SAY the installed image's signer was revoked.
+
+    T2-15 is what makes this case necessary: once a revoked leaf's firmware
+    keeps running, this reply is the only thing in the field that distinguishes
+    a board wanting a re-upload from one that does not.
+
+    The negative half runs at the end of T2-17, where the board has just been
+    given an image signed by a leaf nobody revoked.
+    """
+    Section("T2-26  the board reports that its app's signer was revoked")
+    return app_revoked_says(st, True)
 
 
 def case_t2_16(st, args):
@@ -599,6 +643,15 @@ def case_t2_17(st, args):
         verdict = FAIL
     else:
         Ok("  and it boots")
+
+    # T2-26's negative half: the image now installed was signed by the spared
+    # leaf, so the board must stop reporting itself as wanting a re-upload.
+    # Judged here because this is the only point in the run where a KNOWN-GOOD
+    # image is installed.
+    if verdict == PASS:
+        Section("T2-26 (negative half)  and it stops saying so once a good image is installed")
+        if app_revoked_says(st, False) != PASS:
+            verdict = FAIL
     return verdict
 
 
@@ -693,7 +746,7 @@ def main():
                     help="private half of the root this board trusts right now")
     ap.add_argument("--ip", default="")
     ap.add_argument("--port", default="56865")
-    ap.add_argument("--stop-after", choices=["T2-18", "T2-15", "T2-16", "T2-17"],
+    ap.add_argument("--stop-after", choices=["T2-18", "T2-15", "T2-26", "T2-16", "T2-17"],
                     default="T2-17",
                     help="stopping before T2-17 leaves the board without a runnable app")
     ap.add_argument("--second-leaf", action="store_true",
@@ -764,10 +817,10 @@ def main():
         print("  keys and certificates: %s" % keydir)
         return 2
 
-    order = ["T2-18", "T2-15", "T2-16", "T2-17"]
+    order = ["T2-18", "T2-15", "T2-26", "T2-16", "T2-17"]
     stop_at = order.index(args.stop_after)
     runner = {"T2-18": case_t2_18, "T2-15": case_t2_15,
-              "T2-16": case_t2_16, "T2-17": case_t2_17}
+              "T2-26": case_t2_26, "T2-16": case_t2_16, "T2-17": case_t2_17}
     results = []
     for i, name in enumerate(order):
         if i > stop_at:

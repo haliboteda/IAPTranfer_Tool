@@ -68,6 +68,7 @@ CATALOG = [
     ("T2-22-T2-23",  "R2-04",                  "revocation area: warns at 8 slots left, refuses the 97th without writing"),
     ("T1-33",        "R1-36",                  "flashboot compaction keeps the chain and the live revocations, drops the rest"),
     ("T2-24",        "R2-04",                  "setowner --wipe judges the handover before erasing, and reclaims every slot"),
+    ("T2-27",        "R2-04",                  "a revocation naming the root in force is ignored (real owner_slot.c, the bootloader's own copy of R4)"),
     ("T4-01",        "-",                      "port tool protocol contract (real porttool.c, then the Go parser)"),
     ("T1-18a-T1-18g", "R1-21",                  "IAPTool key/certificate match against a stand-in board"),
     ("T1-19-T1-20",  "R1-24",                  "crypto cross-check against independent implementations"),
@@ -260,6 +261,13 @@ def main():
 
         run_step("T2-24", "setowner --wipe judges the handover before erasing, and reclaims every slot",
                  [python_exe(), TESTTOOL / "host" / "owner_capacity" / "build.py", "wipe"],
+                 needs=cc_need, cwd=tool_repo)
+
+        # The bootloader's own copy of R4. T2-21 covers the core mirror's copy;
+        # until this step there was no coverage of this one off a board, and
+        # owner_slot_revoke() refuses to write the record that reaches it.
+        run_step("T2-27", "a revocation naming the root in force is ignored, so no board can be revoked into a brick",
+                 [python_exe(), TESTTOOL / "host" / "owner_capacity" / "build.py", "self-revoke"],
                  needs=cc_need, cwd=tool_repo)
 
         # build.py runs both halves: the C harness against the real firmware

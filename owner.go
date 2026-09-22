@@ -11,6 +11,7 @@ package main
 //   takeown  <pubkey>                  claim; refused unless BOOT0 was held at startup
 //   setowner <gen> <pubkey> <sig>      hand over; refused unless the CURRENT owner signed
 //   revoke   <leafhex> <sig>           revoke one leaf; refused unless the CURRENT owner signed
+//   getapprevoked                      "yes" / "no" / "none" - was the installed image's signer revoked
 //
 // See $PROD/docs/modules/M2-ownership.md for why the first claim is
 // gated on a button and every later one on a signature. Revocation names a
@@ -180,6 +181,30 @@ func RunGetOwner(ip string) {
 	fmt.Println("To hand this board to a different key:")
 	fmt.Println("  setowner - signed by the current owner's key, no button needed")
 	fmt.Println("  takeown  - after a factory reset (hold BOOT0), physical presence required")
+}
+
+// RunGetAppRevoked reports whether the image installed on this board was
+// signed by a leaf that has since been revoked.
+//
+// A revoked leaf's image keeps booting (decision 60), so this is the only way
+// to find the boards that want a re-upload after revoking somebody. One board
+// per call, by design: scanning a subnet is the caller's job, from discovery.
+func RunGetAppRevoked(ip string) {
+	reply, err := ownerCommand(ip, "getapprevoked")
+	logf(err, "cannot ask this board about its installed firmware")
+
+	switch strings.TrimSpace(reply) {
+	case "yes":
+		fmt.Println("REVOKED. This board is running firmware signed by a leaf that has been revoked.")
+		fmt.Println("It keeps running, and it keeps working. But that signer is no longer trusted,")
+		fmt.Println("so re-upload this board with a current key when you get the chance.")
+	case "no":
+		fmt.Println("OK. The firmware on this board was signed by a leaf that is still trusted.")
+	case "none":
+		fmt.Println("No signed firmware installed - nothing to re-upload.")
+	default:
+		logf(true, fmt.Sprintf("the board answered getapprevoked with %q - is it in the bootloader?", reply))
+	}
 }
 
 // RunTakeOwn claims an unclaimed board for the key in keyPath.

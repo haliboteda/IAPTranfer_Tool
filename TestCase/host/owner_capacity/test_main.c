@@ -320,6 +320,34 @@ static void write_revoke_slot(uint32_t index, const uint8_t leaf[OWNER_REVOKE_PR
 	memcpy(&r[OFF_REV_PREFIX], leaf, OWNER_REVOKE_PREFIX_LEN);
 }
 
+/* R4: a revocation naming the root in force is ignored, so no sequence of
+ * revocations can leave a board with no usable root.
+ *
+ * This is the bootloader's own copy of the rule -- the core mirror has its
+ * own, covered by T2-21. owner_slot_revoke() refuses to write such a record,
+ * so the only way to reach the check is to place one behind its back. */
+static void phase_self_revoke(void)
+{
+	/* The whole area has to be arranged before the first read: owner_slot.c
+	 * scans once and caches, and nothing in its public API resets that.
+	 * Writing a record after the scan and expecting the reader to see it is
+	 * how the first version of this phase passed without testing anything. */
+	install_root();
+	write_revoke_slot(0U, g_root_pub);   /* names the root in force */
+	write_revoke_slot(1U, g_next_pub);   /* names something else */
+	force_rescan();
+
+	CHECK(!owner_slot_is_revoked(g_root_pub),
+			"a revocation naming the root in force is ignored");
+	CHECK(memcmp(owner_slot_root(), g_root_pub, PUBKEY_SIZE) == 0,
+			"and the root is still the one in force");
+
+	/* The control: without it, a reader that answers "not revoked" to
+	 * everything would pass the two checks above. */
+	CHECK(owner_slot_is_revoked(g_next_pub),
+			"while a revocation naming any other key still bites");
+}
+
 static void phase_capacity(void)
 {
 	uint32_t i;
@@ -613,6 +641,8 @@ int main(int argc, char **argv)
 		phase_wipe();
 	} else if (strcmp(phase, "wipe-verify") == 0) {
 		phase_wipe_verify();
+	} else if (strcmp(phase, "self-revoke") == 0) {
+		phase_self_revoke();
 	} else {
 		printf("unknown phase %s -- see PHASE_GROUPS in build.py\n", phase);
 		return 2;

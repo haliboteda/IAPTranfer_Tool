@@ -64,6 +64,9 @@ const usageText = `Usage:
                    bytes, hex on stdout. For the bootloader's owner-record
                    chain (setowner), not for firmware images.
   IAPTool getowner <ip>      which key this board trusts, and at which generation
+  IAPTool getapprevoked <ip> was this board's firmware signed by a leaf that has
+                   since been revoked? Such firmware keeps running, so this is the
+                   only way to find the boards worth re-uploading after a revoke.
   IAPTool takeown  <ip> --key=<owner.pem>
                    claims an unclaimed board for that key. BOOT0 must have been
                    held through the board's current boot - the first claim carries
@@ -201,6 +204,12 @@ func main() {
 		}
 		RunGetOwner(args[1])
 
+	case "getapprevoked":
+		if len(args) < 2 {
+			logf(true, usageText)
+		}
+		RunGetAppRevoked(args[1])
+
 	case "takeown":
 		if len(args) < 2 {
 			logf(true, usageText)
@@ -250,7 +259,8 @@ func main() {
 
 	default:
 		logf(true, "Invalid mode: %s. Use 'cdc', 'ether', 'flashboot', 'sign', 'genkey', "+
-			"'pubkey', 'cert', 'signraw', 'getowner', 'takeown', 'setowner' or 'revoke'", mode)
+			"'pubkey', 'cert', 'signraw', 'getowner', 'getapprevoked', 'takeown', "+
+			"'setowner' or 'revoke'", mode)
 	}
 }
 

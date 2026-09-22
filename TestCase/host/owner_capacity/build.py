@@ -76,8 +76,10 @@ PHASE_GROUPS = {
     "capacity": ("capacity",),
     "compact": ("compact", "compact-verify"),
     "wipe": ("wipe", "wipe-verify"),
+    "self-revoke": ("self-revoke",),
 }
-ALL_PHASES = ("capacity", "compact", "compact-verify", "wipe", "wipe-verify")
+ALL_PHASES = ("capacity", "compact", "compact-verify", "wipe", "wipe-verify",
+              "self-revoke")
 
 
 def main(argv):
