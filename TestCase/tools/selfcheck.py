@@ -66,6 +66,7 @@ CATALOG = [
     ("T1-16",        "R1-20",                  "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)"),
     ("T2-21",        "R2-04",                  "the root in force cannot revoke itself (real owner_root_ro.c over a fake record area)"),
     ("T2-22-T2-23",  "R2-04",                  "revocation area: warns at 8 slots left, refuses the 97th without writing"),
+    ("T1-33",        "R1-36",                  "flashboot compaction keeps the chain and the live revocations, drops the rest"),
     ("T4-01",        "-",                      "port tool protocol contract (real porttool.c, then the Go parser)"),
     ("T1-18a-T1-18g", "R1-21",                  "IAPTool key/certificate match against a stand-in board"),
     ("T1-19-T1-20",  "R1-24",                  "crypto cross-check against independent implementations"),
@@ -90,7 +91,7 @@ def print_catalog():
     for cid, covers, name in CATALOG:
         print("  %-*s  covers %-*s  %s" % (width, cid, cov, covers, name))
     print("")
-    print("  %d steps. --quick skips T1-16 / T2-21 / T2-22-T2-23 / T4-01 / T1-18a-T1-18g / T1-19-T1-20 / P4 / P15."
+    print("  %d steps. --quick skips T1-16 / T2-21 / T2-22-T2-23 / T1-33 / T4-01 / T1-18a-T1-18g / T1-19-T1-20 / P4 / P15."
           % len(CATALOG))
     print("  P7, P8 and P9 check the documents, not the firmware.")
 
@@ -246,7 +247,14 @@ def main():
         # the WRITE path runs off the board. On a board these two cases would
         # burn all 96 revocation slots for good.
         run_step("T2-22-T2-23", "revocation area: warns at 8 slots left, refuses the 97th without writing",
-                 [python_exe(), TESTTOOL / "host" / "owner_capacity" / "build.py"],
+                 [python_exe(), TESTTOOL / "host" / "owner_capacity" / "build.py", "capacity"],
+                 needs=cc_need, cwd=tool_repo)
+
+        # Same harness, other end of the area: what survives the erase during
+        # a flashboot. Two phases, because the read-back has to happen in a
+        # process that has not scanned the area yet.
+        run_step("T1-33", "flashboot compaction keeps the chain and the live revocations, drops the rest",
+                 [python_exe(), TESTTOOL / "host" / "owner_capacity" / "build.py", "compact"],
                  needs=cc_need, cwd=tool_repo)
 
         # build.py runs both halves: the C harness against the real firmware

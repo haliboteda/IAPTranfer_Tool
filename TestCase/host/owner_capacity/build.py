@@ -1,14 +1,19 @@
 """Builds and runs the revocation-capacity harness against the real
-owner_slot.c in the bootloader. Cases T2-22 and T2-23.
+owner_slot.c in the bootloader. Cases T2-22, T2-23 and T1-33.
 
     python build.py
 
-Both cases are about what happens as the 'R' segment fills up: the boot line
+T2-22 and T2-23 are about what happens as the 'R' segment fills up: the boot line
 must start warning with OWNER_REVOKE_LOW_WATER slots left, and the record past
 the last one must be refused without writing a byte. On a board that costs all
 96 slots permanently -- only a bootloader reflash reclaims them -- so this runs
 the same code on a PC instead, over a RAM buffer and a Flash_If_Write() that
 enforces the H7's programming rules (stubs/fake_owner_flash.c).
+
+T1-33 is the other end of the same area: owner_slot_compact(), which decides
+what survives the sector erase during a flashboot. Getting it wrong costs a
+board its ownership with nothing to undo it, and the only way to reach that
+function on a board is to actually replace the bootloader.
 
 stubs/fake_owner_flash.h is passed with -include so it is seen before
 owner_slot.h's own (guarded) OWNER_SLOT_BASE.
@@ -60,7 +65,25 @@ def emit(argv, cwd=None):
     return proc.returncode
 
 
-def main():
+# The phase groups selfcheck runs as separate steps, so each step id maps to
+# the cases it actually covers. Naming a group on the command line runs it
+# alone; naming nothing runs every phase in order.
+PHASE_GROUPS = {
+    "capacity": ("capacity",),
+    "compact": ("compact", "compact-verify"),
+}
+ALL_PHASES = ("capacity", "compact", "compact-verify")
+
+
+def main(argv):
+    phases = ALL_PHASES
+    if argv:
+        if argv[0] not in PHASE_GROUPS:
+            print("unknown phase group %s -- expected one of %s"
+                  % (argv[0], ", ".join(sorted(PHASE_GROUPS))))
+            return 2
+        phases = PHASE_GROUPS[argv[0]]
+
     cc = resolve_cc()
     if not cc:
         print("No C compiler found. Install MinGW-w64 or LLVM/clang and point $HOST_CC "
@@ -96,10 +119,17 @@ def main():
     if rc != 0:
         return rc
 
-    # Run from HERE: the harness writes a scratch file next to itself while
+    # One phase per process: owner_slot.c caches its scan and nothing in its
+    # public API resets it, so the second arrangement needs a fresh start.
+    # Run from HERE -- the harness writes a scratch file next to itself while
     # capturing owner_slot_report()'s output.
-    return emit([binary], cwd=HERE)
+    for phase in phases:
+        print("===== phase %s" % phase, flush=True)
+        rc = emit([binary, phase], cwd=HERE)
+        if rc != 0:
+            return rc
+    return 0
 
 
 if __name__ == "__main__":
-    sys.exit(main())
+    sys.exit(main(sys.argv[1:]))

@@ -2,6 +2,15 @@
  * T2-22: the boot line starts warning with OWNER_REVOKE_LOW_WATER revocation
  *        slots left, and says nothing before that.
  * T2-23: the 97th revocation is refused and not one byte is written.
+ * T1-33: owner_slot_compact() keeps the walked chain and the live
+ *        revocations, drops the rest, never promotes a record the chain
+ *        refused, and the result still resolves to the same root when it is
+ *        read back.
+ *
+ * One phase per run -- owner_slot.c caches its scan, and its pointers point
+ * into the record area, so a second arrangement needs a second process rather
+ * than a test-only back door in shipping code. The compact phase hands its
+ * result to the next phase through COMPACTED_PATH. build.py runs all three.
  *
  * Runs the REAL owner_slot.c from the bootloader over a RAM buffer that
  * stands in for the owner-record area, with a Flash_If_Write() that enforces
@@ -54,6 +63,8 @@ static int g_failures = 0;
 
 static uint8_t g_root_pub[PUBKEY_SIZE];
 static uint8_t g_root_priv[32];
+static uint8_t g_next_pub[PUBKEY_SIZE];
+static uint8_t g_next_priv[32];
 
 /* Deterministic, so a failure reproduces. Not secret and not meant to be:
  * the keys never leave this process and nothing here is a security boundary. */
@@ -87,18 +98,41 @@ static void put_u32(uint8_t *p, uint32_t v)
  * first use). Written straight into the buffer rather than through
  * owner_slot_claim(), because claiming needs a BOOT0 assertion this harness
  * has no way to make and the record it would produce is this one. */
-static void install_root(void)
+static uint8_t *owner_slot_at(uint32_t index)
 {
-	uint8_t *r = fake_owner_area;   /* 'O' segment starts at offset 0 */
+	return &fake_owner_area[index * OWNER_RECORD_SIZE];   /* 'O' segment is at offset 0 */
+}
+
+/* An 'O' record carrying `root`, signed by `signer_priv` or unsigned when
+ * that is NULL. Unsigned is legitimate for the first record only. */
+static void install_owner_record(uint32_t index, uint32_t generation,
+		const uint8_t root[PUBKEY_SIZE], const uint8_t *signer_priv)
+{
+	uint8_t *r = owner_slot_at(index);
+	uint8_t digest[SHA256_DIGEST_SIZE];
 
 	memset(r, 0, OWNER_RECORD_SIZE);
 	r[OFF_TYPE] = (uint8_t)'O';
 	r[OFF_RESERVED0] = 0U;
 	put_u16(&r[OFF_FORMAT_VER], (uint16_t)FORMAT_VER);
-	put_u32(&r[OFF_GENERATION], 1UL);
+	put_u32(&r[OFF_GENERATION], generation);
 	put_u32(&r[OFF_FLAGS], 0UL);
-	memcpy(&r[OFF_PAYLOAD], g_root_pub, PUBKEY_SIZE);
+	memcpy(&r[OFF_PAYLOAD], root, PUBKEY_SIZE);
 	memcpy(&r[OFF_UID], test_machine_id(), IAP_MACHINE_ID_SIZE);
+
+	if (signer_priv != NULL) {
+		sha256(r, OWNER_SIGNED_PREFIX_LEN, digest);
+		if (uECC_sign(signer_priv, digest, sizeof(digest),
+				&r[OWNER_SIGNED_PREFIX_LEN], uECC_secp256r1()) != 1) {
+			printf("[FAIL] could not sign an owner record -- harness problem\n");
+			g_failures++;
+		}
+	}
+}
+
+static void install_root(void)
+{
+	install_owner_record(0U, 1UL, g_root_pub, NULL);
 }
 
 /* 97 leaf names that differ inside the first OWNER_REVOKE_PREFIX_LEN bytes,
@@ -180,6 +214,37 @@ static bool revoke_nth(uint32_t n)
  * dup/dup2 rather than freopen: restoring stdout afterwards has to work, and
  * freopen has no portable way back.
  */
+/* The compacted image, handed from the compact phase to the phase that reads
+ * it back. A file rather than memory because the two run in separate
+ * processes. */
+#define COMPACTED_PATH "compacted.bin"
+
+static bool write_file(const char *path, const uint8_t *data, uint32_t len)
+{
+	FILE *f = fopen(path, "wb");
+	bool ok;
+
+	if (f == NULL) {
+		return false;
+	}
+	ok = (fwrite(data, 1U, len, f) == len);
+	fclose(f);
+	return ok;
+}
+
+static bool read_file(const char *path, uint8_t *data, uint32_t len)
+{
+	FILE *f = fopen(path, "rb");
+	bool ok;
+
+	if (f == NULL) {
+		return false;
+	}
+	ok = (fread(data, 1U, len, f) == len);
+	fclose(f);
+	return ok;
+}
+
 static bool report_contains(const char *needle)
 {
 	static char buf[8192];
@@ -225,19 +290,39 @@ static void force_rescan(void)
 	(void)owner_slot_is_revoked(probe);
 }
 
-int main(void)
+
+static bool all_bytes_are(const uint8_t *p, uint32_t len, uint8_t v)
+{
+	uint32_t i;
+
+	for (i = 0U; i < len; i++) {
+		if (p[i] != v) {
+			return false;
+		}
+	}
+	return true;
+}
+
+/* An 'R' record placed straight into the segment, for arranging an area that
+ * owner_slot_revoke() would never produce (a self-naming revocation). */
+static void write_revoke_slot(uint32_t index, const uint8_t leaf[OWNER_REVOKE_PREFIX_LEN])
+{
+	uint8_t *r = &fake_owner_area[OWNER_SEG_O_SIZE + (index * OWNER_REVOKE_REC_SIZE)];
+
+	memset(r, 0, OWNER_REVOKE_REC_SIZE);
+	r[OFF_TYPE] = (uint8_t)'R';
+	r[OFF_RESERVED0] = 0U;
+	put_u16(&r[OFF_FORMAT_VER], (uint16_t)FORMAT_VER);
+	memcpy(&r[OFF_REV_UID], test_machine_id(), IAP_MACHINE_ID_SIZE);
+	memcpy(&r[OFF_REV_PREFIX], leaf, OWNER_REVOKE_PREFIX_LEN);
+}
+
+static void phase_capacity(void)
 {
 	uint32_t i;
 	uint8_t before[OWNER_SEG_R_SIZE];
 	uint32_t bytes_before;
 
-	uECC_set_rng(&test_rng);
-	fake_flash_reset();
-
-	if (uECC_make_key(g_root_pub, g_root_priv, uECC_secp256r1()) != 1) {
-		printf("could not generate a key pair -- harness problem\n");
-		return 2;
-	}
 	install_root();
 	force_rescan();
 
@@ -293,6 +378,136 @@ int main(void)
 	/* The refusal must not have cost the board anything else either. */
 	CHECK(memcmp(owner_slot_root(), g_root_pub, PUBKEY_SIZE) == 0,
 			"the root in force is still the same after the refusal");
+
+}
+
+/*
+ * T1-33. A deliberately messy area, then one compaction, then a rescan of the
+ * compacted bytes -- the round trip is the proof, because a compaction whose
+ * bytes look right but resolve differently is exactly the failure that costs
+ * a board its ownership.
+ *
+ *   slot 0   generation 1, unsigned      the initial claim (kept)
+ *   slot 1   wrong format_ver            garbage (dropped; it is skipped by
+ *                                        the scan, not a link that breaks)
+ *   slot 2   generation 2, signed by A   the handover to B (kept)
+ *   slot 3   generation 3, UNSIGNED      what an attacker writes (dropped, and
+ *                                        must NOT be promoted by compaction)
+ */
+static void phase_compact(void)
+{
+	static uint8_t compacted[OWNER_SLOT_SIZE];
+	uint8_t leaf_kept_a[OWNER_REVOKE_PREFIX_LEN];
+	uint8_t leaf_kept_b[OWNER_REVOKE_PREFIX_LEN];
+	uint8_t self_named[OWNER_REVOKE_PREFIX_LEN];
+	uint8_t *garbage;
+
+	install_owner_record(0U, 1UL, g_root_pub, NULL);
+
+	garbage = owner_slot_at(1U);
+	memset(garbage, 0, OWNER_RECORD_SIZE);
+	garbage[OFF_TYPE] = (uint8_t)'O';
+	put_u16(&garbage[OFF_FORMAT_VER], (uint16_t)(FORMAT_VER - 1U));
+
+	install_owner_record(2U, 2UL, g_next_pub, g_root_priv);
+	install_owner_record(3U, 3UL, g_root_pub, NULL);   /* unsigned, not first */
+
+	/* Two real leaves, plus one naming the root that ends up in force -- R4
+	 * ignores that one, so compaction must not spend a slot carrying it. */
+	leaf_name(1U, leaf_kept_a);
+	leaf_name(2U, leaf_kept_b);
+	memcpy(self_named, g_next_pub, OWNER_REVOKE_PREFIX_LEN);
+	write_revoke_slot(0U, self_named);
+	write_revoke_slot(1U, leaf_kept_a);
+	write_revoke_slot(2U, leaf_kept_b);
+
+	force_rescan();
+
+	CHECK(memcmp(owner_slot_root(), g_next_pub, PUBKEY_SIZE) == 0,
+			"the chain stops at the signed handover, not the unsigned record after it");
+
+	CHECK(owner_slot_compact(compacted), "compaction accepted this area");
+
+	CHECK(memcmp(compacted, owner_slot_at(0U), OWNER_RECORD_SIZE) == 0,
+			"compacted slot 0 is the initial claim");
+	CHECK(memcmp(compacted + OWNER_RECORD_SIZE, owner_slot_at(2U),
+			OWNER_RECORD_SIZE) == 0,
+			"compacted slot 1 is the signed handover, moved down over the garbage");
+	CHECK(all_bytes_are(compacted + (2U * OWNER_RECORD_SIZE), OWNER_RECORD_SIZE, 0xFFU),
+			"the unsigned generation-3 record was NOT promoted into the chain");
+
+	CHECK(memcmp(compacted + OWNER_SEG_O_SIZE + OFF_REV_PREFIX,
+			leaf_kept_a, OWNER_REVOKE_PREFIX_LEN) == 0,
+			"the first surviving revocation moved down over the self-naming one");
+	CHECK(memcmp(compacted + OWNER_SEG_O_SIZE + OWNER_REVOKE_REC_SIZE + OFF_REV_PREFIX,
+			leaf_kept_b, OWNER_REVOKE_PREFIX_LEN) == 0,
+			"the second surviving revocation followed it");
+	CHECK(all_bytes_are(compacted + OWNER_SEG_O_SIZE + (2U * OWNER_REVOKE_REC_SIZE),
+			OWNER_REVOKE_REC_SIZE, 0xFFU),
+			"the revocation naming the root in force was dropped");
+
+	/* Handed to the next phase, which reads it back with a fresh scan. Doing
+	 * that here would prove nothing: s_effective still points into the area
+	 * this would overwrite. */
+	CHECK(write_file(COMPACTED_PATH, compacted, OWNER_SLOT_SIZE),
+			"the compacted image was handed to the read-back phase");
+}
+
+/*
+ * T1-33, second half: program what compaction produced and read it with the
+ * same code the next boot would use. Runs first thing in its own process, so
+ * the scan is genuinely fresh.
+ */
+static void phase_compact_verify(void)
+{
+	uint8_t leaf_kept_a[OWNER_REVOKE_PREFIX_LEN];
+	uint8_t probe[64];
+
+	if (!read_file(COMPACTED_PATH, fake_owner_area, OWNER_SLOT_SIZE)) {
+		printf("[FAIL] no %s -- the compact phase must run first\n", COMPACTED_PATH);
+		g_failures++;
+		return;
+	}
+	remove(COMPACTED_PATH);
+	leaf_name(1U, leaf_kept_a);
+
+	CHECK(memcmp(owner_slot_root(), g_next_pub, PUBKEY_SIZE) == 0,
+			"after compaction the board still trusts the same root");
+	CHECK(owner_slot_generation() == 2UL,
+			"and is still at the generation the handover set");
+
+	memset(probe, 0, sizeof(probe));
+	memcpy(probe, leaf_kept_a, OWNER_REVOKE_PREFIX_LEN);
+	CHECK(owner_slot_is_revoked(probe), "a kept revocation is still in effect");
+	memset(probe, 0, sizeof(probe));
+	leaf_name(50U, probe);
+	CHECK(!owner_slot_is_revoked(probe), "a leaf nobody revoked is still fine");
+}
+
+int main(int argc, char **argv)
+{
+	const char *phase = (argc > 1) ? argv[1] : "capacity";
+
+	uECC_set_rng(&test_rng);
+	fake_flash_reset();
+
+	if ((uECC_make_key(g_root_pub, g_root_priv, uECC_secp256r1()) != 1) ||
+			(uECC_make_key(g_next_pub, g_next_priv, uECC_secp256r1()) != 1)) {
+		printf("could not generate a key pair -- harness problem\n");
+		return 2;
+	}
+
+	if (strcmp(phase, "capacity") == 0) {
+		phase_capacity();
+	} else if (strcmp(phase, "compact") == 0) {
+		phase_compact();
+	} else if (strcmp(phase, "compact-verify") == 0) {
+		phase_compact_verify();
+	} else {
+		printf("unknown phase %s -- expected capacity, compact or compact-verify\n",
+				phase);
+		return 2;
+	}
 
 	printf("\n%s (%d failure%s)\n", (g_failures == 0) ? "ALL PASS" : "FAILED",
 			g_failures, (g_failures == 1) ? "" : "s");
