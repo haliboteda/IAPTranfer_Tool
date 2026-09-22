@@ -186,7 +186,8 @@ def path_2(r):
     # 2-b and 2-e together: this script claims the board itself, so running
     # run_takeown.py first would claim it twice.
     ok &= r.record("2-b+2-e/T2-01+T2-09", PASS if r.tool(
-        "run_claim_invalidates_existing_app.py", "--key", owner) == 0 else FAIL,
+        "run_claim_invalidates_existing_app.py", "--key", owner,
+        "--boot0-timeout", r.args.boot0_timeout) == 0 else FAIL,
         "claimed, and path 1's application stopped being accepted")
 
     ok &= r.record("2-e-upload", PASS if r.tool(
@@ -248,7 +249,8 @@ def path_5(r):
     r.hold_boot0("Path 3 erased the owner records, and setowner needs a claimed board.")
     owner2 = r.genkey("owner_for_path5")
     ok = r.record("5-0/takeown", PASS if r.tool(
-        "run_takeown.py", "--key", owner2) == 0 else FAIL, "re-claimed")
+        "run_takeown.py", "--key", owner2,
+        "--boot0-timeout", r.args.boot0_timeout) == 0 else FAIL, "re-claimed")
     if not ok:
         return False
 
@@ -280,6 +282,11 @@ def main():
     ap.add_argument("--from", dest="start", type=int, default=0,
                     help="resume at this path; 0 is factory state")
     ap.add_argument("--only", nargs="*", type=int, default=None)
+    ap.add_argument("--boot0-timeout", type=int, default=600,
+                    help="how long each BOOT0 step waits for you. Generous on "
+                         "purpose: the countdown starts when the step is "
+                         "reached, which is before anybody has read the "
+                         "message telling them to press anything.")
     ap.add_argument("--dry-run", action="store_true",
                     help="print what would run and touch nothing")
     args = ap.parse_args()
