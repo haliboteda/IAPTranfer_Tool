@@ -481,6 +481,41 @@ def decode_serial(data):
     return data.decode("ascii", errors="replace").replace("�", "?")
 
 
+# The board says this when it came up with BOOT0 held through the startup
+# window. It is how a script knows the operator did the gesture: the BOARD
+# reports it, so nobody has to walk back to the keyboard to confirm.
+LOG_BOOT0_UPLOAD = "UPLOAD Mod ... (BOOT0 held)"
+
+
+def wait_for_boot0_upload_mode(ports, timeout):
+    """Watch the log ports until the board says BOOT0 was held.
+
+    Returns (seen, text). Without this a script races the human: it prints
+    "hold BOOT0 now" and then queries the board microseconds later, which on
+    an unattended run means the answer is always "not held".
+    """
+    import time
+    open_ports = open_log_ports(ports)
+    if not open_ports:
+        return False, ""
+    text = ""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        for h in open_ports.values():
+            try:
+                n = h.in_waiting
+                if n:
+                    text += decode_serial(h.read(n))
+            except Exception:
+                pass
+        if LOG_BOOT0_UPLOAD in text:
+            close_ports(open_ports)
+            return True, text
+        time.sleep(0.1)
+    close_ports(open_ports)
+    return False, text
+
+
 def read_log_ports(open_ports, seconds, until=None, until_count=1):
     """Drain the given ports for `seconds` and return name -> captured text.
 

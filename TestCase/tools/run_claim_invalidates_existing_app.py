@@ -56,7 +56,8 @@ from pathlib import Path
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
-from common import (Fail, Ok, Section, Warn, banner, cfg,  # noqa: E402
+from common import (LOG_BOOT0_UPLOAD, Fail, Ok, Section, Warn,  # noqa: E402
+                    banner, cfg, wait_for_boot0_upload_mode,
                     close_ports, decode_serial, get_programmer_cli,
                     open_log_ports, python_exe, read_log_ports,
                     target_voltage, wait_for_board)
@@ -76,7 +77,6 @@ LOG_APP_INVALID = "App signature invalid or absent"
 LOG_OWNER_EMPTY = "Owner slot: empty"
 LOG_CLAIMED = "Owner slot: claimed at generation"
 # What the board prints when the BOOT0 gesture landed.
-LOG_BOOT0_UPLOAD = "UPLOAD Mod ... (BOOT0 held)"
 
 
 def read_words(cli, addr, nbytes):
@@ -111,31 +111,6 @@ def boot_round(cli, ports, seconds, title):
     return "\n".join(buf.values())
 
 
-def wait_for_boot0_upload_mode(ports, timeout):
-    """Watch the log ports until the board says it came up with BOOT0 held.
-
-    Watching beats asking for a keypress: the board reports the gesture itself,
-    so nobody has to walk back to the keyboard to say they did it.
-    """
-    open_ports = open_log_ports(ports)
-    if not open_ports:
-        return False, ""
-    text = ""
-    deadline = time.monotonic() + timeout
-    while time.monotonic() < deadline:
-        for h in open_ports.values():
-            try:
-                n = h.in_waiting
-                if n:
-                    text += decode_serial(h.read(n))
-            except Exception:
-                pass
-        if LOG_BOOT0_UPLOAD in text:
-            close_ports(open_ports)
-            return True, text
-        time.sleep(0.1)
-    close_ports(open_ports)
-    return False, text
 
 
 def main():

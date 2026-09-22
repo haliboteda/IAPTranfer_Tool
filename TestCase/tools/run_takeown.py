@@ -34,8 +34,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import (cfg, Section, Ok, Fail, banner,  # noqa: E402
-                    get_go_bin, run_capture, tcp_command)
+from common import (LOG_BOOT0_UPLOAD, cfg, Section, Ok, Fail,  # noqa: E402
+                    Warn, banner, get_go_bin, run_capture, tcp_command,
+                    wait_for_boot0_upload_mode)
 
 
 def genkey(iap):
@@ -59,6 +60,11 @@ def main():
     ap.add_argument("--port", default="56865")
     ap.add_argument("--key", default="", help="the owner's private key (PEM)")
     ap.add_argument("--expect-refused", action="store_true")
+    ap.add_argument("--boot0-timeout", type=int, default=180,
+                    help="how long to wait for the operator to do the BOOT0 "
+                         "gesture; ignored with --expect-refused, which needs "
+                         "the opposite")
+    ap.add_argument("--ports", nargs="*", default=None)
     args = ap.parse_args()
 
     ip = args.ip or getattr(cfg, "BOARD_IP", "")
@@ -77,12 +83,25 @@ def main():
     banner(["PRESS RESET, THEN HOLD BOOT0 UNTIL THE RELAYS STOP CLICKING.",
             "Let go. The board should print: UPLOAD Mod ... (BOOT0 held)"])
 
-    print("  Nothing to confirm -- if BOOT0 was not held, the board answers Refused")
-    print("  and this script says so. That refusal IS the check.")
-    print()
     print("  Why physical presence: the first claim carries no signature (there is no")
     print("  owner yet to sign it), so a button is the only gate there can be.")
     print()
+
+    # Wait for the BOARD to say the gesture landed, rather than asking the
+    # operator to confirm it. Without this the script queried the board
+    # immediately after printing the banner, so an unattended run raced the
+    # human and always saw "not held" -- the refusal looked like the case
+    # failing rather than like nobody having pressed anything yet.
+    if not args.expect_refused:
+        ports = list(args.ports if args.ports is not None else cfg.LOG_PORTS)
+        Section("waiting for BOOT0")
+        print("  up to %d s for the board to print %r" % (args.boot0_timeout, LOG_BOOT0_UPLOAD))
+        seen, _ = wait_for_boot0_upload_mode(ports, args.boot0_timeout)
+        if not seen:
+            Fail("the board never reported BOOT0 held; nothing was attempted")
+            Warn("  reset the board, hold BOOT0 through the relay clicks, let go")
+            return 2
+        Ok("  the board reports BOOT0 was held")
 
     Section("before")
     was = tcp_command(ip, args.port, "getpubkey")

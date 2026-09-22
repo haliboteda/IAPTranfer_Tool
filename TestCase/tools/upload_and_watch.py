@@ -25,7 +25,7 @@ from common import (cfg, Section, Ok, Warn, Fail, close_ports,  # noqa: E402
 TAIL_S = 6
 
 
-def verdict(all_text, exit_code):
+def verdict(all_text, exit_code, expect_banner=None):
     """Judge the captured log. Returns (failures, unknowns).
 
     A failure is a check that ran and came out wrong. An unknown is a check
@@ -74,12 +74,30 @@ def verdict(all_text, exit_code):
         Fail("  IAPTool exit %d" % exit_code)
         fails += 1
 
+    # "It uploaded" and "what is installed changed" are different claims. The
+    # checks above are all about the transfer; only this one is about the
+    # upgrade, which is what every one of the five paths ends in.
+    if expect_banner:
+        if expect_banner in all_text:
+            Ok("  the board came up saying %r" % expect_banner)
+        else:
+            Fail("  the board never said %r - what is installed did not change"
+                 % expect_banner)
+            fails += 1
+
     return fails, unknowns
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--bin", required=True)
+    ap.add_argument("--expect-banner",
+                    help="a string the board must print AFTER this upload, "
+                         "e.g. 'IAP_PROBE_APP up v2'. Every path in the "
+                         "five-path run ends in 'and upgrade', and an "
+                         "upgrade is only observed by the installed thing "
+                         "having changed -- without this the case passes on "
+                         "an upload that replaced nothing.")
     ap.add_argument("--key", default="",
                     help="the owner private key this board is claimed for")
     ap.add_argument("--ip", default="")
@@ -136,7 +154,7 @@ def main():
         if text:
             print(text)
 
-    fails, unknowns = verdict("\n".join(buf.values()), rc)
+    fails, unknowns = verdict("\n".join(buf.values()), rc, args.expect_banner)
     if unknowns:
         Warn("  %d check(s) had no evidence either way" % unknowns)
     if fails:

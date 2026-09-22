@@ -39,7 +39,9 @@ from common import (Fail, Ok, Section, Warn, assert_target_reachable,  # noqa: E
 OWNER_SLOT_BASE = 0x0801E000
 OWNER_SLOT_SIZE = 8 * 1024
 APP_BASE = 0x08020000
-JOURNAL_BASE = 0x081E0000
+# The whole state sector: 8 KiB of calibration space, then the metadata
+# area. A factory board has neither.
+STATE_SECTOR_BASE = 0x081E0000
 
 # Two lines the bootloader prints on an unclaimed board. The second one is the
 # only way a customer ever learns the board is undefended, so its absence is a
@@ -47,7 +49,10 @@ JOURNAL_BASE = 0x081E0000
 LOG_OWNER_EMPTY = "Owner slot: empty"
 LOG_PUBLIC_ROOT = "trusts the PUBLISHED root key"
 # A freshly erased journal has nothing in it and no metadata record.
-LOG_JOURNAL_EMPTY = "0/4096 journal slots used"
+# The journal is gone; the metadata area replaced it, and it is 3840 slots
+# rather than 4096 because the first 8 KiB of the sector is calibration
+# data now. Matched as a prefix so the count is read, not assumed.
+LOG_METADATA_EMPTY = "0/3840 metadata slots used"
 # Proves the capture worked at all. NOT the SDRAM self-test line: that only
 # prints when the board stays in the bootloader, so on a board that still has
 # an application its absence means "not reached", not "nothing captured".
@@ -94,7 +99,7 @@ def snapshot(cli, title):
     Section(title)
     owner = region_is_blank(cli, OWNER_SLOT_BASE, OWNER_SLOT_SIZE, "owner record area")
     app = region_is_blank(cli, APP_BASE, 256, "application region")
-    journal = region_is_blank(cli, JOURNAL_BASE, 256, "journal sector")
+    journal = region_is_blank(cli, STATE_SECTOR_BASE, 256, "state sector")
     return owner, app, journal
 
 
@@ -180,7 +185,7 @@ def main():
         Ok("  boot log            captured")
         for needle, label in ((LOG_OWNER_EMPTY, "owner slot empty"),
                               (LOG_PUBLIC_ROOT, "published-root warning"),
-                              (LOG_JOURNAL_EMPTY, "journal empty")):
+                              (LOG_METADATA_EMPTY, "metadata area empty")):
             if needle in log:
                 Ok("  %-19s yes" % label)
             else:
@@ -189,7 +194,7 @@ def main():
     print("")
     flash_ok = owner_blank and app_blank
     log_ok = (captured and LOG_OWNER_EMPTY in log
-              and LOG_PUBLIC_ROOT in log and LOG_JOURNAL_EMPTY in log)
+              and LOG_PUBLIC_ROOT in log and LOG_METADATA_EMPTY in log)
 
     if flash_ok and log_ok:
         Ok("PASS - factory state, confirmed by flash reads AND the boot log.")
