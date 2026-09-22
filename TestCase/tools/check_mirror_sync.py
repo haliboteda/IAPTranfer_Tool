@@ -289,10 +289,12 @@ compare_anchor("certificate signed prefix (bytes)", {
 })
 
 # --- owner record format ----------------------------------------------------
-# Three readers of the same 160 bytes in the bootloader's flash sector: the
-# bootloader writes and resolves them, the app resolves them read-only, and the
-# tool signs the prefix. A prefix length that disagrees signs the wrong bytes,
-# and the board rejects a handover that was perfectly legitimate.
+# Three readers of the same 8 KiB in the bootloader's flash sector: the
+# bootloader writes and resolves records, the app resolves them read-only, and
+# the tool signs the prefix. A prefix length that disagrees signs the wrong
+# bytes, and the board rejects a handover that was perfectly legitimate.
+# The two segment geometries are anchored too: a count or a base that drifts
+# has the app reading revocations out of the middle of an 'O' record.
 compare_anchor("owner record format version", {
     "bootloader IAPServer/owner_slot.h": get_anchor(boot_owner, r'#define\s+OWNER_FORMAT_VER\s+(\d+)U'),
     "core OpenPLC_IAP/src/owner_root_ro.c": get_anchor(core_owner, r'#define\s+OWNER_FORMAT_VER\s+(\d+)U'),
@@ -303,6 +305,34 @@ compare_anchor("owner record signed prefix (bytes)", {
     "bootloader IAPServer/owner_slot.h": get_anchor(boot_owner, r'#define\s+OWNER_SIGNED_PREFIX_LEN\s+(\d+)U'),
     "core OpenPLC_IAP/src/owner_root_ro.c": get_anchor(core_owner, r'#define\s+OWNER_SIGNED_PREFIX_LEN\s+(\d+)U'),
     "IAPTool owner.go": get_anchor(tool_owner, r'ownerSignedPrefixLen\s*=\s*(\d+)'),
+})
+
+# The two segments. Only the bootloader and the app address the area, so the
+# tool has no anchor to offer here.
+compare_anchor("'O' segment: record size (bytes)", {
+    "bootloader IAPServer/owner_slot.h": get_anchor(boot_owner, r'#define\s+OWNER_RECORD_SIZE\s+(\d+)U'),
+    "core OpenPLC_IAP/src/owner_root_ro.c": get_anchor(core_owner, r'#define\s+OWNER_RECORD_SIZE\s+(\d+)U'),
+})
+
+compare_anchor("'O' segment: record count", {
+    "bootloader IAPServer/owner_slot.h": get_anchor(boot_owner, r'#define\s+OWNER_SLOT_MAX_RECORDS\s+(\d+)U'),
+    "core OpenPLC_IAP/src/owner_root_ro.c": get_anchor(core_owner, r'#define\s+OWNER_SLOT_MAX_RECORDS\s+(\d+)U'),
+})
+
+compare_anchor("'R' segment: record size (bytes)", {
+    "bootloader IAPServer/owner_slot.h": get_anchor(boot_owner, r'#define\s+OWNER_REVOKE_REC_SIZE\s+(\d+)U'),
+    "core OpenPLC_IAP/src/owner_root_ro.c": get_anchor(core_owner, r'#define\s+OWNER_REVOKE_REC_SIZE\s+(\d+)U'),
+})
+
+compare_anchor("'R' segment: record count", {
+    "bootloader IAPServer/owner_slot.h": get_anchor(boot_owner, r'#define\s+OWNER_REVOKE_MAX_RECORDS\s+(\d+)U'),
+    "core OpenPLC_IAP/src/owner_root_ro.c": get_anchor(core_owner, r'#define\s+OWNER_REVOKE_MAX_RECORDS\s+(\d+)U'),
+})
+
+compare_anchor("revoked-leaf name length (bytes)", {
+    "bootloader IAPServer/owner_slot.h": get_anchor(boot_owner, r'#define\s+OWNER_REVOKE_PREFIX_LEN\s+(\d+)U'),
+    "core OpenPLC_IAP/src/owner_root_ro.c": get_anchor(core_owner, r'#define\s+OWNER_REVOKE_PREFIX_LEN\s+(\d+)U'),
+    "IAPTool owner.go": get_anchor(tool_owner, r'ownerRevokePrefixLen\s*=\s*(\d+)'),
 })
 
 # --- RTC backup registers ---------------------------------------------------

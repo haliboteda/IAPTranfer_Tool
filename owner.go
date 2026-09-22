@@ -10,7 +10,7 @@ package main
 //   getowner                           generation of the record in force, 0 = unclaimed
 //   takeown  <pubkey>                  claim; refused unless BOOT0 was held at startup
 //   setowner <gen> <pubkey> <sig>      hand over; refused unless the CURRENT owner signed
-//   revoke   <gen> <leafhex> <sig>     revoke one leaf; refused unless the CURRENT owner signed
+//   revoke   <leafhex> <sig>           revoke one leaf; refused unless the CURRENT owner signed
 //
 // See $PROD/docs/modules/M2-ownership.md for why the first claim is
 // gated on a button and every later one on a signature. Revocation names a
@@ -28,26 +28,21 @@ import (
 	"strings"
 )
 
-// Mirrors owner_record_t in open_plc_cube_ide/IAPServer/owner_slot.h. Only
-// the first 88 bytes (type/reserved0/format_ver/generation/flags/root_pubkey/uid)
-// are signed, so only they are built here.
-//
-// 2026-09-04: format_ver 1 -> 2, ownerSignedPrefixLen 76 -> 88, for the uid
-// field (see ownerSignedPrefix). No v1 compatibility on the board side, so
-// none is needed here either.
-//
-// 2026-09-20: format_ver 2 -> 3. Byte 1 was `slots` (always 5); the board
-// dropped that field in favour of a reserved byte that keeps every later
-// field at the same offset (variable-length records were never built, so
-// nothing ever read `slots`). Written as 0 here for the same reason.
+// Mirrors the owner area in open_plc_cube_ide/IAPServer/owner_slot.h: an 'O'
+// segment of 160-byte ownership records and an 'R' segment of 32-byte
+// revocation records, sharing one format_ver. Only the bytes the board signs
+// over are built here -- the first 88 of an 'O' record
+// (type/reserved0/format_ver/generation/flags/root_pubkey/uid), the whole 32
+// of an 'R' record. Layout: $PROD/docs/modules/M2-ownership.md.
 const (
 	ownerRecordType       = 'O'
 	ownerRecordTypeRevoke = 'R'
 	ownerRecordReserved0  = 0
-	ownerRecordFormatVer  = 3
+	ownerRecordFormatVer  = 4
 	ownerUIDLen           = 12
 	ownerSignedPrefixLen  = 88
 	ownerRevokePrefixLen  = 16
+	ownerRevokeRecordLen  = 32
 )
 
 var pubKeyPattern = regexp.MustCompile(`^[0-9a-fA-F]{128}$`)
@@ -122,13 +117,11 @@ func ownerSignedPrefix(generation uint32, pubKeyHex string, uidHex string) ([]by
 	return b.Bytes(), nil
 }
 
-// ownerRevokeSignedPrefix builds the 88 bytes an 'R' record is signed over:
-// type, reserved0, format_ver, generation, flags(0), the revoked leaf's
-// 16-byte prefix in the first slot of the 64-byte payload (the other three
-// OWNER_REVOKE_SLOTS stay zero -- IAPTool revokes one leaf per call), and the
-// target board's own uid. Same shape as ownerSignedPrefix(), same reason: the
-// board fills uid in from its own hardware UID, so the signature has to cover
-// the exact bytes it will end up with.
+// ownerRevokeSignedPrefix builds the whole 32-byte 'R' record: type,
+// reserved0, format_ver, the board's own uid, the revoked leaf's 16-byte
+// prefix. The board verifies the signature at write time and then discards it,
+// so the signed bytes are exactly the bytes it writes, reserved0 included.
+// Layout: $PROD/docs/modules/M2-ownership.md.
 func ownerRevokeSignedPrefix(leafPrefixHex string, uidHex string) ([]byte, error) {
 	prefix, err := hex.DecodeString(leafPrefixHex)
 	if err != nil || len(prefix) != ownerRevokePrefixLen {
@@ -138,22 +131,15 @@ func ownerRevokeSignedPrefix(leafPrefixHex string, uidHex string) ([]byte, error
 	if err != nil || len(uid) != ownerUIDLen {
 		return nil, fmt.Errorf("the board's uid must be %d hex characters, got %q", ownerUIDLen*2, uidHex)
 	}
-	payload := make([]byte, 64)
-	copy(payload, prefix) // slot 0; the other three OWNER_REVOKE_SLOTS stay zero
 
 	var b bytes.Buffer
 	b.WriteByte(ownerRecordTypeRevoke)
 	b.WriteByte(ownerRecordReserved0)
 	binary.Write(&b, binary.LittleEndian, uint16(ownerRecordFormatVer))
-	// generation is fixed at 0: an 'R' record is not a link in the ownership
-	// chain, so it has no position in one. The board writes 0 too, and the
-	// signature covers these bytes, so both sides must agree on the value.
-	binary.Write(&b, binary.LittleEndian, uint32(0))
-	binary.Write(&b, binary.LittleEndian, uint32(0)) // flags: unused for 'R'
-	b.Write(payload)
 	b.Write(uid)
-	if b.Len() != ownerSignedPrefixLen {
-		return nil, fmt.Errorf("built a %d byte prefix, expected %d", b.Len(), ownerSignedPrefixLen)
+	b.Write(prefix)
+	if b.Len() != ownerRevokeRecordLen {
+		return nil, fmt.Errorf("built a %d byte record, expected %d", b.Len(), ownerRevokeRecordLen)
 	}
 	return b.Bytes(), nil
 }
@@ -323,6 +309,8 @@ func RunRevoke(ip, currentKeyPath, leafPubHex string) {
 	gen, trusted, err := ownerReadState(ip)
 	logf(err, "cannot read this board's ownership state")
 	if gen == 0 {
+		// gen is read only to spot an unclaimed board; a revocation takes no
+		// generation of its own.
 		logf(true, "This board is unclaimed - there is no owner to sign a revocation. Use takeown.")
 	}
 	if trusted != strings.ToLower(currentPub) {
@@ -339,7 +327,7 @@ func RunRevoke(ip, currentKeyPath, leafPubHex string) {
 	sig, err := signRawHex(hex.EncodeToString(prefix), currentKeyPath)
 	logf(err, "cannot sign the revocation")
 
-	fmt.Printf("Revoking one leaf on the board owned at generation %d\n", gen)
+	fmt.Printf("Revoking one leaf. The board stays at owner generation %d - a revocation does not take one.\n", gen)
 	fmt.Printf("  leaf (first %d bytes): %s\n", ownerRevokePrefixLen, leafPrefixHex)
 
 	reply, err := ownerCommand(ip, fmt.Sprintf("revoke %s %s", leafPrefixHex, strings.TrimSpace(sig)))

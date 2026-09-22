@@ -5,7 +5,7 @@ bootloader's record handling (requirement R2-02, module M1).
     python3 tools/inject_owner_record.py --generation 7   pick the generation
     python3 tools/inject_owner_record.py --cleared        a factory-reset record
     python3 tools/inject_owner_record.py --corrupt        wrong format_ver, must be ignored
-    python3 tools/inject_owner_record.py --v1             the pre-2026-09-20 format (v2), must be ignored
+    python3 tools/inject_owner_record.py --v1             the previous format (v3), must be ignored
     python3 tools/inject_owner_record.py --wrong-uid      another board's uid, must be ignored
     python3 tools/inject_owner_record.py --restore        put the plain bootloader back
 
@@ -45,14 +45,17 @@ from common import (cfg, Section, Ok, Fail,  # noqa: E402
 # Must match owner_slot.h and the FLASH LENGTH in STM32H743IIKX_FLASH.ld.
 OWNER_BASE = 0x0801E000
 OWNER_OFFSET = OWNER_BASE - 0x08000000      # 0x1E000 = 122880
+# Two fixed-length segments in the 8 KiB area: 32 'O' records of 160 B at
+# offset 0, then 96 'R' records of 32 B at offset 5120 (5120 + 3072 = 8192).
+# 'O' slot i lives at OWNER_OFFSET + i * RECORD_SIZE; this script only writes 'O'.
 RECORD_SIZE = 160
-OWNER_FORMAT_VER = 3
+OWNER_FORMAT_VER = 4
 # The format this firmware no longer accepts, for --v1 -- named for the flag,
-# not for what it writes: v2 was the format immediately before this one, and
-# is exactly as rejected as an actual v1 record would be (record_is_structurally_valid()
+# not for what it writes: v3 is the format immediately before this one, and is
+# exactly as rejected as an actual v1 record would be (record_is_structurally_valid()
 # only ever compares against the CURRENT OWNER_FORMAT_VER, so any wrong number
 # proves the same thing).
-PREVIOUS_FORMAT_VER = 2
+PREVIOUS_FORMAT_VER = 3
 UID_LEN = 12
 
 INTERESTING = re.compile(r"Owner slot|Bootloader state|APP Mod|UPLOAD Mod|"
@@ -60,7 +63,7 @@ INTERESTING = re.compile(r"Owner slot|Bootloader state|APP Mod|UPLOAD Mod|"
 
 
 def record(generation, format_ver, flags, key_hex, filler, uid=b"", record_type=0x4F):
-    """One 160-byte owner record. prev_sig and reserved stay zero.
+    """One 160-byte 'O' record. prev_sig and reserved stay zero.
 
     Byte 1 was `slots` through format_ver 2; v3 dropped it (nothing ever read
     it) in favour of a reserved byte that keeps every later field at the same
@@ -70,7 +73,7 @@ def record(generation, format_ver, flags, key_hex, filler, uid=b"", record_type=
     actually checks.
     """
     rec = bytearray(RECORD_SIZE)
-    rec[0] = record_type                                # 'O' (0x4F) or 'R' (0x52)
+    rec[0] = record_type                                # 'O' (0x4F); 'R' is a separate 32-byte layout
     rec[1] = 0                                          # reserved0
     rec[2:4] = struct.pack("<H", format_ver)
     rec[4:8] = struct.pack("<I", generation)
@@ -85,7 +88,7 @@ def record(generation, format_ver, flags, key_hex, filler, uid=b"", record_type=
 
 
 def board_uid(ip, port):
-    """The board's own UID, which a v2 record has to carry to be accepted.
+    """The board's own UID, which an 'O' record has to carry to be accepted.
 
     Asked of the board rather than passed in: the whole point of the field is
     that it names one specific board, so a value typed by hand is a value that
@@ -107,7 +110,7 @@ def main():
     ap.add_argument("--cleared", action="store_true")
     ap.add_argument("--corrupt", action="store_true")
     ap.add_argument("--v1", action="store_true",
-                    help="write the pre-2026-09-04 format, which has no uid field")
+                    help="write the previous format (v3), which this firmware must reject")
     ap.add_argument("--wrong-uid", action="store_true",
                     help="carry another board's uid, as a copied record would")
     ap.add_argument("--restore", action="store_true")
@@ -138,13 +141,13 @@ def main():
     else:
         Section("building bootloader + owner record")
 
-        # format_ver: 3 normally, 99 for --corrupt and 2 (PREVIOUS_FORMAT_VER)
+        # format_ver: 4 normally, 99 for --corrupt and 3 (PREVIOUS_FORMAT_VER)
         # for --v1, both of which the scanner must reject rather than try to
         # interpret.
         ver = 99 if args.corrupt else (PREVIOUS_FORMAT_VER if args.v1 else OWNER_FORMAT_VER)
         flags = 1 if args.cleared else 0
 
-        # A v2 record only counts on the board whose uid it carries. Cleared
+        # A current-format record only counts on the board whose uid it carries. Cleared
         # records are exempt (they assert nothing about which board), and a v1
         # record has no field to put it in.
         uid = b""
