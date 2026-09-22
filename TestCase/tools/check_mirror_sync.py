@@ -1,11 +1,16 @@
 """Checks the cross-repo mirrored code listed in
 $PROD/docs/repo/ARCHITECTURE.md ("跨仓镜像的代码").
 
-Those copies cannot be enforced by any build system -- three repos, no shared
-build -- so a one-sided edit diverges silently and only shows up at runtime as
-some unrelated-looking symptom. This script compares a semantic anchor per item
-rather than whole files: the files legitimately differ (extern "C" in the C++
-core, different surrounding APIs), only the anchors must agree.
+Those copies cannot be enforced by any build system -- separate repos, no
+shared build -- so a one-sided edit diverges silently and only shows up at
+runtime as some unrelated-looking symptom. Most items compare a semantic anchor
+rather than whole files, because the files legitimately differ (extern "C" in
+the C++ core, different surrounding APIs) and only the anchors must agree.
+
+Two items are stricter, because there the files are NOT allowed to differ at
+all: sha256.c and iap_cert.c are compared byte for byte, and the three
+functions iap_auth.c shares with its Arduino-side subset are compared as
+normalised bodies. See $PROD/docs/tables/DECISIONS.md decision 65.
 
 Exit code 0 = every anchor agrees, 1 = at least one diverged, 2 = a file the
 check needs is missing.
@@ -13,11 +18,6 @@ check needs is missing.
 Anchors that are NOT checked here are listed at the bottom of the output, so
 "all green" never reads as "everything is covered".
 
-
-Two behaviours are load-bearing here and are spelled out explicitly:
-the -replace and -match operators are case-INsensitive while [regex]::Match is
-case-sensitive, and Select-Object -Unique compares case-insensitively. Getting
-either wrong changes verdicts rather than formatting.
 """
 
 import re
@@ -87,6 +87,82 @@ def compare_anchor(name, sides):
             Fail("        %-46s %s" % (k, v))
     if is_multi_part:
         print("        (%d part(s) agree and are not shown)" % len(common))
+    failed += 1
+
+
+def get_function_body(path, name):
+    """A C function body with comments and whitespace normalised away.
+
+    Used where the two files may not be compared whole -- one side carries
+    extra functions -- but the shared ones have to stay the same logic. Returns
+    None if the function is absent, which compare_anchor reports as a SKIP
+    rather than a pass.
+    """
+    if not Path(path).exists():
+        return None
+    text = read_text(path).replace("\r\n", "\n")
+    head = re.search(r"^(?:static\s+)?[A-Za-z_][\w \t*]*\b%s\s*\([^;{]*?\)\s*\n?\{"
+                     % re.escape(name), text, re.M | re.S)
+    if not head:
+        return None
+    start = text.index("{", head.start())
+    depth = 0
+    body = None
+    for i in range(start, len(text)):
+        if text[i] == "{":
+            depth += 1
+        elif text[i] == "}":
+            depth -= 1
+            if depth == 0:
+                body = text[start:i + 1]
+                break
+    if body is None:
+        return None
+    body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+    body = re.sub(r"//[^\n]*", "", body)
+    return re.sub(r"\s+", " ", body).strip()
+
+
+def get_signed_bytes_recipe(path):
+    """The exact bytes a challenge signature covers, and in what order.
+
+    This is the wire contract between the two sides: they build the digest
+    identically or no reboot request ever verifies. The rest of
+    iap_auth_verify_and_consume legitimately differs -- the bootloader reaches
+    the owner root through owner_slot.c and prints diagnostics, the application
+    does neither -- so comparing whole bodies here reports drift that is meant
+    to be there.
+    """
+    if not Path(path).exists():
+        return None
+    text = read_text(path).replace("\r\n", "\n")
+    m = re.search(r"(memcpy\(buf, s_nonce.*?sha256\([^;]*?\);)", text, re.S)
+    if not m:
+        return None
+    return re.sub(r"\s+", " ", m.group(1)).strip()
+
+
+def compare_bytes(name, left, right):
+    """Two files that must be identical to the byte. Reported like an anchor."""
+    global failed, skipped
+
+    missing = [str(q) for q in (left, right) if not Path(q).exists()]
+    if missing:
+        Warn("SKIP  %s" % name)
+        for m in missing:
+            Warn("        missing: %s" % m)
+        skipped += 1
+        return
+    a = Path(left).read_bytes().replace(b"\r\n", b"\n")
+    b = Path(right).read_bytes().replace(b"\r\n", b"\n")
+    if a == b:
+        Ok("OK    %s  (%d bytes, identical)" % (name, len(a)))
+        return
+    Fail("DIFF  %s" % name)
+    Fail("        %s  (%d bytes)" % (left, len(a)))
+    Fail("        %s  (%d bytes)" % (right, len(b)))
+    Fail("        these two carry no repo-specific content -- sync them, do not")
+    Fail("        adjust this check. Source is the bootloader (ARCHITECTURE.md rule 1).")
     failed += 1
 
 
@@ -390,6 +466,35 @@ for _plat, _core, _tool in (
         "core tools/discovery/iface_%s.go" % _plat: get_anchor(_core, BODY_CLASSIFY),
         "tool internal/netiface/iface_%s.go" % _plat: get_anchor(_tool, BODY_CLASSIFY),
     })
+
+# --- whole-file and whole-function mirrors (decision 65) ---------------------
+#
+# Stricter than an anchor, and they can be: these two files carry no
+# repo-specific content at all, so anything that differs is drift.
+Section("byte-identical files")
+for _name in ("sha256.c", "iap_cert.c"):
+    compare_bytes(_name, BOOT / "IAPServer" / _name,
+                  LIVE / "libraries/OpenPLC_IAP/src" / _name)
+
+# iap_auth.c is NOT byte-identical and must not be: the Arduino side carries
+# only the verifying half. These two functions happen to be shared whole.
+_boot_auth = BOOT / "IAPServer/iap_auth.c"
+_core_auth = LIVE / "libraries/OpenPLC_IAP/src/iap_auth.c"
+
+Section("iap_auth.c: the functions both copies carry whole")
+for _fn in ("next_counter", "iap_auth_issue_challenge"):
+    compare_anchor("iap_auth.c %s()" % _fn, {
+        "bootloader IAPServer/iap_auth.c": get_function_body(_boot_auth, _fn),
+        "core OpenPLC_IAP/src/iap_auth.c": get_function_body(_core_auth, _fn),
+    })
+
+# iap_auth_verify_and_consume is deliberately NOT compared whole: only the
+# digest it verifies against has to match, and that is the part a one-sided
+# edit would break without any compiler noticing.
+compare_anchor("iap_auth.c: bytes the challenge signature covers", {
+    "bootloader IAPServer/iap_auth.c": get_signed_bytes_recipe(_boot_auth),
+    "core OpenPLC_IAP/src/iap_auth.c": get_signed_bytes_recipe(_core_auth),
+})
 
 # --- what this script does not check ----------------------------------------
 Section("not covered by this script -- still manual")
