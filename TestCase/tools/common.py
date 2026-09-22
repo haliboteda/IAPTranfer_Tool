@@ -481,9 +481,20 @@ def decode_serial(data):
     return data.decode("ascii", errors="replace").replace("�", "?")
 
 
-def read_log_ports(open_ports, seconds):
-    """Drain the given ports for `seconds` and return name -> captured text."""
+def read_log_ports(open_ports, seconds, until=None, until_count=1):
+    """Drain the given ports for `seconds` and return name -> captured text.
+
+    `until` is a compiled regex (or pattern string): once it has matched
+    `until_count` times across everything captured so far, stop early. A
+    capture that waits out a fixed window when it already has what it came
+    for is the difference between an operator standing there for ten minutes
+    and one who is done in twenty seconds -- and a window guessed too short
+    loses the event entirely.
+    """
+    import re
     import time
+    if isinstance(until, str):
+        until = re.compile(until)
     buf = {k: "" for k in open_ports}
     deadline = time.monotonic() + seconds
     while time.monotonic() < deadline:
@@ -494,6 +505,10 @@ def read_log_ports(open_ports, seconds):
                     buf[k] += decode_serial(h.read(n))
             except Exception:
                 pass
+        if until is not None:
+            seen = sum(len(until.findall(v)) for v in buf.values())
+            if seen >= until_count:
+                break
         time.sleep(0.1)
     for h in open_ports.values():
         try:

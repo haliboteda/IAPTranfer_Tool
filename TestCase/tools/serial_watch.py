@@ -5,6 +5,15 @@
     python tools/serial_watch.py --reset         reset over ST-Link first, to catch a boot log
     python tools/serial_watch.py --ports COM7    override the ports from config
 
+    python tools/serial_watch.py --seconds 600 --until "Checking Starting Mod" --until-count 6
+                                                 stop as soon as six boots have
+                                                 been seen, --seconds is only
+                                                 the give-up time
+
+⚠️ Without --until, --seconds is both the window AND the wait: the capture
+prints nothing until it expires. Guess it too short and the event is missed;
+too long and somebody is sitting there waiting for a timer. When you know
+what you are waiting for, say so and let it stop on its own.
 """
 
 import argparse
@@ -27,6 +36,9 @@ def main():
     ap.add_argument("--reset", action="store_true",
                     help="reset over ST-Link first, to catch a boot log")
     ap.add_argument("--ports", nargs="*", default=None)
+    ap.add_argument("--until", default=None,
+                    help="regex; stop once it has matched --until-count times")
+    ap.add_argument("--until-count", type=int, default=1)
     args = ap.parse_args()
 
     ports = args.ports if args.ports else cfg.LOG_PORTS
@@ -52,7 +64,8 @@ def main():
     # Streaming mode prints as it arrives so a long soak is watchable; timed mode
     # reuses the shared drain so its output matches what flash_bootloader.py shows.
     if args.seconds > 0:
-        buf = read_log_ports(open_ports, args.seconds)
+        buf = read_log_ports(open_ports, args.seconds,
+                             until=args.until, until_count=args.until_count)
         for k, v in buf.items():
             Section("%s  (%d bytes)" % (k, len(v)))
             if v:
