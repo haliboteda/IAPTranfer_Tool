@@ -263,9 +263,17 @@ def move_to_bootloader(iap, ip, port, key, cert, ports):
                         tcp_command(ip, port, "getpubkey")) is not None
 
 
+REVOKE_FREE_RE = re.compile(r"(\d+)/\d+ revoke slot\(s\) free")
+
+
 def board_free_slots_from(log):
-    """Free owner-record slots parsed out of a boot log already captured."""
-    m = re.search(r"Owner slot: (\d+)/\d+ slot\(s\) free", log)
+    """Free REVOCATION slots parsed out of a boot log already captured.
+
+    Shares its pattern with board_free_slots() -- two copies of it drifted
+    apart once already, and the stale one made T2-20 unjudgeable rather than
+    failing loudly.
+    """
+    m = REVOKE_FREE_RE.search(log)
     return int(m.group(1)) if m else None
 
 
@@ -281,14 +289,19 @@ def board_revoked_count_from(log):
 
 
 def board_free_slots(ip, port, cli, ports, seconds):
-    """Free owner-record slots, read off a boot log. None when unreadable.
+    """Free REVOCATION slots, read off a boot log. None when unreadable.
 
-    The count only appears on the serial log ("Owner slot: N/51 slot(s) free"),
-    so this costs a reset -- there is no TCP command that reports it.
+    The count only appears on the serial log, so this costs a reset -- there
+    is no TCP command that reports it.
+
+    Revocations have lived in their own segment since format_ver 4, and the
+    boot line reports both: "N/32 owner slot(s) free, M/96 revoke slot(s)
+    free". This wants M -- watching the owner count would make "a repeat
+    revoke spends no slot" pass no matter what a revocation did, because
+    revocations never touch that segment.
     """
     log = reset_and_capture(cli, ports, seconds)
-    m = re.search(r"Owner slot: (\d+)/\d+ slot\(s\) free", log)
-    return int(m.group(1)) if m else None
+    return board_free_slots_from(log)
 
 
 

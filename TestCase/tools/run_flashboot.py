@@ -6,16 +6,22 @@
 
 WHAT EACH MODE PROVES
 
-  default          T1-29 the board runs the new bootloader afterwards, and
-                   T1-31 it still reports the same owner and generation
-  --sign-with-leaf T1-30 an image signed by a leaf is refused, and sector 0
-                   is untouched -- the board still boots the old bootloader
-  --unclaimed      T1-32 a board with no owner refuses unless BOOT0 was held
+  default              T1-29 the board runs the new bootloader afterwards, and
+                       T1-31 it still reports the same owner and generation
+  --sign-with-leaf     T1-30 an image signed by a leaf is refused, and sector 0
+                       is untouched -- the board still boots the old bootloader
+  --unclaimed          T1-32 a board with no owner refuses ...
+  --unclaimed
+      --boot0-held     ... unless BOOT0 was held, which is the other half
 
-The two refusal flags only change what this script expects; they do not set
-the board up. For --sign-with-leaf, pass a leaf key as --key. For --unclaimed,
-factory-reset the board first (BOOT0 gesture) and do NOT hold BOOT0 on the
-boot you then test.
+These flags state how the board has been SET UP; they do not set it up. For
+--sign-with-leaf, pass a leaf key as --key. For --unclaimed, the board must
+have no owner (factory reset, or a bootloader just written over ST-Link).
+
+⚠️ --boot0-held also SKIPS the reset this script normally does first, because
+that reset would throw the held state away. Do the gesture -- reset, then
+immediately hold BOOT0 until three fast clicks -- and run this straight
+after, without resetting in between.
 
 ⚠️ DESTRUCTIVE, AND NOT RECOVERABLE WITHOUT AN ST-LINK. A failure between the
 erase and the last write leaves a board that does not boot. That is inherent
@@ -27,18 +33,26 @@ Exit code is the verdict: 0 the case holds, 1 it does not, 2 setup missing.
 
 import argparse
 import re
+import subprocess
 import sys
+import time
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (cfg, Section, Ok, Warn, Fail, close_ports,  # noqa: E402
                     get_iap_tool, get_programmer_cli, get_scratch_file,
-                    open_log_ports, run_capture, run_while_draining)
+                    open_log_ports, python_exe, run_capture,
+                    run_while_draining, tcp_command)
 
-# IAP_config.h builds this from OPENPLC_FW_VERSION; the bootloader prints it
-# on every boot, which is the only evidence that the new image is the one
-# running.
+HERE = Path(__file__).resolve().parent
+
+# IAP_config.h builds this from OPENPLC_FW_VERSION. It is the reply to `info`,
+# NOT a line the board prints while booting -- so the serial log alone cannot
+# say which image is running, and asking over TCP is the only evidence there
+# is. (2026-09-22: this script used to scan the boot log for it and therefore
+# could never pass.)
 BANNER_RE = re.compile(r"Boot Loader[ ]+([0-9][0-9A-Za-z._-]*)")
+IAP_PORT = 56865
 # owner.go's getowner output. Both fields have to be unchanged for T1-31.
 OWNER_RE = re.compile(r"generation[ ]+([0-9]+)", re.I)
 ROOT_RE = re.compile(r"([0-9a-fA-F]{128})")
@@ -46,17 +60,77 @@ ROOT_RE = re.compile(r"([0-9a-fA-F]{128})")
 TAIL_S = 8
 
 
-def board_banner(ports, seconds):
-    """Reset over SWD and return what the board printed while booting."""
-    open_ports = open_log_ports(ports)
-    rc, buf = run_while_draining([str(get_programmer_cli()), "-c", "port=SWD",
-                                  "mode=UR", "-rst"],
-                                 open_ports,
-                                 get_scratch_file("flashboot_reset.out"),
-                                 get_scratch_file("flashboot_reset.err"),
-                                 tail_seconds=seconds)
-    close_ports(open_ports)
-    return "\n".join(buf.values())
+def ask_info(ip, port, tries=12):
+    """`info`, retried: the board answers only once lwIP is up."""
+    reply = ""
+    for _ in range(tries):
+        reply = tcp_command(ip, port, "info")
+        if BANNER_RE.search(reply):
+            break
+        time.sleep(1.0)
+    return reply
+
+
+def step_the_app_aside(ip, owner_key, ports, seconds):
+    """Reboot a running application into the bootloader.
+
+    A board with a valid application boots straight into it, and the
+    application owns the port -- so `info` goes unanswered and the version is
+    unreachable. T1-29 REQUIRES an application to be installed (it has to
+    still start afterwards), so this is the normal case, not an edge one.
+
+    Shells out to enter_bootloader.py rather than repeating the handshake:
+    one implementation, one place for it to be wrong.
+    """
+    argv = [python_exe(), str(HERE / "enter_bootloader.py"), "--ip", ip,
+            "--seconds", str(int(seconds))]
+    if owner_key:
+        argv += ["--key", str(owner_key)]
+    if ports:
+        argv += ["--ports"] + list(ports)
+    Warn("  an application is holding the port; asking it to reboot")
+    proc = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
+    if proc.returncode != 0:
+        # Its output is the only account of why, and swallowing it turns a
+        # diagnosable failure into "the board did not answer".
+        Warn("  enter_bootloader.py exited %d:" % proc.returncode)
+        print(proc.stdout.decode("utf-8", errors="replace"))
+        return False
+    return True
+
+
+def board_banner(ports, seconds, ip, port=IAP_PORT, reset=True, owner_key=None):
+    """Reset over SWD, then ask the board which bootloader it is running.
+
+    Returns (banner_reply, boot_log). The boot log is printed for the operator
+    -- it is where ownership and the app verdict show up -- but the version
+    itself only exists as the reply to `info`.
+
+    reset=False leaves the board alone: a boot whose BOOT0 was held is state
+    this function would otherwise destroy, and that state is the thing under
+    test.
+    """
+    log = ""
+    if reset:
+        open_ports = open_log_ports(ports)
+        rc, buf = run_while_draining([str(get_programmer_cli()), "-c", "port=SWD",
+                                      "mode=UR", "-rst"],
+                                     open_ports,
+                                     get_scratch_file("flashboot_reset.out"),
+                                     get_scratch_file("flashboot_reset.err"),
+                                     tail_seconds=seconds)
+        close_ports(open_ports)
+        log = "\n".join(buf.values())
+
+    # The board answers only once lwIP is up, which is a little after the
+    # boot log goes quiet. Retry rather than time it.
+    reply = ask_info(ip, port)
+    if not BANNER_RE.search(reply):
+        # Either the board is still coming up, or an application is running
+        # and holding the port. Only the second is fixable from here.
+        if step_the_app_aside(ip, owner_key, ports, seconds):
+            reply = ask_info(ip, port)
+    return reply, log
 
 
 def owner_fingerprint(ip, key):
@@ -76,11 +150,21 @@ def main():
     ap.add_argument("--key", default="", help="owner root private key (PEM)")
     ap.add_argument("--ip", default="")
     ap.add_argument("--ports", nargs="*", default=None)
+    ap.add_argument("--port", type=int, default=IAP_PORT,
+                    help="the board TCP port `info` is asked on")
+    ap.add_argument("--owner-key",
+                    help="owner key used ONLY to reboot a running application "
+                         "into the bootloader. Defaults to --key, which is "
+                         "wrong for --sign-with-leaf -- pass it there.")
     ap.add_argument("--tail-seconds", type=int, default=TAIL_S)
     ap.add_argument("--sign-with-leaf", action="store_true",
                     help="T1-30: --key is a leaf, not the root; expect a refusal")
     ap.add_argument("--unclaimed", action="store_true",
-                    help="T1-32: board already factory-reset, BOOT0 not held; expect a refusal")
+                    help="T1-32: the board has no owner")
+    ap.add_argument("--boot0-held", action="store_true",
+                    help="T1-32: the operator just did the BOOT0 gesture, so "
+                         "this run must SUCCEED. Skips the reset before the "
+                         "upgrade, which would clear the held state.")
     args = ap.parse_args()
 
     image = Path(args.bin)
@@ -99,14 +183,20 @@ def main():
         Fail("need --key: the board checks a bootloader image against the owner root")
         return 2
     ports = list(args.ports if args.ports is not None else cfg.LOG_PORTS)
-    expect_refusal = args.sign_with_leaf or args.unclaimed
+    # An unclaimed board refuses unless presence was asserted; that pair is
+    # the whole of R1-37, so both halves run the same script.
+    expect_refusal = args.sign_with_leaf or (args.unclaimed and not args.boot0_held)
 
     Section("Before")
-    before = board_banner(ports, args.tail_seconds)
-    print(before)
+    owner_key = args.owner_key or (None if args.sign_with_leaf else args.key)
+    before, before_log = board_banner(ports, args.tail_seconds, ip, args.port,
+                                      reset=not args.boot0_held,
+                                      owner_key=owner_key)
+    print(before_log)
     old = BANNER_RE.search(before)
     if not old:
-        Fail("the board never printed its bootloader banner -- nothing to compare against")
+        Fail("the board did not answer `info` with a banner -- nothing to compare against")
+        Warn("  it said: %r" % before)
         return 1
     Ok("  board runs Boot Loader %s" % old.group(1))
 
@@ -125,12 +215,22 @@ def main():
                                  get_scratch_file("flashboot.err"),
                                  tail_seconds=args.tail_seconds)
     close_ports(open_ports)
+    # Both halves of the exchange: the board narrates on serial, but its wire
+    # answer ("Refused", "Signature Failed") only reaches IAPTool's stdout --
+    # and the wire answer is what the criteria are written against.
     during = "\n".join(buf.values())
+    for stream in ("flashboot.out", "flashboot.err"):
+        try:
+            during += "\n" + Path(get_scratch_file(stream)).read_text(
+                encoding="utf-8", errors="replace")
+        except OSError:
+            pass
     print(during)
 
     Section("After")
-    after = board_banner(ports, args.tail_seconds)
-    print(after)
+    after, after_log = board_banner(ports, args.tail_seconds, ip, args.port,
+                                    owner_key=owner_key)
+    print(after_log)
     new = BANNER_RE.search(after)
     fails = 0
 
@@ -144,19 +244,49 @@ def main():
             fails += 1
         else:
             Ok("  sector 0 untouched: still Boot Loader %s" % new.group(1))
-        why = "Refused" if args.unclaimed else "Signature Failed"
-        if why.lower() in during.lower():
-            Ok("  the board answered %r" % why)
+        # Asked of the BOARD, not of the tool: the board narrates its own
+        # refusal on serial, and "the result is asked of the board, never of
+        # the tool" is the rule these cases are written to.
+        said = ("needs BOOT0 held through startup" if args.unclaimed
+                else "Signature verification FAILED")
+        if said.lower() in during.lower():
+            Ok("  the board said why: %r" % said)
         else:
-            Fail("  expected %r in the exchange; the refusal has to say why" % why)
+            Fail("  the board never said why; expected %r on its log" % said)
+            fails += 1
+
+        # Separately: did IAPTool pass that verdict on to the operator? A
+        # refusal the tool reports as success is its own defect, and one a
+        # customer would read as "the bootloader was replaced".
+        tool_noticed = ("unexpected ack" in during.lower()
+                        or "file send failed" in during.lower())
+        if tool_noticed:
+            Ok("  IAPTool reported the refusal")
+        else:
+            Fail("  IAPTool did NOT report the refusal -- it printed "
+                 "'File transfer complete.' and exited 0")
+            Warn("     the board was right; the TOOL is wrong. IAP_Ether.go's")
+            Warn("     sendFile() returns as soon as the last chunk is acked and")
+            Warn("     never reads the verdict the board sends after verifying.")
+            Warn("     Post-transfer refusals are therefore silent on both the")
+            Warn("     `ether` and `flashboot` paths.")
             fails += 1
     else:
         if not new:
             Fail("  the board does not boot after the upgrade")
             return 1
         Ok("  board runs Boot Loader %s" % new.group(1))
-        gen_after, root_after = owner_fingerprint(ip, args.key)
-        if gen_after == gen_before and root_after == root_before and gen_after is not None:
+        if args.unclaimed:
+            # Nothing to compare: the point of this half is that presence
+            # alone got the image in, and an unclaimed board has no owner to
+            # carry across.
+            Ok("  BOOT0 was held, so an unclaimed board accepted the image")
+            gen_after = root_after = gen_before = root_before = None
+        else:
+            gen_after, root_after = owner_fingerprint(ip, args.key)
+        if args.unclaimed:
+            pass
+        elif gen_after == gen_before and root_after == root_before and gen_after is not None:
             Ok("  ownership survived: generation %s, same root" % gen_after)
         else:
             Fail("  ownership changed: generation %s -> %s, root %s -> %s"

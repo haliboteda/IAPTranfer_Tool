@@ -125,6 +125,11 @@ def capture_boot(ports, seconds, ip=None):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--bin")
+    ap.add_argument("--key",
+                    help="owner private key this board is claimed for. Without "
+                         "it IAPTool signs with the published root, which a "
+                         "claimed board refuses -- and then there is no "
+                         "successful upload to count slots for.")
     ap.add_argument("--ip", default="")
     ap.add_argument("--ports", nargs="*", default=None)
     ap.add_argument("--tail-seconds", type=int, default=TAIL_S)
@@ -159,7 +164,10 @@ def main():
 
         Section("Upload")
         open_ports = open_log_ports(ports)
-        rc, buf = run_while_draining([get_iap_tool(), "ether", str(image), ip], open_ports,
+        upload = [get_iap_tool(), "ether", str(image), ip]
+        if args.key:
+            upload.append("--key=" + args.key)
+        rc, buf = run_while_draining(upload, open_ports,
                                      get_scratch_file("journal.out"),
                                      get_scratch_file("journal.err"),
                                      tail_seconds=args.tail_seconds)

@@ -129,6 +129,9 @@ def main():
 
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     dest = Path(args.out) if args.out else OUT_DIR / ("iap_probe_%s.bin" % args.ver)
+    # --out may name a directory that does not exist yet; the compile is the
+    # expensive part and losing it to a missing parent is pure waste.
+    dest.parent.mkdir(parents=True, exist_ok=True)
     shutil.copyfile(str(bins[0]), str(dest))
     shutil.rmtree(str(build_path), ignore_errors=True)
 

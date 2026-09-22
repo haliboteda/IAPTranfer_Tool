@@ -13,7 +13,7 @@ gated on BOOT0 having been held through the startup window: the first claim
 carries no signature -- there is no owner yet to sign it -- so physical presence
 is the only gate there can be. See $PROD/docs/modules/M2-ownership.md.
 
-Before running: press RESET, then hold BOOT0 until the relays finish clicking
+Before running: press RESET, then hold BOOT0 until the relay finishes clicking
 and let go. The board should be sitting in "UPLOAD Mod ... (BOOT0 held)".
 
 ⚠️ RECOVERY: claiming is meant to be hard to undo. The only way back is to
