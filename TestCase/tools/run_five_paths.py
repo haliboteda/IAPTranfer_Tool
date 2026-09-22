@@ -56,6 +56,13 @@ from common import (Fail, Ok, Section, Warn, banner, cfg,  # noqa: E402
 
 PASS, FAIL, SETUP = "PASS", "FAIL", "SETUP"
 
+# What rotate_keys.sh leaves behind. The published key it replaced is renamed
+# to .TEST_ONLY.pem.bak, so anything still pointing at the old name after
+# path 3 is pointing at a file that no longer exists -- which is how path 4
+# failed the first time this round was run.
+ROTATED_ROOT_KEY = "IAPServer/keys/fw_signing_key.pem"
+PUBLISHED_ROOT_KEY = "IAPServer/keys/fw_signing_key.TEST_ONLY.pem"
+
 
 class Round(object):
     """Runs the steps and remembers what each one left behind."""
@@ -93,7 +100,7 @@ class Round(object):
         print("    key %s -> %s" % (name, pem))
         return pem
 
-    def ensure_bootloader(self, key):
+    def ensure_bootloader(self, *candidates):
         """Get the board out of its application and into the bootloader.
 
         Every command this round sends to the bootloader -- takeown, setowner,
@@ -101,11 +108,25 @@ class Round(object):
         finished an upload is running the application instead. Without this a
         step "fails" having never reached the board, which proves nothing and
         reads exactly like the board misbehaving.
+
+        Several keys are tried because which one works is not obvious and
+        changes as the round goes on. The application checks the reboot
+        request against whatever owner_root_ro() resolves to: the owner root
+        once the board is claimed, and otherwise the root compiled into THAT
+        APPLICATION -- which is the root that was current when it was built,
+        not necessarily the one the bootloader trusts now. After path 3 those
+        are two different keys.
         """
         if self.args.dry_run:
             print("    $ enter_bootloader.py (if an application is running)")
             return True
-        return self.tool("enter_bootloader.py", "--key", key, "--seconds", "6") == 0
+        for key in candidates:
+            if key and Path(key).exists():
+                if self.tool("enter_bootloader.py", "--key", key, "--seconds", "6") == 0:
+                    print("    (the application accepted %s)" % Path(key).name)
+                    return True
+        Warn("  no key could ask the application to step aside")
+        return False
 
     def hold_boot0(self, why):
         banner(["HOLD BOOT0 NOW: press RESET, hold BOOT0 through the relay",
@@ -123,7 +144,7 @@ def path_0(r):
 
 def path_1(r):
     Section("1 · burn your own program on an untouched board, then upgrade")
-    published = Path(cfg.BOOT_REPO) / "IAPServer" / "keys" / "fw_signing_key.TEST_ONLY.pem"
+    published = Path(cfg.BOOT_REPO) / PUBLISHED_ROOT_KEY
 
     ok = True
     ok &= r.record("1-install", PASS if r.tool(
@@ -147,8 +168,8 @@ def path_2(r):
     # would answer on. The board is still unclaimed here, so its owner area is
     # empty and the application falls back to the published root -- which is
     # therefore the key that can ask it to step aside.
-    published = Path(cfg.BOOT_REPO) / "IAPServer" / "keys" / "fw_signing_key.TEST_ONLY.pem"
-    if not r.ensure_bootloader(published):
+    published = Path(cfg.BOOT_REPO) / PUBLISHED_ROOT_KEY
+    if not r.ensure_bootloader(published, Path(cfg.BOOT_REPO) / ROTATED_ROOT_KEY):
         return r.record("2-a/T2-02", SETUP,
                         "could not reach the bootloader; nothing was attempted")
 
@@ -199,8 +220,26 @@ def path_3(r):
 
 def path_4(r):
     Section("4 · issue a leaf certificate, then upgrade")
+    # The root to issue from is the one path 3 rotated in, NOT the published
+    # key -- rotate_keys.sh renamed that one out of the way, so the default
+    # here points at a file that is gone.
+    root = Path(cfg.BOOT_REPO) / ROTATED_ROOT_KEY
+    if not root.exists():
+        return r.record("4-c/T2-11", SETUP,
+                        "no rotated root key at %s -- did path 3 run?" % root)
+
+    # Path 3 ended with an upload, so an application is running and holding
+    # the port. It was built before the rotation, so the key it trusts is the
+    # published one -- which rotate_keys.sh has renamed out of the way.
+    if not r.ensure_bootloader(root,
+                               Path(cfg.BOOT_REPO) / (PUBLISHED_ROOT_KEY + ".bak"),
+                               Path(cfg.BOOT_REPO) / PUBLISHED_ROOT_KEY):
+        return r.record("4-c/T2-11", SETUP,
+                        "could not reach the bootloader; nothing was attempted")
+
     return r.record("4-c/T2-11", PASS if r.tool(
-        "run_delegated_cert_on_real_board.py", "--bin", r.args.v1) == 0 else FAIL,
+        "run_delegated_cert_on_real_board.py", "--bin", r.args.v1,
+        "--root-key", root) == 0 else FAIL,
         "a colleague uploaded with a leaf the board's root issued")
 
 
