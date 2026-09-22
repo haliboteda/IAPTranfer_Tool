@@ -62,7 +62,7 @@ NOT_A_STATUS_ROW = {
 NOT_A_STATUS_ROW.update(
     {"CHK-A%d" % i: "a step of the post-change self-check grid" for i in range(1, 8)})
 NOT_A_STATUS_ROW.update(
-    {"CHK-B%d" % i: "a step of the release grid" for i in range(1, 8)})
+    {"CHK-B%d" % i: "a step of the release grid" for i in range(1, 9)})
 
 # Requirement ids a case may cover without STATUS.md having a row of that name.
 NOT_A_REQUIREMENT = {"-", "F", "F 组"}

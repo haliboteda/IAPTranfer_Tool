@@ -239,7 +239,15 @@ func RunTakeOwn(ip, keyPath string) {
 }
 
 // RunSetOwner hands a claimed board over to a new key, signed by the current one.
-func RunSetOwner(ip, currentKeyPath, newKeyPath string) {
+// RunSetOwner hands a claimed board to newKeyPath, signed by currentKeyPath.
+//
+// With wipe, the board erases sector 0 and rewrites it with its own bootloader
+// and an owner area holding nothing but the new record. That is the only way
+// to get revocation slots back, and it costs a reset plus the risk that a
+// power cut during the erase leaves the board needing a DFU re-flash. The
+// board never decides to do this on its own -- the operator asks for it
+// (OWN-07).
+func RunSetOwner(ip, currentKeyPath, newKeyPath string, wipe bool) {
 	if strings.TrimSpace(currentKeyPath) == "" || strings.TrimSpace(newKeyPath) == "" {
 		logf(true, "setowner needs both keys:\n"+
 			"  --current-key=<owner.pem>  the key the board trusts today, to sign the handover\n"+
@@ -273,7 +281,26 @@ func RunSetOwner(ip, currentKeyPath, newKeyPath string) {
 	fmt.Printf("Handing over at generation %d -> %d\n", gen, next)
 	fmt.Printf("  new key: %s\n", newPub)
 
-	reply, err := ownerCommand(ip, fmt.Sprintf("setowner %d %s %s", next, newPub, strings.TrimSpace(sig)))
+	verb := "setowner"
+	if wipe {
+		verb = "setownerwipe"
+		fmt.Println("  --wipe: the board will erase and rewrite its own flash sector.")
+		fmt.Println("  DO NOT CUT POWER. If it is interrupted, hold BOOT0 through a reset")
+		fmt.Println("  to reach the ST ROM DFU and re-flash the bootloader over USB.")
+	}
+
+	reply, err := ownerCommand(ip, fmt.Sprintf("%s %d %s %s", verb, next, newPub, strings.TrimSpace(sig)))
+	if wipe {
+		// A successful wipe never answers: the board resets as soon as the
+		// new sector is written. An answer therefore means it refused, and a
+		// dropped connection is the expected outcome.
+		if err == nil && strings.Contains(strings.TrimSpace(reply), "Refused") {
+			logf(true, "The board refused the wipe and erased nothing: %s", strings.TrimSpace(reply))
+		}
+		fmt.Println("The board is rewriting its flash and will reset. Give it a few seconds,")
+		fmt.Printf("then check with: IAPTool getowner %s\n", ip)
+		return
+	}
 	logf(err, "the setowner command did not get through")
 	reply = strings.TrimSpace(reply)
 	if !strings.Contains(reply, Rsp_OK) {

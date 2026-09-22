@@ -6,6 +6,9 @@
  *        revocations, drops the rest, never promotes a record the chain
  *        refused, and the result still resolves to the same root when it is
  *        read back.
+ * T2-24: owner_slot_build_wipe_area() refuses a handover the board would
+ *        refuse anyway, and when it accepts one the area it produces holds
+ *        that record and nothing else.
  *
  * One phase per run -- owner_slot.c caches its scan, and its pointers point
  * into the record area, so a second arrangement needs a second process rather
@@ -484,6 +487,109 @@ static void phase_compact_verify(void)
 	CHECK(!owner_slot_is_revoked(probe), "a leaf nobody revoked is still fine");
 }
 
+/*
+ * T2-24, first half. `setowner --wipe` erases the sector, so the record it
+ * writes has to be judged before anything is erased -- a wipe that produced
+ * an area the board cannot resolve would leave it unowned with nothing to
+ * undo it.
+ */
+static void phase_wipe(void)
+{
+	static uint8_t area[OWNER_SLOT_SIZE];
+	uint8_t sig[64];
+	uint8_t digest[SHA256_DIGEST_SIZE];
+	owner_record_t probe_rec;
+	uint32_t i;
+
+	install_root();
+	force_rescan();
+
+	/* One revocation, so the wipe has something to drop. */
+	CHECK(revoke_nth(7U), "a revocation was recorded before the wipe");
+
+	/* The record the board will be asked to accept: generation 2, handing
+	 * over to the second key. Built here by hand, same as the tool does. */
+	memset(&probe_rec, 0xFF, sizeof(probe_rec));
+	{
+		uint8_t *r = (uint8_t *)&probe_rec;
+
+		memset(r, 0, OWNER_RECORD_SIZE);
+		r[OFF_TYPE] = (uint8_t)'O';
+		r[OFF_RESERVED0] = 0U;
+		put_u16(&r[OFF_FORMAT_VER], (uint16_t)FORMAT_VER);
+		put_u32(&r[OFF_GENERATION], 2UL);
+		put_u32(&r[OFF_FLAGS], 0UL);
+		memcpy(&r[OFF_PAYLOAD], g_next_pub, PUBKEY_SIZE);
+		memcpy(&r[OFF_UID], test_machine_id(), IAP_MACHINE_ID_SIZE);
+		sha256(r, OWNER_SIGNED_PREFIX_LEN, digest);
+		if (uECC_sign(g_root_priv, digest, sizeof(digest), sig,
+				uECC_secp256r1()) != 1) {
+			printf("[FAIL] could not sign the handover -- harness problem\n");
+			g_failures++;
+		}
+		/* The board deliberately does NOT store the signature: the root
+		 * that made it is being erased, so nothing could check it again.
+		 * See owner_slot_build_wipe_area(). */
+	}
+
+	memset(area, 0x5A, sizeof(area));
+	CHECK(!owner_slot_build_wipe_area(3UL, g_next_pub, sig, area),
+			"a generation that is not one past the record in force is refused");
+	CHECK(all_bytes_are(area, OWNER_SLOT_SIZE, 0x5AU),
+			"and the refusal did not touch the buffer");
+
+	{
+		uint8_t bad[64];
+
+		memcpy(bad, sig, sizeof(bad));
+		bad[0] = (uint8_t)(bad[0] ^ 0xFFU);
+		CHECK(!owner_slot_build_wipe_area(2UL, g_next_pub, bad, area),
+				"a signature that does not verify is refused");
+		CHECK(all_bytes_are(area, OWNER_SLOT_SIZE, 0x5AU),
+				"and that refusal did not touch the buffer either");
+	}
+
+	CHECK(owner_slot_build_wipe_area(2UL, g_next_pub, sig, area),
+			"a correctly signed handover is accepted");
+	CHECK(memcmp(area, &probe_rec, OWNER_RECORD_SIZE) == 0,
+			"the new area holds that record, with the signature stripped");
+	for (i = OWNER_RECORD_SIZE; i < OWNER_SLOT_SIZE; i++) {
+		if (area[i] != 0xFFU) {
+			break;
+		}
+	}
+	CHECK(i == OWNER_SLOT_SIZE,
+			"and nothing else -- both segments are erased past that record");
+
+	CHECK(write_file(COMPACTED_PATH, area, OWNER_SLOT_SIZE),
+			"the new area was handed to the read-back phase");
+}
+
+/* T2-24, second half: the wiped area, read with a fresh scan. */
+static void phase_wipe_verify(void)
+{
+	uint8_t probe[64];
+
+	if (!read_file(COMPACTED_PATH, fake_owner_area, OWNER_SLOT_SIZE)) {
+		printf("[FAIL] no %s -- the wipe phase must run first\n", COMPACTED_PATH);
+		g_failures++;
+		return;
+	}
+	remove(COMPACTED_PATH);
+
+	CHECK(memcmp(owner_slot_root(), g_next_pub, PUBKEY_SIZE) == 0,
+			"after the wipe the board trusts the new root");
+	CHECK(owner_slot_generation() == 2UL,
+			"at the generation the handover carried, not back at 1");
+
+	memset(probe, 0, sizeof(probe));
+	leaf_name(7U, probe);
+	CHECK(!owner_slot_is_revoked(probe),
+			"the revocation that existed before the wipe is gone");
+	CHECK(report_contains("96/96 revoke slot(s) free"),
+			"every revocation slot was reclaimed");
+}
+
 int main(int argc, char **argv)
 {
 	const char *phase = (argc > 1) ? argv[1] : "capacity";
@@ -503,9 +609,12 @@ int main(int argc, char **argv)
 		phase_compact();
 	} else if (strcmp(phase, "compact-verify") == 0) {
 		phase_compact_verify();
+	} else if (strcmp(phase, "wipe") == 0) {
+		phase_wipe();
+	} else if (strcmp(phase, "wipe-verify") == 0) {
+		phase_wipe_verify();
 	} else {
-		printf("unknown phase %s -- expected capacity, compact or compact-verify\n",
-				phase);
+		printf("unknown phase %s -- see PHASE_GROUPS in build.py\n", phase);
 		return 2;
 	}
 

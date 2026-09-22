@@ -1,5 +1,5 @@
 """Builds and runs the revocation-capacity harness against the real
-owner_slot.c in the bootloader. Cases T2-22, T2-23 and T1-33.
+owner_slot.c in the bootloader. Cases T2-22, T2-23, T1-33 and T2-24.
 
     python build.py
 
@@ -14,6 +14,10 @@ T1-33 is the other end of the same area: owner_slot_compact(), which decides
 what survives the sector erase during a flashboot. Getting it wrong costs a
 board its ownership with nothing to undo it, and the only way to reach that
 function on a board is to actually replace the bootloader.
+
+T2-24 is `setowner --wipe`: the record it will leave behind is judged before
+the sector is erased, because an area the board cannot resolve would leave it
+unowned with no way back.
 
 stubs/fake_owner_flash.h is passed with -include so it is seen before
 owner_slot.h's own (guarded) OWNER_SLOT_BASE.
@@ -71,8 +75,9 @@ def emit(argv, cwd=None):
 PHASE_GROUPS = {
     "capacity": ("capacity",),
     "compact": ("compact", "compact-verify"),
+    "wipe": ("wipe", "wipe-verify"),
 }
-ALL_PHASES = ("capacity", "compact", "compact-verify")
+ALL_PHASES = ("capacity", "compact", "compact-verify", "wipe", "wipe-verify")
 
 
 def main(argv):

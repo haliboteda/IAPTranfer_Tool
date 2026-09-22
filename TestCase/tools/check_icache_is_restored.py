@@ -50,7 +50,7 @@ EXEMPT = {
     "server_jump_to_app": "jumps into the app and never returns",
     # Same shape, one step further: the sector holding this code is about to
     # be erased, so there is no "after" here either -- it resets the board.
-    "boot_selfupgrade_commit": "rewrites sector 0 from RAM and resets",
+    "arm_and_burn": "rewrites sector 0 from RAM and resets; the only path past the disable ends in NVIC_SystemReset",
 }
 
 DISABLE = "SCB_DisableICache()"

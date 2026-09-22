@@ -32,6 +32,9 @@ type signingOptions struct {
 	currentKey string
 	newKey     string
 	leaf       string
+	// wipeOwner says --wipe was typed: setowner should erase and rewrite the
+	// owner area rather than append to it.
+	wipeOwner bool
 	// keyExplicit says --key was actually typed. takeown must not fall back to
 	// the firmware signing key from local_config.json: claiming a customer's
 	// board with the project's own key is not recoverable without an ST-Link.
@@ -65,7 +68,7 @@ const usageText = `Usage:
                    claims an unclaimed board for that key. BOOT0 must have been
                    held through the board's current boot - the first claim carries
                    no signature, so presence is the only gate. Hard to undo.
-  IAPTool setowner <ip> --current-key=<owner.pem> --new-key=<next.pem>
+  IAPTool setowner <ip> --current-key=<owner.pem> --new-key=<next.pem> [--wipe]
                    hands a claimed board over to another key. The handover is
                    signed by the current owner, so no button is needed.
   IAPTool revoke   <ip> --key=<owner.pem> --leaf=<pubkey>
@@ -83,6 +86,11 @@ const usageText = `Usage:
                    key>.cert", and with no certificate there the signing key
                    certifies itself - which is what one person with one key wants.
   --out            Output prefix for "sign". Defaults to the .bin path without its extension.
+  --wipe           For setowner only: also empty the owner record area, which
+                   is the only way to reclaim revocation slots. The board has to
+                   erase and rewrite its own flash sector to do it, so it resets
+                   and a power cut during the erase means a DFU re-flash. Plain
+                   setowner just appends a record and carries no such risk.
   --force          Flash even when the image is older than what the board runs.
                    One-shot: refused again until an upload arrives without it.
                    The Arduino IDE passes this from
@@ -207,7 +215,7 @@ func main() {
 		if len(args) < 2 {
 			logf(true, usageText)
 		}
-		RunSetOwner(args[1], g_signing.currentKey, g_signing.newKey)
+		RunSetOwner(args[1], g_signing.currentKey, g_signing.newKey, g_signing.wipeOwner)
 
 	case "revoke":
 		if len(args) < 2 {
@@ -265,6 +273,10 @@ func parseSigningFlags(args []string) ([]string, error) {
 		// argument the way the value-taking options below do.
 		if name == "force" {
 			g_forceFlash = true
+			continue
+		}
+		if name == "wipe" {
+			g_signing.wipeOwner = true
 			continue
 		}
 

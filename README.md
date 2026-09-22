@@ -155,3 +155,24 @@ owner records live in the bootloader's own flash sector.
 `setowner` needs no button. It is signed by the key the board trusts today, so
 a handover can be done over the network, and a stolen record cannot take a
 board over -- the board checks the signature, not the generation number.
+
+## Reclaiming revocation slots
+
+The owner area holds 96 revocations and only ever appends, so the only way to
+get slots back is to erase the flash sector they live in. The boot log starts
+saying so with 8 left.
+
+```sh
+IAPTool setowner 192.168.0.30 --current-key=owner.pem --new-key=next.pem --wipe
+```
+
+`--wipe` hands the board over AND leaves the area holding nothing but the new
+record. The board erases and rewrites its own sector to do it, so it resets,
+and **a power cut during the erase means holding BOOT0 through a reset and
+re-flashing over USB DFU** -- the same recovery `flashboot` needs. Plain
+`setowner` appends one record and carries none of that risk; the board never
+decides to wipe on its own.
+
+Changing the root *without* `--wipe` retires every leaf the old root issued,
+so they no longer need revoking one by one -- but it does not free the slots
+those revocations already occupy.

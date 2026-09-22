@@ -67,6 +67,7 @@ CATALOG = [
     ("T2-21",        "R2-04",                  "the root in force cannot revoke itself (real owner_root_ro.c over a fake record area)"),
     ("T2-22-T2-23",  "R2-04",                  "revocation area: warns at 8 slots left, refuses the 97th without writing"),
     ("T1-33",        "R1-36",                  "flashboot compaction keeps the chain and the live revocations, drops the rest"),
+    ("T2-24",        "R2-04",                  "setowner --wipe judges the handover before erasing, and reclaims every slot"),
     ("T4-01",        "-",                      "port tool protocol contract (real porttool.c, then the Go parser)"),
     ("T1-18a-T1-18g", "R1-21",                  "IAPTool key/certificate match against a stand-in board"),
     ("T1-19-T1-20",  "R1-24",                  "crypto cross-check against independent implementations"),
@@ -91,7 +92,7 @@ def print_catalog():
     for cid, covers, name in CATALOG:
         print("  %-*s  covers %-*s  %s" % (width, cid, cov, covers, name))
     print("")
-    print("  %d steps. --quick skips T1-16 / T2-21 / T2-22-T2-23 / T1-33 / T4-01 / T1-18a-T1-18g / T1-19-T1-20 / P4 / P15."
+    print("  %d steps. --quick skips T1-16 / T2-21 / T2-22-T2-23 / T1-33 / T2-24 / T4-01 / T1-18a-T1-18g / T1-19-T1-20 / P4 / P15."
           % len(CATALOG))
     print("  P7, P8 and P9 check the documents, not the firmware.")
 
@@ -255,6 +256,10 @@ def main():
         # process that has not scanned the area yet.
         run_step("T1-33", "flashboot compaction keeps the chain and the live revocations, drops the rest",
                  [python_exe(), TESTTOOL / "host" / "owner_capacity" / "build.py", "compact"],
+                 needs=cc_need, cwd=tool_repo)
+
+        run_step("T2-24", "setowner --wipe judges the handover before erasing, and reclaims every slot",
+                 [python_exe(), TESTTOOL / "host" / "owner_capacity" / "build.py", "wipe"],
                  needs=cc_need, cwd=tool_repo)
 
         # build.py runs both halves: the C harness against the real firmware
