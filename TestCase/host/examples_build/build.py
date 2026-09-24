@@ -1,4 +1,4 @@
-"""Compiles every example sketch shipped with the core's own libraries. Case P5.
+"""Compiles every example sketch in the board package that targets this board. Case P5.
 
     python build.py                 all of them
     python build.py --only SDRAM    only libraries whose name matches
@@ -9,9 +9,9 @@ examples keep referring to the old name, and nobody notices until someone opens
 one and it does not build. Nothing else in the test suite would catch that,
 because the examples are not part of any application build.
 
-Scope: only libraries under the core that this project owns. Upstream STM32duino
-libraries carry hundreds of examples for boards this variant is not, and
-compiling those would report failures nobody intends to fix.
+Scope: the project's own libraries and the upstream STM32duino ones, since a
+user opens upstream examples first (decision 68). Upstream examples that were
+never meant for an H743 are listed in EXCLUDED, each with its reason.
 
 ⚠️ Takes about ten minutes, which is why selfcheck deliberately does not run it.
 
@@ -31,8 +31,15 @@ sys.path.insert(0, str(HERE.parent.parent / "tools"))
 
 from common import Fail, Ok, Section, Warn, cfg, run_capture  # noqa: E402
 
-# Libraries this project owns. Upstream ones are deliberately not listed.
+# Compiled first, so a break in the project's own code shows up early.
 OWN_LIBRARIES = ("OpenPLC_SDRAM", "OpenPLC_IAP", "OpenPLC_Net", "OpenPLC_KNX")
+
+# (library, example) -> why it cannot build for this board.
+EXCLUDED = {
+    ("Keyboard", "KeyboardMessage"): "needs USB HID; this board's USB menu offers CDC only",
+    ("Mouse", "ButtonMouseControl"): "needs USB HID; this board's USB menu offers CDC only",
+    ("SubGhz", "ReadRegister"): "needs the SubGhz radio, which only STM32WL parts have",
+}
 
 FQBN = ("OpenPLC_Alpha:stm32:OPEN-PLC:pnum=PLC_H743,usb=CDCgen,xusb=FS,"
         "upload_method=cdcMethod,knxrole=dual_device")
@@ -74,8 +81,12 @@ def main():
         Fail("arduino-cli config not found at %s" % cli_config)
         return 2
 
+    libs_dir = Path(cfg.CORE_LIVE) / "libraries"
+    upstream = sorted(d.name for d in libs_dir.iterdir()
+                      if d.is_dir() and d.name not in OWN_LIBRARIES)
+
     sketches = []
-    for lib in OWN_LIBRARIES:
+    for lib in OWN_LIBRARIES + tuple(upstream):
         if args.only and args.only.lower() not in lib.lower():
             continue
         examples = Path(cfg.CORE_LIVE) / "libraries" / lib / "examples"
@@ -83,8 +94,12 @@ def main():
             continue
         # An Arduino example is a directory holding a .ino of the same name.
         for d in walk_dirs(examples):
-            if (d / (d.name + ".ino")).exists():
-                sketches.append({"lib": lib, "name": d.name, "path": d})
+            if not (d / (d.name + ".ino")).exists():
+                continue
+            if (lib, d.name) in EXCLUDED:
+                print("  skip %s / %s: %s" % (lib, d.name, EXCLUDED[(lib, d.name)]))
+                continue
+            sketches.append({"lib": lib, "name": d.name, "path": d})
 
     if not sketches:
         if args.only:

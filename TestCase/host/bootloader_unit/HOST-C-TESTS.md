@@ -2,7 +2,7 @@
 
 Case **T1-16**. Runs the *real* bootloader certificate and auth source
 (`open_plc_cube_ide/IAPServer/`: `sha256.c`, `iap_keyderive.c`, `iap_cert.c`,
-`fw_verify.c` + the vendored micro-ecc, `iap_auth.c`) natively on a PC against
+`fw_verify.c` + the vendored micro-ecc, `iap_auth.c`, `net_rand.c`) natively on a PC against
 a fake STM32 HAL and a fake owner slot (`stubs/`), instead of only being
 testable by flashing real hardware.
 
@@ -40,6 +40,10 @@ Exit code is `0` iff every check passes.
   somebody else's signature.
 - An RNG that cannot deliver issues no challenge at all, and leaves no earlier
   nonce still accepting answers.
+- `net_rand_seed()` seeds `rand()` with the RNG word, so lwIP's `LWIP_RAND()`
+  differs per boot and per board; a failed RNG leaves `rand()` untouched.
+- `net_rand_tcp_isn()` returns the RNG word, and falls back to `rand()` when the
+  RNG fails (decision 67).
 
 ## The golden vectors
 

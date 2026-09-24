@@ -95,6 +95,7 @@ def main():
         IAP_SERVER / "fw_pubkey.c",
         IAP_SERVER / "uecc" / "uECC.c",
         IAP_SERVER / "iap_auth.c",
+        IAP_SERVER / "net_rand.c",
         HERE / "test_main.c",
         "-o", binary,
     ])

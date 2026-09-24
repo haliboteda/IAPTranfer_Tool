@@ -18,6 +18,7 @@
  */
 
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdbool.h>
 #include <stdint.h>
@@ -27,6 +28,7 @@
 #include "iap_keyderive.h"
 #include "fw_verify.h"
 #include "sha256.h"
+#include "net_rand.h"
 #include "hal_stub.h"
 #include "owner_slot_stub.h"
 #include "rtc.h"
@@ -303,6 +305,49 @@ static void test_rng_failure_issues_nothing(void)
 	test_hal_set_rng_fail(0);
 }
 
+/* Test 14: lwIP's LWIP_RAND() is rand(), so the seed is what makes DHCP xids
+ * and ephemeral ports differ per boot and per board (decision 67). */
+static void test_net_rand_seed(void)
+{
+	const uint32_t word = 0x5EED1234U;
+	int expected;
+
+	test_hal_reset();
+	srand(word);
+	expected = rand();
+	srand(1U);
+	test_hal_set_rng_words(&word, 1U);
+	net_rand_seed();
+	CHECK(rand() == expected, "net_rand_seed() seeds rand() with the RNG word");
+
+	srand(42U);
+	expected = rand();
+	srand(42U);
+	test_hal_set_rng_fail(1);
+	net_rand_seed();
+	CHECK(rand() == expected, "a failed RNG leaves rand() as it was");
+	test_hal_set_rng_fail(0);
+}
+
+/* Test 15: the TCP initial sequence number is the RNG word, and still
+ * something when the RNG fails. */
+static void test_net_rand_tcp_isn(void)
+{
+	const uint32_t word = 0x15A15A15U;
+	uint32_t expected;
+
+	test_hal_reset();
+	test_hal_set_rng_words(&word, 1U);
+	CHECK(net_rand_tcp_isn() == word, "net_rand_tcp_isn() returns the RNG word");
+
+	srand(7U);
+	expected = (uint32_t)rand();
+	srand(7U);
+	test_hal_set_rng_fail(1);
+	CHECK(net_rand_tcp_isn() == expected, "net_rand_tcp_isn() falls back to rand() when the RNG fails");
+	test_hal_set_rng_fail(0);
+}
+
 int main(void)
 {
 	test_crypto_selftest();
@@ -319,6 +364,8 @@ int main(void)
 	test_nonce_expiry();
 	test_no_pending_nonce();
 	test_rng_failure_issues_nothing();
+	test_net_rand_seed();
+	test_net_rand_tcp_isn();
 
 	printf("\n%s (%d failure(s))\n", g_failures == 0 ? "ALL PASS" : "FAILED", g_failures);
 	return g_failures == 0 ? 0 : 1;
