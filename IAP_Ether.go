@@ -122,12 +122,14 @@ func runEtherFlow(filePath, ip, verb string) {
 		// visible as "the board did not come back".
 		var bootBoard boardInfo
 		var ok bool
+		sent := 0
 		for attempt := 1; attempt <= rebootAttempts; attempt++ {
 			if err := authenticatedUDPReboot(ip, id); err != nil {
 				logf("Reboot request %d/%d did not get through: %v",
 					attempt, rebootAttempts, err)
 				continue
 			}
+			sent++
 
 			wait := getRebootWaitDuration()
 			logf("Waiting %.1f seconds for reboot...", wait.Seconds())
@@ -141,9 +143,19 @@ func runEtherFlow(filePath, ip, verb string) {
 					ip, attempt+1, rebootAttempts)
 			}
 		}
+		if !ok && sent == 0 {
+			logf(true, "No reboot request could be sent to %s in %d attempt(s) (reasons above), exiting.",
+				ip, rebootAttempts)
+			return
+		}
 		if !ok {
-			logf(true, "No bootloader with UID=%s found after %d reboot request(s), exiting.",
-				targetUID, rebootAttempts)
+			// The app answers a rejected reboot with silence, so a wrong key and
+			// a board that failed to come back look the same from here.
+			logf(true, "%s (uid=%s) is still not in its bootloader after %d reboot request(s):\n"+
+				"  the board did not accept the reboot request.\n"+
+				"  Most likely the key %s is not the one this board trusts.\n"+
+				"  `IAPTool getowner %s` shows which key it trusts (the bootloader answers it, the running app does not).",
+				ip, targetUID, sent, id.keyPath, ip)
 			return
 		}
 		logf("[PATH] bootloader found at %s (uid=%s) -> tcp transfer", bootBoard.IP, bootBoard.UID)

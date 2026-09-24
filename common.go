@@ -56,6 +56,17 @@ const (
 	ModeFlashBoot = "flashboot"
 )
 
+// exitCleanups run before a fatal logf exits; os.Exit skips deferred calls.
+var exitCleanups []func()
+
+func fatalExit(format string, args ...any) {
+	for _, f := range exitCleanups {
+		f()
+	}
+	log.Printf(format, args...)
+	os.Exit(1)
+}
+
 func logf(args ...any) {
 	if len(args) == 0 {
 		return
@@ -64,13 +75,11 @@ func logf(args ...any) {
 	switch v := args[0].(type) {
 	case error:
 		if v != nil && len(args) > 1 {
-			log.Fatalf("[FATAL] "+args[1].(string)+": %v\n", append(args[2:], v)...)
-			os.Exit(1)
+			fatalExit("[FATAL] "+args[1].(string)+": %v\n", append(args[2:], v)...)
 		}
 	case bool:
 		if v && len(args) > 1 {
-			log.Fatalf("[FATAL] "+args[1].(string)+"\n", args[2:]...)
-			os.Exit(1)
+			fatalExit("[FATAL] "+args[1].(string)+"\n", args[2:]...)
 		}
 	case string:
 		log.Printf("[INFO] "+v+"\n", args[1:]...)

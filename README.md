@@ -44,13 +44,17 @@ contains -- versioning an application is the author's business.
 Resolution order:
 
 1. `--key=<path>` on the command line
-2. `"signing_key"` in `local_config.json`
-3. `keys/fw_signing_key.pem` next to the executable
+2. `"signing_key"` in `local_config.json` (write an absolute path)
+3. `<user config dir>/openplc/keys/fw_signing_key.pem` (`os.UserConfigDir()`;
+   `%AppData%` on Windows) -- survives tool package upgrades
+4. `keys/fw_signing_key.pem` next to the executable
+5. Uploads only: `keys/published_root.TEST_ONLY.pem` next to the executable,
+   the published root key `compile_tool.sh` ships. Only an unclaimed board
+   accepts it; every use prints a warning
 
-Step 3 is what makes the Arduino IDE work with no configuration: the key
-travels in the tool's own directory, so `platform.txt` needs no path passed
-in and no per-machine setup. Both `local_config.json` and `keys/` are looked
-up relative to the **executable**, not the current directory.
+The Arduino IDE passes no key, so steps 3-5 are what it relies on.
+`local_config.json` and `keys/` are looked up relative to the **executable**,
+not the current directory.
 
 ## Uploading without the root key
 
@@ -63,14 +67,14 @@ authorised, and the root private key never leaves the administrator's machine.
 
 ```sh
 # On the colleague's machine
-IAPTool genkey keys/fw_signing_key          # their own key, stays with them
-IAPTool pubkey keys/fw_signing_key.pem      # 128 hex characters -- send these
+IAPTool genkey fw_signing_key               # their own key; move it to step 3 above
+IAPTool pubkey                              # 128 hex characters -- send these
 
 # On the administrator's machine
 IAPTool cert <those 128 hex characters> --key=root.pem > colleague.cert
 
 # Back on the colleague's machine: save it beside the key it covers
-#   keys/fw_signing_key.pem.cert
+#   <user config dir>/openplc/keys/fw_signing_key.pem.cert
 IAPTool ether app.bin 192.168.1.50           # nothing else changes
 ```
 

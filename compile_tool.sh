@@ -53,6 +53,22 @@ for entry in "${PLATFORMS[@]}"; do
     cp ./TestCase/plans/*.json "$OUTPUT_DIR/$PLATFORM/plans/"
 done
 
+# The published root private key ships beside IAPTool as its last-resort upload
+# key (only an unclaimed board accepts it). It keeps its TEST_ONLY name so it is
+# never taken for keys/fw_signing_key.pem. rotate_keys.sh deletes the source
+# once a site has its own key; then nothing is shipped.
+PUBLISHED_KEY="../open_plc_cube_ide/IAPServer/keys/fw_signing_key.TEST_ONLY.pem"
+for entry in "${PLATFORMS[@]}"; do
+    PLATFORM="${entry%%:*}"
+    if [ -f "$PUBLISHED_KEY" ]; then
+        mkdir -p "$OUTPUT_DIR/$PLATFORM/keys"
+        cp "$PUBLISHED_KEY" "$OUTPUT_DIR/$PLATFORM/keys/published_root.TEST_ONLY.pem"
+    else
+        rm -f "$OUTPUT_DIR/$PLATFORM/keys/published_root.TEST_ONLY.pem"
+    fi
+done
+[ -f "$PUBLISHED_KEY" ] || echo "No $PUBLISHED_KEY: the published root key is not shipped."
+
 # The Arduino IDE's Upload button runs the copy inside the board package, not
 # the one in Output/. Every build lands there too, so the menu can never drive
 # an older binary -- P11 (TestCase/tools/check_tool_sync.py) is what catches it

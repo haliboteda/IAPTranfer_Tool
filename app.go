@@ -81,9 +81,13 @@ const usageText = `Usage:
                    No button is needed. The root itself can never be revoked.
 
   --key            ECDSA P-256 private key (PEM). When omitted, falls back to
-                   "signing_key" in local_config.json, then to keys/fw_signing_key.pem
-                   next to this executable. Uploading needs the private key itself:
-                   the image is signed in memory and so is the board's challenge.
+                   "signing_key" in local_config.json, then to
+                   <user config dir>/openplc/keys/fw_signing_key.pem, then to
+                   keys/fw_signing_key.pem next to this executable. Uploads fall
+                   back last to keys/published_root.TEST_ONLY.pem next to this
+                   executable, which only an unclaimed board accepts. Uploading
+                   needs the private key itself: the image is signed in memory
+                   and so is the board's challenge.
   --cert           Certificate presented to the board, as issued by the holder of
                    the root it trusts. When omitted, falls back to "<the signing
                    key>.cert", and with no certificate there the signing key

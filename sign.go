@@ -22,46 +22,100 @@ import (
 // X||Y public key the bootloader reports for "getpubkey".
 const sigLen = 64
 
-// Where the tool looks for a signing key when none was given explicitly:
-// <directory holding the executable>/keys/fw_signing_key.pem. Keeping it
-// next to the binary means the Arduino IDE needs no path passed in.
+// Where the tool looks for a signing key when none was given explicitly. The
+// Arduino IDE passes no options (see platform.txt), so the key has to be
+// findable by convention. Order and rationale: RELEASE-NOTES.md in
+// open_plc_cube_ide, "Where IAPTool finds the upload key".
 const keysDirName = "keys"
 const defaultKeyName = "fw_signing_key.pem"
 
+// publishedKeyName is the published root private key shipped beside IAPTool.
+// Only an unclaimed board accepts it, so it is the last fallback for uploads
+// and never for sign/cert/pubkey. Named so it is never taken for
+// fw_signing_key.pem.
+const publishedKeyName = "published_root.TEST_ONLY.pem"
+
 // A certificate lives at "<the key it covers>.cert": state derived from a key
-// belongs beside that key, where it cannot be paired with the wrong one. A
-// fixed path like keys/fw_cert.txt would attach itself to whichever key
-// happened to be selected, including one --key pointed somewhere else
-// entirely.
-//
-// The Arduino IDE passes no options at all (see platform.txt), so this has to
-// be findable by convention: it resolves the key to <exe dir>/keys/
-// fw_signing_key.pem, and the certificate is that path plus ".cert".
+// belongs beside that key, where it cannot be paired with the wrong one.
 const certSuffix = ".cert"
 
-// findSigningKey returns the signing key to use: an explicit --key or
-// local_config.json "signing_key" wins, otherwise the default file under
-// <exe dir>/keys if it exists. Returns "" when there is no key available.
+// userKeyLocation is <user config dir>/openplc/keys/fw_signing_key.pem, the
+// same parent as the force-flash marker. It is outside the versioned tool
+// directory, so it survives tool package upgrades. "" if there is no user
+// config directory.
+func userKeyLocation() string {
+	dir, err := os.UserConfigDir()
+	if err != nil {
+		return ""
+	}
+	return filepath.Join(dir, "openplc", keysDirName, defaultKeyName)
+}
+
+// keyExeDir is the directory IAPTool ships in; a variable so tests can point
+// it somewhere else.
+var keyExeDir = GetCurDir
+
+// exeKeyLocation is <exe dir>/keys/fw_signing_key.pem, kept for machines set
+// up before the user directory was introduced.
+func exeKeyLocation() string {
+	exeDir := keyExeDir()
+	if exeDir == "" {
+		return ""
+	}
+	return filepath.Join(exeDir, keysDirName, defaultKeyName)
+}
+
+// publishedKeyLocation is the published root key shipped beside IAPTool.
+func publishedKeyLocation() string {
+	exeDir := keyExeDir()
+	if exeDir == "" {
+		return ""
+	}
+	return filepath.Join(exeDir, keysDirName, publishedKeyName)
+}
+
+func isFile(p string) bool {
+	if p == "" {
+		return false
+	}
+	info, err := os.Stat(p)
+	return err == nil && !info.IsDir()
+}
+
+// findSigningKey returns the signing key to use: --key, then local_config.json
+// "signing_key" (both already in g_signing.keyPath), then the user directory,
+// then <exe dir>/keys. Returns "" when there is no key available.
 func findSigningKey() string {
 	if g_signing.keyPath != "" {
 		return g_signing.keyPath
 	}
-
-	exeDir := GetCurDir()
-	if exeDir == "" {
-		return ""
-	}
-	candidate := filepath.Join(exeDir, keysDirName, defaultKeyName)
-	if info, err := os.Stat(candidate); err == nil && !info.IsDir() {
-		return candidate
+	for _, candidate := range []string{userKeyLocation(), exeKeyLocation()} {
+		if isFile(candidate) {
+			return candidate
+		}
 	}
 	return ""
 }
 
-// defaultKeyLocation is the path findSigningKey looks for, used in error
-// messages so the operator knows where to put a key.
+// findUploadKey is findSigningKey plus the published root key as the last
+// fallback. published reports that the fallback was taken.
+func findUploadKey() (path string, published bool) {
+	if p := findSigningKey(); p != "" {
+		return p, false
+	}
+	if p := publishedKeyLocation(); isFile(p) {
+		return p, true
+	}
+	return "", false
+}
+
+// defaultKeyLocation is where an operator should put a key, used in error
+// messages.
 func defaultKeyLocation() string {
-	return filepath.Join(GetCurDir(), keysDirName, defaultKeyName)
+	if p := userKeyLocation(); p != "" {
+		return p
+	}
+	return exeKeyLocation()
 }
 
 // findCert returns the certificate to present alongside keyPath, or "" when

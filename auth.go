@@ -27,7 +27,8 @@ type uploadIdentity struct {
 	key       *ecdsa.PrivateKey
 	cert      *iapcert.Cert
 	certHex   string
-	delegated bool // the certificate came from a file rather than self-signing
+	delegated bool   // the certificate came from a file rather than self-signing
+	keyPath   string // where key was loaded from, for error messages
 }
 
 // resolveUploadIdentity loads the signing key and the certificate that goes
@@ -36,17 +37,21 @@ type uploadIdentity struct {
 func resolveUploadIdentity() (uploadIdentity, error) {
 	var id uploadIdentity
 
-	keyPath := findSigningKey()
+	keyPath, published := findUploadKey()
 	if keyPath == "" {
-		return id, fmt.Errorf("no signing key found at %s.\n"+
+		return id, fmt.Errorf("no signing key found.\n"+
 			"  Authenticating an upload means signing a challenge, which needs the private key.\n"+
-			"  Put one there, or pass --key=<key.pem>", defaultKeyLocation())
+			"  Put it at %s, or pass --key=<key.pem>", defaultKeyLocation())
+	}
+	if published {
+		logf("** signing with the PUBLISHED key %s: only an unclaimed board accepts this **", keyPath)
 	}
 	key, err := loadSigningKey(keyPath)
 	if err != nil {
 		return id, err
 	}
 	id.key = key
+	id.keyPath = keyPath
 
 	certPath := findCert(keyPath)
 	if certPath == "" {

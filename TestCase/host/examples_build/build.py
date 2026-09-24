@@ -32,7 +32,7 @@ sys.path.insert(0, str(HERE.parent.parent / "tools"))
 from common import Fail, Ok, Section, Warn, cfg, run_capture  # noqa: E402
 
 # Compiled first, so a break in the project's own code shows up early.
-OWN_LIBRARIES = ("OpenPLC_SDRAM", "OpenPLC_IAP", "OpenPLC_Net", "OpenPLC_KNX")
+OWN_LIBRARIES = ("OpenPLC_Ports", "OpenPLC_SDRAM", "OpenPLC_IAP", "OpenPLC_Net", "OpenPLC_KNX")
 
 # (library, example) -> why it cannot build for this board.
 EXCLUDED = {

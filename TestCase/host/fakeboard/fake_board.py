@@ -11,6 +11,7 @@ no verification whatsoever -- what is under test is IAPTool's behaviour, not the
 device's. Device behaviour is covered by the T/N/S cases against real hardware.
 
 Usage:  fake_board.py <pubkey-hex | "unknown"> [seconds] [--port N]
+                      [--uid UID] [--app VERSION]
 
   pubkey-hex   64-byte P-256 public key as 128 hex chars, returned by getpubkey
   "unknown"    answer getpubkey with "Unknown command", i.e. an old bootloader
@@ -18,6 +19,15 @@ Usage:  fake_board.py <pubkey-hex | "unknown"> [seconds] [--port N]
   --port       port to serve, default 56865 -- must match "server_port" in the
                local_config.json IAPTool reads, or the tool dials nothing
                placed below, at, or above what the "device" already runs.
+  --uid        UID in the identity string (default: UID below)
+  --app        start as a board running an app of this version (role CUSAPP,
+               fifth identity field). It answers the UDP reboot challenge and,
+               on an accepted reboot request, goes silent and comes back as
+               BOOTLD; after the full image it goes silent again and comes back
+               as CUSAPP, so IAPTool's "board came back" verdict means something.
+               A reboot request is accepted only if its certificate's leaf key
+               equals pubkey-hex (bytes compared, nothing verified -- so a
+               delegated certificate is refused); with "unknown", any is.
 """
 import socket
 import sys
@@ -41,13 +51,61 @@ def _take_opt(name, default):
 
 
 PORT = int(_take_opt("--port", 56865))
+UID = _take_opt("--uid", UID)
+APP_VERSION = _take_opt("--app", None)
 
 PUBKEY = _argv[0] if len(_argv) > 0 else "unknown"
 LIFETIME = float(_argv[1]) if len(_argv) > 1 else 25.0
 
 
+# How long the board stays silent while "resetting": after an accepted reboot
+# request (shorter than IAPTool's 4 s reboot wait) and after the full image.
+REBOOT_SILENCE = 1.0
+IMAGE_SILENCE = 3.0
+
+_lock = threading.Lock()
+_state = {"role": "CUSAPP" if APP_VERSION else "BOOTLD", "silent_until": 0.0}
+
+
 def log(m):
     print("[board] " + m, flush=True)
+
+
+def current_role():
+    with _lock:
+        return _state["role"]
+
+
+def identity():
+    role = current_role()
+    if APP_VERSION is None:
+        return "STM32H743_%s_%s_0.1.3" % (UID, role)
+    # In the bootloader the app-version field is "-".
+    return "STM32H743_%s_%s_0.1.3_%s" % (UID, role,
+                                          APP_VERSION if role == "CUSAPP" else "-")
+
+
+def go_silent(seconds, then_role):
+    with _lock:
+        _state["silent_until"] = time.time() + seconds
+        _state["role"] = then_role
+    log("SILENT for %.1f s, then %s" % (seconds, then_role))
+
+
+def silent():
+    with _lock:
+        return time.time() < _state["silent_until"]
+
+
+def handle_reboot(msg):
+    """openplc_server_reboot <cert hex> <nonce sig hex>; no reply either way."""
+    parts = msg.split()
+    leaf = parts[1][:128].lower() if len(parts) >= 2 else ""
+    if PUBKEY != "unknown" and leaf != PUBKEY.lower():
+        log("REBOOT REFUSED: certificate leaf %s... is not the trusted key" % leaf[:16])
+        return
+    log("REBOOT ACCEPTED")
+    go_silent(REBOOT_SILENCE, "BOOTLD")
 
 
 def udp_server(stop):
@@ -60,13 +118,23 @@ def udp_server(stop):
         except socket.timeout:
             continue
         msg = data.decode(errors="replace").strip()
-        log("UDP %r from %s" % (msg, addr))
+        if silent():
+            log("UDP %r from %s ignored (resetting)" % (msg[:40], addr))
+            continue
+        log("UDP %r from %s" % (msg[:60], addr))
+        if APP_VERSION is not None and current_role() == "CUSAPP":
+            if msg == "openplc_server_reboot_challenge":
+                s.sendto(NONCE.encode(), addr)
+                continue
+            if msg.startswith("openplc_server_reboot "):
+                handle_reboot(msg)
+                continue
         # The four keywords a real board answers (case T1-01). Missing any of them
         # here just makes the board look absent, which is a confusing way for a
         # key-match case to fail.
         if msg in ("openplc_server_where_r_y", "DISCOVER", "openplc_discover", "ping"):
-            # name_uid_role_version -- the PC tool splits this on "_"
-            s.sendto(("STM32H743_%s_BOOTLD_0.1.3" % UID).encode(), addr)
+            # name_uid_role_version[_appversion] -- the PC tool splits this on "_"
+            s.sendto(identity().encode(), addr)
     s.close()
 
 
@@ -88,7 +156,11 @@ def handle_tcp(conn):
             conn.sendall(b"OK")
             log("data chunk %d bytes (%d/%d)" % (len(data), received, expected))
             if received >= expected:
-                log("IMAGE FULLY RECEIVED")
+                log("IMAGE FULLY RECEIVED %d bytes" % received)
+                if APP_VERSION is not None:
+                    # The connection is left open: closing it right after the
+                    # last OK makes IAPTool read EOF as a failed ack.
+                    go_silent(IMAGE_SILENCE, "CUSAPP")
             continue
 
         buf += data

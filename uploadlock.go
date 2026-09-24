@@ -16,13 +16,11 @@ import (
 // a flash, and a discovery that cannot read it just carries on broadcasting.
 const uploadLockName = "openplc-iap-upload.lock"
 
-// logf(true, ...) exits without running deferred calls, so a failed run leaves
-// its lock behind and discovery would keep standing aside for a board the
-// operator now wants to see more than ever. Bound it just past the worst
-// realistic upload -- identify with retries (~14s) + reboot wait (4s) +
-// bootloader discovery (~15s) + transfer (~10s) -- so a crash costs at most one
-// stale window rather than minutes of an empty port menu. Only the UDP phases
-// are at risk of colliding anyway; the transfer that follows is TCP.
+// A fatal logf removes the lock before exiting (exitCleanups). The age bound
+// covers a process killed outright: just past the worst realistic upload --
+// identify with retries (~14s) + reboot wait (4s) + bootloader discovery
+// (~15s) + transfer (~10s) -- so a crash costs at most one stale window rather
+// than minutes of an empty port menu.
 const UploadLockMaxAge = 90 * time.Second
 
 func UploadLockPath() string {
@@ -45,5 +43,7 @@ func AcquireUploadLock() func() {
 		return func() {}
 	}
 
-	return func() { _ = os.Remove(path) }
+	release := func() { _ = os.Remove(path) }
+	exitCleanups = append(exitCleanups, release)
+	return release
 }
