@@ -13,7 +13,7 @@ Scope: the project's own libraries and the upstream STM32duino ones, since a
 user opens upstream examples first (decision 68). Upstream examples that were
 never meant for an H743 are listed in EXCLUDED, each with its reason.
 
-⚠️ Takes about ten minutes, which is why selfcheck deliberately does not run it.
+⚠️ Takes about 45 minutes, which is why selfcheck deliberately does not run it.
 
 Exit 0 = every example compiled, 1 = at least one did not, 2 = prerequisites
 missing.
