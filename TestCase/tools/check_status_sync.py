@@ -52,6 +52,7 @@ NOT_A_STATUS_ROW = {
     "P12":        "wayfinder ticket hygiene; guards the issue tracker, not firmware",
     "P13":        "the stale-id check; also guards documents, not firmware",
     "P14":        "the CHANGE-LIST orphan gate; guards the planning artefacts, not firmware",
+    "P17":        "the .cproject linker script guard; protects the port-tool build, not firmware",
     "S4":         "retired: SDRAM staging removed its meaning, split into T1-21 / T1-22",
     }
 

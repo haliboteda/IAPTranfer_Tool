@@ -193,19 +193,23 @@ static void test_root_change_invalidates(void)
 }
 
 /* Test 8: a full challenge-response, with the nonce signature produced by the
- * PC tool. Also pins the nonce itself: counter||UIDW0||tick||0. */
+ * PC tool. The nonce is whatever the RNG hands over, so the stub is told to
+ * hand over exactly the 16 bytes the golden signature was made for. */
 static void test_challenge_response(void)
 {
 	char nonce_hex[IAP_AUTH_NONCE_SIZE * 2U + 1U];
 	const char *msg = GOLDEN_AUTH_MSG;
 	bool accepted, replayed;
+	/* Little-endian words spelling 01000000 67452301 88130000 00000000. */
+	static const uint32_t golden_nonce_words[4] = {
+		0x00000001U, 0x01234567U, 0x00001388U, 0x00000000U
+	};
 
 	arrange_golden_board();
-	/* RTC_BKP_DR1 starts at 0 (test_hal_reset), so next_counter() -> 1,
-	 * which is the counter the golden nonce was signed for. */
-	iap_auth_issue_challenge(nonce_hex);
+	test_hal_set_rng_words(golden_nonce_words, 4U);
+	CHECK(iap_auth_issue_challenge(nonce_hex), "a challenge is issued");
 	CHECK(strcmp(nonce_hex, "01000000674523018813000000000000") == 0,
-			"nonce is counter||UIDW0||tick||0000, little-endian");
+			"the nonce is the 16 bytes the RNG handed over, little-endian");
 
 	accepted = iap_auth_verify_and_consume((const uint8_t *)msg, (uint32_t)strlen(msg),
 			as_cert(golden_cert_delegated), golden_auth_sig_leaf);
@@ -280,6 +284,25 @@ static void test_no_pending_nonce(void)
 			"an answer arriving before any challenge was issued is rejected");
 }
 
+/* Test 13: an RNG that cannot deliver must produce no challenge at all. The
+ * alternative -- falling back to whatever the data register held -- is a fixed
+ * nonce, which is worse than the counter this replaced. */
+static void test_rng_failure_issues_nothing(void)
+{
+	char nonce_hex[IAP_AUTH_NONCE_SIZE * 2U + 1U];
+	const char *msg = GOLDEN_AUTH_MSG;
+
+	arrange_golden_board();
+	test_hal_set_rng_fail(1);
+	CHECK(!iap_auth_issue_challenge(nonce_hex), "no challenge is issued when the RNG fails");
+
+	/* And the previous nonce must not still be accepting answers. */
+	CHECK(!iap_auth_verify_and_consume((const uint8_t *)msg, (uint32_t)strlen(msg),
+			as_cert(golden_cert_delegated), golden_auth_sig_leaf),
+			"a failed challenge leaves no nonce pending");
+	test_hal_set_rng_fail(0);
+}
+
 int main(void)
 {
 	test_crypto_selftest();
@@ -295,6 +318,7 @@ int main(void)
 	test_revoked_leaf_rejected_in_session_auth();
 	test_nonce_expiry();
 	test_no_pending_nonce();
+	test_rng_failure_issues_nothing();
 
 	printf("\n%s (%d failure(s))\n", g_failures == 0 ? "ALL PASS" : "FAILED", g_failures);
 	return g_failures == 0 ? 0 : 1;

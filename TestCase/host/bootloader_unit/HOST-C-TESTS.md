@@ -33,10 +33,13 @@ Exit code is `0` iff every check passes.
   not vouch for an image somebody else signed.
 - Changing the trusted root retroactively invalidates firmware certified by
   the old one — the property that makes `setowner` mean anything.
-- A full challenge-response: nonce format (`counter||UIDW0||tick||0`),
-  acceptance, replay rejection, expiry past `IAP_AUTH_NONCE_TTL_MS`, an answer
-  with no challenge behind it, an uncertified signer, and a certified
-  certificate carrying somebody else's signature.
+- A full challenge-response: the nonce is the 16 bytes the RNG handed over (the
+  stub is told which, so the golden signature still applies), acceptance, replay
+  rejection, expiry past `IAP_AUTH_NONCE_TTL_MS`, an answer with no challenge
+  behind it, an uncertified signer, and a certified certificate carrying
+  somebody else's signature.
+- An RNG that cannot deliver issues no challenge at all, and leaves no earlier
+  nonce still accepting answers.
 
 ## The golden vectors
 

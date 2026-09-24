@@ -75,6 +75,7 @@ CATALOG = [
     ("P4",           "R3-04",                  "Arduino variant assertions (FMC reserved pins, UART routing)"),
     ("P15",          "R1-33",                  "the application's start address stays 1024-aligned"),
     ("P16",          "R1-25",                  "the I-cache and the flash lock are restored on every exit"),
+    ("P17",          "-",                      "the .cproject linker script is still the ${PLC_LD_SCRIPT} variable"),
 ]
 COVERS = {cid: covers for cid, covers, _ in CATALOG}
 
@@ -217,6 +218,9 @@ def main():
     # rather than behind --quick: it needs no toolchain, only the .c files.
     run_step("P16", "the I-cache and the flash lock are restored on every exit",
              [python_exe(), HERE / "check_icache_is_restored.py"], cwd=tool_repo)
+
+    run_step("P17", "the .cproject linker script is still the ${PLC_LD_SCRIPT} variable",
+             [python_exe(), HERE / "check_cproject_ld.py"], cwd=tool_repo)
 
     # The pre-commit hook in OpenPLC_Docs runs these too, but --no-verify skips
     # it and core.hooksPath is not under version control, so the gate lives here.

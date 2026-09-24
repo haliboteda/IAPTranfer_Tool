@@ -421,6 +421,10 @@ claims = {}
 scan = [
     ("bootloader IAPServer/iap_auth.c", BOOT / "IAPServer" / "iap_auth.c"),
     ("core OpenPLC_IAP/src/iap_auth.c", LIVE / "libraries" / "OpenPLC_IAP" / "src" / "iap_auth.c"),
+    # backup.h defines the index STM32RTC would write. Nothing writes it today,
+    # but it is a claim, and leaving it out of the scan is what let it sit on top
+    # of the bootloader's counter unnoticed until 2026-09-23.
+    ("core cores/arduino/stm32/backup.h", LIVE / "cores" / "arduino" / "stm32" / "backup.h"),
 ]
 for label, path in scan:
     if not path.exists():
@@ -440,8 +444,8 @@ for dr in sorted(claims):
         failed += 1
     else:
         Ok("OK    %s <- %s" % (dr, claims[dr][0]))
-print("      (the allocation table in $PROD/docs/repo/ARCHITECTURE.md is the record; this only")
-print("       scans the two iap_auth.c files, not the core's backup.h or HID indices)")
+print("      (the allocation table in $PROD/docs/repo/ARCHITECTURE.md is the record; this scans")
+print("       the two iap_auth.c files and the core's backup.h)")
 
 # --- physical interface selection -------------------------------------------
 # A VPN tunnel or a Docker switch can hold a better default route than the real
@@ -482,7 +486,9 @@ _boot_auth = BOOT / "IAPServer/iap_auth.c"
 _core_auth = LIVE / "libraries/OpenPLC_IAP/src/iap_auth.c"
 
 Section("iap_auth.c: the functions both copies carry whole")
-for _fn in ("next_counter", "iap_auth_issue_challenge"):
+# rng_words() is not here on purpose: the two reach different RNG handles (the
+# bootloader uses CubeMX's, the core owns its own). Decision 66.
+for _fn in ("iap_auth_issue_challenge",):
     compare_anchor("iap_auth.c %s()" % _fn, {
         "bootloader IAPServer/iap_auth.c": get_function_body(_boot_auth, _fn),
         "core OpenPLC_IAP/src/iap_auth.c": get_function_body(_core_auth, _fn),
