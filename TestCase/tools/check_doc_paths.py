@@ -42,6 +42,18 @@ of the others on every machine, so it is located rather than assumed.
     python tools/check_doc_paths.py           report; exit 1 on a dead reference
     python tools/check_doc_paths.py --list    print every path it resolved
 
+Two more checks on markdown links (2026-09-24), because a link can reach an
+existing file and still be wrong:
+
+  * a #fragment has to be an anchor the target really has -- a heading turned
+    into an anchor the way GitHub does it, or an explicit <a id>. A heading that
+    changed from "all 9 commands" to "all 8" left its links pointing at nothing,
+    and the file-exists check stayed green.
+  * link text that is itself a path has to name the file the link goes to. The
+    target gets corrected when a file moves; the text often does not.
+
+Link text that is a sentence is not checked -- only a path can be compared.
+
 Exit 0 = every named path exists, 1 = at least one does not, 2 = setup problem.
 """
 
@@ -50,6 +62,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from urllib.parse import unquote
 
 HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
@@ -58,7 +71,14 @@ from common import Fail, Ok, Section, Warn, cfg, docs_repo, prod_docs, skills_re
 
 TESTTOOL = HERE.parent
 
-MD_LINK = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
+MD_LINK = re.compile(r"\[([^\]]*)\]\(([^)\s]+)\)")
+HEADING = re.compile(r"^(#{1,6})[ \t]+(.*?)[ \t]*#*[ \t]*$")
+FENCE = re.compile(r"^[ \t]*(```|~~~)")
+HTML_ANCHOR = re.compile(r"<a\s+(?:id|name)=\"([^\"]+)\"")
+# Link text that is nothing but a path: it has a slash, or ends in a file
+# extension these repos use. A boards.txt key like menu.upload_method is neither.
+PATH_TEXT = re.compile(r"^\$?(?:[\w.:+-]*/[\w./:+-]*|[\w.+-]+\.(?:md|c|h|cpp|go|py|ino|sh|bat|txt|json|ld|ioc|html|svg))"
+                       r"(?::\d+(?:-\d+)?)?$")
 # $BOOT/... and $TOOL:... -- the repo-variable convention the docs declare.
 #
 # $PROD joined on 2026-08-24, when the product-level documents moved into the
@@ -85,6 +105,63 @@ SKIP_DIR = {".git", "__pycache__", "Debug", "Release", "node_modules", ".vscode"
 # exists. "machine.{ps1,py}" arrives here truncated at the dot, and "path/to/X"
 # is an illustration in a rule about how to write paths.
 SKIP_TOKEN = re.compile(r"[<>*?{}]|^https?:|^//|://|^#|^mailto:|(?:^|/)path/to/|\.$")
+
+
+def github_slug(heading):
+    """The anchor GitHub gives a heading: formatting and punctuation dropped,
+    lowercased, spaces to hyphens. Letters of any script survive."""
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", heading)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = re.sub(r"[^\w\- ]", "", text.strip().lower())
+    return text.replace(" ", "-")
+
+
+_ANCHORS = {}
+
+
+def anchors(md):
+    """Every anchor a markdown file offers; repeated headings get -1, -2, ..."""
+    if md not in _ANCHORS:
+        found, seen, fenced = set(), {}, False
+        try:
+            lines = md.read_text(encoding="utf-8").splitlines()
+        except (OSError, UnicodeDecodeError):
+            lines = []
+        for line in lines:
+            if FENCE.match(line):
+                fenced = not fenced
+                continue
+            if fenced:
+                continue
+            found.update(HTML_ANCHOR.findall(line))
+            m = HEADING.match(line)
+            if m:
+                slug = github_slug(m.group(2))
+                n = seen.get(slug, 0)
+                seen[slug] = n + 1
+                found.add(slug if n == 0 else "%s-%d" % (slug, n))
+        _ANCHORS[md] = found
+    return _ANCHORS[md]
+
+
+def link_problem(text, tok, target, doc):
+    """Why a markdown link to an existing file is still wrong, or None."""
+    frag = tok.split("#", 1)[1] if "#" in tok else ""
+    md = doc if tok.startswith("#") else target
+    if frag and md is not None and md.suffix == ".md" and md.is_file():
+        if unquote(frag).lower() not in anchors(md):
+            return "no heading makes the anchor #%s" % frag
+    shown = text.strip().strip("`")
+    if target is not None and PATH_TEXT.match(shown):
+        named = re.sub(r":\d+(?:-\d+)?$", "", shown).rstrip("/")
+        if named.startswith("."):
+            # Written relative to this document, so it has to be the same file.
+            said = Path(os.path.normpath(str(doc.parent / named)))
+            if said != Path(os.path.normpath(str(target))):
+                return "the text says %s but the link goes to %s" % (named, tok.split("#")[0])
+        elif named.split("/")[-1] != target.name:
+            return "the text names %s but the link goes to %s" % (named.split("/")[-1], target.name)
+    return None
 
 
 def repos():
@@ -215,7 +292,7 @@ def main():
     srcs = sources(boot, tool, core, prod)
     print("  %d document(s), %d source file(s)" % (len(files), len(srcs)))
 
-    dead, checked = [], 0
+    dead, wrong, checked = [], [], 0
     for doc, root in files + srcs:
         in_source = doc.suffix in SRC_EXT
         try:
@@ -231,16 +308,29 @@ def main():
                 checked += 1
                 if not target.exists():
                     dead.append((doc, text[:m.start()].count(chr(10)) + 1, tok))
-        for rx in (MD_LINK, TICK_PATH):
-            for m in rx.finditer(text):
-                tok = m.group(1)
-                target = resolve(tok, doc, root, boot, tool, core, skills, prod)
-                if target is None:
-                    continue
+        for m in MD_LINK.finditer(text):
+            tok = m.group(2)
+            lineno = text[:m.start()].count("\n") + 1
+            target = resolve(tok, doc, root, boot, tool, core, skills, prod)
+            if target is not None:
                 checked += 1
                 if not target.exists():
-                    lineno = text[:m.start()].count("\n") + 1
                     dead.append((doc, lineno, tok))
+                    continue
+            if in_source or not (target is not None or tok.startswith("#")):
+                continue
+            why = link_problem(m.group(1), tok, target, doc)
+            if why:
+                wrong.append((doc, lineno, tok, why))
+        for m in TICK_PATH.finditer(text):
+            tok = m.group(1)
+            target = resolve(tok, doc, root, boot, tool, core, skills, prod)
+            if target is None:
+                continue
+            checked += 1
+            if not target.exists():
+                lineno = text[:m.start()].count("\n") + 1
+                dead.append((doc, lineno, tok))
         for m in VAR_PATH.finditer(text):
             tok = m.group(0)
             target = resolve(tok, doc, root, boot, tool, core, skills, prod)
@@ -257,14 +347,19 @@ def main():
 
     Section("result")
     print("  %d path reference(s) checked" % checked)
-    if dead:
-        for doc, lineno, tok in dead:
-            Fail("  %s:%d  ->  %s" % (doc, lineno, tok))
+    for doc, lineno, tok in dead:
+        Fail("  %s:%d  ->  %s" % (doc, lineno, tok))
+    for doc, lineno, tok, why in wrong:
+        Fail("  %s:%d  ->  %s  (%s)" % (doc, lineno, tok, why))
+    if dead or wrong:
         print("")
-        Fail("%d reference(s) name a file that does not exist" % len(dead))
+        if dead:
+            Fail("%d reference(s) name a file that does not exist" % len(dead))
+        if wrong:
+            Fail("%d link(s) reach a file but not what they say" % len(wrong))
         return 1
 
-    Ok("every path named in a document exists")
+    Ok("every path named in a document exists, and every link says where it goes")
     return 0
 
 
