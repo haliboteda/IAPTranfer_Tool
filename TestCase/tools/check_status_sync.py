@@ -53,6 +53,7 @@ NOT_A_STATUS_ROW = {
     "P13":        "the stale-id check; also guards documents, not firmware",
     "P14":        "the CHANGE-LIST orphan gate; guards the planning artefacts, not firmware",
     "P17":        "the .cproject linker script guard; protects the port-tool build, not firmware",
+    "P18":        "the generated id table; guards documents, not firmware",
     "S4":         "retired: SDRAM staging removed its meaning, split into T1-21 / T1-22",
     }
 
@@ -63,7 +64,7 @@ NOT_A_STATUS_ROW = {
 NOT_A_STATUS_ROW.update(
     {"CHK-A%d" % i: "a step of the post-change self-check grid" for i in range(1, 8)})
 NOT_A_STATUS_ROW.update(
-    {"CHK-B%d" % i: "a step of the release grid" for i in range(1, 9)})
+    {"CHK-B%d" % i: "a step of the release grid" for i in range(1, 10)})
 
 # Requirement ids a case may cover without STATUS.md having a row of that name.
 NOT_A_REQUIREMENT = {"-", "F", "F 组"}

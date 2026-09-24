@@ -63,6 +63,7 @@ CATALOG = [
     ("P9",           "-",                      "every path a document names actually exists"),
     ("P13",          "-",                      "no renamed id is still cited anywhere"),
     ("P12",          "-",                      "OpenPLC_Docs: tickets close honestly, placeholders have owners"),
+    ("P18",          "-",                      "OpenPLC_Docs: the live-id table in ID-MAP.md is up to date"),
     ("T1-16",        "R1-20",                  "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)"),
     ("T2-21",        "R2-04",                  "the root in force cannot revoke itself (real owner_root_ro.c over a fake record area)"),
     ("T2-22-T2-23",  "R2-04",                  "revocation area: warns at 8 slots left, refuses the 97th without writing"),
@@ -231,6 +232,9 @@ def main():
                  cwd=docs)
         run_step("P12", "OpenPLC_Docs: no placeholder without a ticket",
                  [python_exe(), docs / "tools" / "check_no_orphan_placeholders.py"],
+                 cwd=docs)
+        run_step("P18", "OpenPLC_Docs: the live-id table in ID-MAP.md is up to date",
+                 [python_exe(), docs / "tools" / "gen_id_map.py", "--check"],
                  cwd=docs)
 
     if not args.quick:
