@@ -75,11 +75,10 @@ def walk_files(root):
 
 
 def sha256(path):
-    h = hashlib.sha256()
+    # CRLF == LF: a web install is LF, an autocrlf checkout is CRLF.
+    # See $PROD/docs/engineering/HOW-TO-RUN-TESTS.md "P3".
     with open(path, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 20), b""):
-            h.update(chunk)
-    return h.hexdigest().upper()
+        return hashlib.sha256(fh.read().replace(b"\r\n", b"\n")).hexdigest().upper()
 
 
 only_live = []
