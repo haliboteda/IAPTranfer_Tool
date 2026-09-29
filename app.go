@@ -76,8 +76,8 @@ const usageText = `Usage:
                    signed by the current owner, so no button is needed.
   IAPTool revoke   <ip> --key=<owner.pem> --leaf=<pubkey>
                    revokes one leaf (128-hex-char public key), signed by the
-                   current owner. From the next reset on, firmware certified by
-                   that leaf is refused -- including firmware already installed.
+                   current owner. That leaf's next upload is refused; firmware
+                   it already installed keeps running (see getapprevoked).
                    No button is needed. The root itself can never be revoked.
 
   --key            ECDSA P-256 private key (PEM). When omitted, falls back to

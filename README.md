@@ -82,10 +82,11 @@ A certificate lives at `<the key it covers>.cert`, so a key and its
 certificate cannot be paired up wrongly, and the Arduino IDE finds it with no
 configuration for the same reason it finds the key. `--cert=<file>` overrides.
 
-Revoking a colleague means handing the board to a new root
-(`IAPTool setowner`) and issuing fresh certificates to everyone still there:
-certificates from the old root stop verifying the moment the board's root
-changes, including on firmware already installed. See
+Revoking one colleague is `IAPTool revoke --leaf=<their pubkey>`: that leaf is
+refused from its next upload on, while firmware it already installed keeps
+running (`IAPTool getapprevoked` finds those boards). Handing the board to a new
+root (`IAPTool setowner`) retires every certificate the old root issued,
+including on firmware already installed. See
 `OpenPLC_Docs/docs/modules/M2-ownership.md`.
 
 ### Mismatch is caught before the transfer
