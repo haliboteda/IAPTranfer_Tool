@@ -9,12 +9,12 @@ judges it. That split is forced by the hardware, not chosen for convenience --
 see below.
 
     1. Press and release the reset button.
-    2. The moment the relays start clicking, press and HOLD BOOT0.
-    3. Keep holding until the clicking stops, then about two seconds more.
+    2. The moment the system LED starts blinking, press and HOLD BOOT0.
+    3. Keep holding until the blinking stops, then about two seconds more.
 
-The relay clicks are the cue on purpose: boot_window_relay() in Core/Src/main.c
-clicks relays 0, 1 and 2 for 500 ms each and polls BOOT0 throughout, so the
-sound IS the window. Nothing on the PC can see that window open.
+The blinking is the cue on purpose: boot_window() in Core/Src/main.c blinks
+the system LED for 2 s and reads BOOT0 at the end, so the blinking IS the
+window. Nothing on the PC can see that window open.
 
 ⛔ NEVER HOLD BOOT0 WHILE SOMETHING ELSE DRIVES THE RESET.
 
@@ -78,8 +78,8 @@ def main():
         banner(["DO THIS ON THE BOARD, IN THIS ORDER:",
                 "",
                 "  1. Press and release the RESET button.",
-                "  2. When you hear the relays click, press and HOLD BOOT0.",
-                "  3. Let go about two seconds after the clicking stops.",
+                "  2. When the system LED starts blinking, press and HOLD BOOT0.",
+                "  3. Let go about two seconds after the blinking stops.",
                 "",
                 "Do NOT hold BOOT0 while pressing reset -- that starts ST's DFU",
                 "loader instead, and the board goes completely silent.",

@@ -515,6 +515,61 @@ for _fn in ("iap_keyderive_get_machine_id", "iap_keyderive_get_machine_id_hex"):
             LIVE / "libraries/OpenPLC_IAP/src/iap_keyderive.c", _fn),
     })
 
+# --- calibration area format ------------------------------------------------
+# The fixture writes it, the app reads it; a drift means every board reads its
+# own calibration as blank or corrupt and silently falls back to nominal.
+# Format: $PROD/docs/modules/M1/SECTOR-15.md, "校准值区的格式".
+Section("calibration area format")
+
+
+def get_calib_layout_c(path):
+    if not Path(path).exists():
+        return None
+    text = read_text(path)
+    parts = []
+    for k in ("CALIB_AREA_ADDR", "CALIB_MAGIC", "CALIB_VERSION", "CALIB_CHANNELS"):
+        m = re.search(r'#define\s+%s\s+(0x[0-9A-Fa-f]+|\d+)' % k, text)
+        if not m:
+            return None
+        parts.append("%s=%d" % (k.split("_")[-1], int(m.group(1).rstrip("UL"), 0)))
+    m = re.search(r'sizeof\(calib_area_t\)\s*==\s*(\d+)', text)
+    st = re.search(r'typedef struct \{([^{}]*)\} calib_area_t;', text)
+    ch = re.search(r'typedef enum \{(.*?)\} calib_channel_id_t;', text, re.S)
+    if not (m and st and ch):
+        return None
+    parts.append("SIZE=%s" % m.group(1))
+    parts.append("fields=" + ",".join(re.findall(r'\b(\w+)(?:\[\w+\])?\s*;', st.group(1))))
+    parts.append("channels=" + ",".join(re.findall(r'CALIB_CH_(\w+)', ch.group(1))))
+    return ";".join(parts)
+
+
+def get_calib_layout_go(path):
+    if not Path(path).exists():
+        return None
+    text = read_text(path)
+    parts = []
+    for c, k in (("Addr", "ADDR"), ("Magic", "MAGIC"), ("Version", "VERSION"), ("Channels", "CHANNELS")):
+        m = re.search(r'\b%s\s*=\s*(0x[0-9A-Fa-f]+|\d+)' % c, text)
+        if not m:
+            return None
+        parts.append("%s=%d" % (k, int(m.group(1), 0)))
+    m = re.search(r'\bSize\s*=\s*(\d+)', text)
+    st = re.search(r'type area struct \{(.*?)\n\}', text, re.S)
+    ch = re.search(r'const \(\n\s*AI1 = iota(.*?)\n\)', text, re.S)
+    if not (m and st and ch):
+        return None
+    parts.append("SIZE=%s" % m.group(1))
+    parts.append("fields=" + ",".join(re.findall(r'^\s*(\w+)\s', st.group(1), re.M)))
+    parts.append("channels=" + ",".join(["AI1"] + re.findall(r'^\s*(\w+)\s', ch.group(1), re.M)))
+    return ";".join(parts)
+
+
+compare_anchor("calibration area layout", {
+    "bootloader IAPServer/calib_area.h": get_calib_layout_c(BOOT / "IAPServer/calib_area.h"),
+    "core OpenPLC_Ports/src/openplc_calib.h": get_calib_layout_c(LIVE / "libraries/OpenPLC_Ports/src/openplc_calib.h"),
+    "tool internal/calarea/calarea.go": get_calib_layout_go(TOOL / "internal/calarea/calarea.go"),
+})
+
 # --- what this script does not check ----------------------------------------
 Section("not covered by this script -- still manual")
 print("  - fw_pubkey.inc: bootloader-only by design, nothing to compare")

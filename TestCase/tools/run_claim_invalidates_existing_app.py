@@ -14,10 +14,10 @@ first person who does reports it as a bug.
 
 ⚠️ SOMEBODY HAS TO BE AT THE BOARD. When this script asks for it:
 
-      press RESET and let go, hold BOOT0 while the three relays click
-      (about 1.5 s), then LET GO BEFORE 10 SECONDS ARE UP.
+      press RESET and let go, hold BOOT0 while the system LED blinks
+      (about 2 s), then LET GO BEFORE 10 SECONDS ARE UP.
 
-   Keep holding past 10 s and the board clicks three times in quick succession:
+   Keep holding past 10 s and the system LED stays lit:
    that is a FACTORY RESET being armed, and letting go then runs it. Press RESET
    again to cancel it. Nothing has to be confirmed afterwards -- the script
    watches the log until the board itself reports it came up with BOOT0 held.
@@ -175,10 +175,10 @@ def main():
     Ok("  ownership           unclaimed")
 
     # --------------------------------------------------------------- the claim
-    banner(["PRESS RESET, THEN HOLD BOOT0 WHILE THE THREE RELAYS CLICK.",
+    banner(["PRESS RESET, THEN HOLD BOOT0 WHILE THE SYSTEM LED BLINKS.",
             "LET GO BEFORE 10 SECONDS ARE UP."])
-    print("  Holding past 10 s arms a FACTORY RESET instead -- you will hear three")
-    print("  fast clicks. Press RESET again to cancel that.")
+    print("  Holding past 10 s arms a FACTORY RESET instead -- the system LED")
+    print("  stays lit. Press RESET again to cancel that.")
     print("  Nothing to confirm: this waits for the board to report BOOT0 was held.")
     print()
 

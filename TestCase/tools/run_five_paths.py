@@ -151,8 +151,8 @@ class Round(object):
         return LOG_BOOT0_UPLOAD in "\n".join(buf.values())
 
     def hold_boot0(self, why):
-        banner(["HOLD BOOT0 NOW: press RESET, hold BOOT0 through the relay",
-                "clicks (about 2 s), then let go.", why])
+        banner(["HOLD BOOT0 NOW: press RESET, hold BOOT0 while the system",
+                "LED blinks (about 2 s), then let go.", why])
 
 
 def path_0(r):

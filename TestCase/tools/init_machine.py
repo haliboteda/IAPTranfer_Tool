@@ -242,6 +242,16 @@ def detect_arduino_cli_config():
     return str(p) if p.exists() else None
 
 
+def detect_renode():
+    onpath = shutil.which("renode")
+    if onpath:
+        return onpath
+    if IS_WIN:
+        return first_existing([r"D:\Soft\renode\renode.exe",
+                               r"C:\Program Files\Renode\bin\Renode.exe"])
+    return None
+
+
 def gcc_is_modern(exe):
     """Dev-C++ ships GCC 3.4.2 from 2004: it rejects -std=c11 outright and its
     linker crashes at -std=c99. Verifying code destined for arm-none-eabi-gcc
@@ -442,6 +452,11 @@ SETTINGS = [
       "and whose linker crashes at -std=c99."]),
     ("HOST_CC", "path", detect_host_cc, False, []),
 
+    ("__section__", "Renode",
+     ["For host/renode (case T3-05), which boots the examples through the real",
+      "bootloader in simulation. Empty makes that case refuse to run."]),
+    ("RENODE", "path", detect_renode, False, []),
+
     ("__section__", "board",
      ["LOG_PORTS: where the bootloader/app printf lands. UART4 reaches RS232",
       "terminals C05/C06 -- real +/-12V levels, so this is an RS232 adapter, not",
@@ -486,6 +501,7 @@ EXAMPLES = {
         "ARDUINO_CLI": r"D:\Soft\arduino-2\resources\app\lib\backend\resources\arduino-cli.exe",
         "ARDUINO_CLI_CONFIG": r"C:\Users\you\.arduinoIDE\arduino-cli.yaml",
         "HOST_CC": r"D:\Soft\mingw64\bin\gcc.exe",
+        "RENODE": r"D:\Soft\renode\renode.exe",
         "WORKSPACE": r"E:\WorkSpace\Schaeffer-AG",
         "LOG_PORTS": "COM5,COM4",
         "CDC_PORT": "COM6",
@@ -563,6 +579,7 @@ WHAT_IT_IS = {
     "ARDUINO_CLI": "the arduino-cli that ships inside the IDE (not a standalone release)",
     "ARDUINO_CLI_CONFIG": "arduino-cli.yaml, which points the CLI at Arduino15 and user libraries",
     "HOST_CC": "a modern gcc or clang for the host-side C tests (GCC 5 or newer)",
+    "RENODE": "renode.exe of a Renode install (the portable Windows build works)",
     "LOG_PORTS": "serial port(s) carrying the bootloader/app printf, most likely first",
     "LOG_BAUD": "baud rate of the log port -- a property of the firmware, not of this machine",
     "CDC_PORT": "the board's USB CDC port, when it is enumerated",

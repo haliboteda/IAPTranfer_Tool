@@ -105,7 +105,7 @@ def main():
         seen, _ = wait_for_boot0_upload_mode(ports, args.boot0_timeout)
         if not seen:
             Fail("the board never reported BOOT0 held; nothing was attempted")
-            Warn("  reset the board, hold BOOT0 through the relay clicks, let go")
+            Warn("  reset the board, hold BOOT0 while the system LED blinks, let go")
             return 2
         Ok("  the board reports BOOT0 was held")
 

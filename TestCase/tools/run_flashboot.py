@@ -20,7 +20,7 @@ have no owner (factory reset, or a bootloader just written over ST-Link).
 
 ⚠️ --boot0-held also SKIPS the reset this script normally does first, because
 that reset would throw the held state away. Do the gesture -- reset, then
-immediately hold BOOT0 until three fast clicks -- and run this straight
+immediately hold BOOT0 until the system LED stays lit -- and run this straight
 after, without resetting in between.
 
 ⚠️ DESTRUCTIVE, AND NOT RECOVERABLE WITHOUT AN ST-LINK. A failure between the
