@@ -159,7 +159,9 @@ def main():
         "-o", str(binary),
     ]
     if sim:
-        argv.append("-pthread")
+        # -static: a 32-bit libwinpthread-1.dll on the system PATH kills a
+        # double-clicked panel's sim. See $PROD/docs/engineering/HOW-TO-RUN-TESTS.md "模拟板".
+        argv += ["-pthread", "-static"]
     proc = subprocess.run(argv, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
     if proc.returncode != 0 or proc.stdout.strip():
         sys.stdout.flush()
