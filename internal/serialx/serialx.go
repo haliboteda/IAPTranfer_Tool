@@ -100,7 +100,7 @@ func (p PortInfo) Label() string {
 }
 
 // List reports every serial port the OS knows about, USB adapters described as
-// fully as the platform allows - see enum_detailed.go and enum_basic.go.
+// fully as the platform allows - see enum_detailed.go and enum_darwin.go.
 //
 // Ports with no USB details are still listed: a built-in port or one behind a
 // driver that reports nothing is still a port somebody may need to pick.

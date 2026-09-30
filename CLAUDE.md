@@ -12,7 +12,7 @@
 |---|---|
 | 根目录的 `.go` | `IAPTool`：CDC / 以太网两条烧写通道、签名、认证、上传锁 |
 | `cmd/porttool/` | `PortTool`：给硬件工程师的端口测试面板。**受众不同，所以是第二个 exe** —— 他的工具里不该有固件签名和 takeown |
-| `internal/serialx/` | 两个 exe 共用的串口层：开口、重试、枚举（带 VID/PID）。⚠️ 详细枚举在 macOS 上要 cgo，那边按 build tag 退回只报端口名 —— 见 `enum_basic.go` |
+| `internal/serialx/` | 两个 exe 共用的串口层：开口、重试、枚举（带 VID/PID）。macOS 上不开 cgo，VID/PID 由系统自带的 `ioreg` 补 —— 见 `enum_darwin.go` |
 | `internal/ptproto/` | `pt.*` 协议解析：四类行分流、`pt.caps`、采样帧、tick 回绕。**面板和 CLI 共用同一份，两边判据不会分叉** |
 | `internal/ptboard/` | 一条串口连接的对话管理：**永不停止地读**（停读就丢帧，这条链没有重传）、命令逐条串行（协议没有请求 id）、环形缓冲 + 订阅 |
 | `internal/ptpanel/` | 面板的 HTTP 面 + `go:embed` 的页面。推送用 **SSE 不是 WebSocket**（标准库，零依赖）。`Open` 字段是给测试注入假板子的缝 |
