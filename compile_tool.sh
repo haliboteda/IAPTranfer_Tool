@@ -43,6 +43,21 @@ for target in "${TARGETS[@]}"; do
     done
 done
 
+# PortTool only, for Apple Silicon Macs. Output/darwin stays amd64 because
+# install_tool.py ships its IAPTool as the board package's macosx/ one.
+# See $PROD/maps/porttool-on-linux-and-macos/issues/XPT-02-whether-to-ship-arm64.md
+ARM_MAC_DIR="$OUTPUT_DIR/darwin-arm64"
+mkdir -p "$ARM_MAC_DIR"
+echo "Building PortTool for the 'darwin-arm64' platform..."
+if GOOS=darwin GOARCH=arm64 go build -o "$ARM_MAC_DIR/PortTool" ./cmd/porttool; then
+    echo "Build succeeded! The executable is saved at: $ARM_MAC_DIR/PortTool"
+else
+    echo "Build failed for PortTool on 'darwin-arm64'. Please check the error messages."
+    exit 1
+fi
+mkdir -p "$ARM_MAC_DIR/plans"
+cp ./TestCase/plans/*.json "$ARM_MAC_DIR/plans/"
+
 # PortTool's plan page reads plan files from a plans/ folder beside the
 # executable. Existing files are overwritten and extra ones left alone: the
 # shipped plans belong to this repository, but a plan somebody wrote on a line
