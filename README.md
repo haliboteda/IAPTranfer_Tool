@@ -1,6 +1,41 @@
 ﻿# IAPTranfer_Tool
 For OpenPLC transfer bin file
 
+中文：[README.zh-CN.md](README.zh-CN.md)
+
+## Building from source
+
+Two programs come out of this repository: `IAPTool` (signs and uploads
+firmware) and `PortTool` (the port test panel). Both need only Go 1.23 or
+newer. The first build downloads three modules, so it needs network access.
+
+Run from the repository root:
+
+```
+go build -o IAPTool .                     # IAPTool for this machine
+go build -o PortTool ./cmd/porttool       # PortTool for this machine
+```
+
+On Windows name the outputs `IAPTool.exe` and `PortTool.exe`.
+
+To build for another system, set `GOOS` / `GOARCH` (no C compiler needed):
+
+```
+GOOS=linux   GOARCH=amd64 CGO_ENABLED=0 go build -o PortTool ./cmd/porttool
+GOOS=darwin  GOARCH=arm64 go build -o PortTool ./cmd/porttool      # Apple silicon
+GOOS=windows GOARCH=amd64 go build -o PortTool.exe ./cmd/porttool
+```
+
+PortTool's web page is compiled into the executable. Its test plans are not:
+copy `TestCase/plans/*.json` into a `plans/` folder beside `PortTool`.
+
+On Linux the user running PortTool needs access to the serial ports, usually
+by being in the `dialout` group.
+
+`compile_tool.sh` and `build.py` are the maintainers' release scripts: they
+also build the firmware and fill the Arduino board package, which needs the
+other OpenPLC repositories. They are not needed to build the two tools.
+
 ## Usage
 
 ```

@@ -62,17 +62,21 @@ chcp 936 >nul
 cls
 echo.
 echo   ===============================================
-echo     OpenPLC 工装
+echo     OpenPLC 工装 / OpenPLC fixture
 echo   ===============================================
 echo.
 echo     1) 烧固件进板子      (先接好 ST-Link，板子上电)
+echo        Flash the firmware  (ST-Link connected, board powered)
 echo     2) 打开测试面板      (先接好 RS232 控制口)
+echo        Open the test panel (RS232 control port connected)
 echo     3) 两样都做          (先烧，再打开面板)
-echo     4) 看使用说明
-echo     0) 退出
+echo        Both                (flash, then open the panel)
+echo     4) 看使用说明（中文）
+echo     5) Read the guide (English)
+echo     0) 退出 / Quit
 echo.
 set "PICK="
-set /p "PICK=  选一个 [0-4]: "
+set /p "PICK=  选一个 / Choose [0-5]: "
 
 rem 输入没了就退出。双击用的时候碰不到，可是被脚本调用时，
 rem set /p 读不到东西也不报错 —— 不拦就是一个死循环。
@@ -82,6 +86,7 @@ if "%PICK%"=="1" goto flash
 if "%PICK%"=="2" goto panel
 if "%PICK%"=="3" goto both
 if "%PICK%"=="4" goto help
+if "%PICK%"=="5" goto help_en
 if "%PICK%"=="0" goto quit
 goto menu
 
@@ -104,7 +109,11 @@ call :do_panel
 goto after
 
 :help
-start "" "%~dp0README.html"
+start "" "%~dp0README.zh-CN.html"
+goto menu
+
+:help_en
+start "" "%~dp0README.en.html"
 goto menu
 
 :after
@@ -115,7 +124,7 @@ goto menu
 rem ---------------------------------------------------------------- 烧固件
 :do_flash
 echo.
-echo   --- 烧固件 ---
+echo   --- 烧固件 / Flash the firmware ---
 echo.
 
 rem 烧录器装在哪都试一遍：独立版在前，装了整套 CubeIDE 的机器靠最后那一段搜。
@@ -137,9 +146,10 @@ if not defined CLI (
 )
 
 if not defined CLI (
-  echo   [x] 没找到 STM32CubeProgrammer。
+  echo   [x] 没找到 STM32CubeProgrammer。 / STM32CubeProgrammer not found.
   echo.
   echo       去 ST 官网免费下载安装，装完再回来：
+  echo       Download it free from ST, install it, then come back:
   echo       https://www.st.com/en/development-tools/stm32cubeprog.html
   exit /b 2
 )
@@ -153,40 +163,45 @@ for %%H in ("%~dp0*.hex") do (
   set /a NHEX+=1
 )
 if !NHEX! EQU 0 (
-  echo   [x] 这个文件夹里没有 .hex 固件文件。
+  echo   [x] 这个文件夹里没有 .hex 固件文件。 / No .hex firmware file in this folder.
   exit /b 2
 )
 if !NHEX! GTR 1 (
   echo   [x] 这个文件夹里有 !NHEX! 个 .hex，不知道该烧哪个。
-  echo       只留下要烧的那一个，把其他的移走。
+  echo       There are !NHEX! .hex files here - which one to flash is unclear.
+  echo       只留下要烧的那一个，把其他的移走。 / Keep only the one to flash.
   exit /b 2
 )
 
-for %%N in ("!IMG!") do echo   固件：%%~nxN
+for %%N in ("!IMG!") do echo   固件 / Firmware: %%~nxN
 echo.
 
 "!CLI!" -c port=SWD mode=UR -d "!IMG!" -v -rst
 if errorlevel 1 (
   echo.
   echo   [x] 没烧进去。检查：ST-Link 插了吗？板子上电了吗？SWD 线接牢了吗？
+  echo   [x] Flashing failed. Check: ST-Link plugged in? Board powered? SWD wires firm?
   exit /b 1
 )
 echo.
-echo   [ok] 烧好了，板子已经重启。
+echo   [ok] 烧好了，板子已经重启。 / Flashed; the board has restarted.
 exit /b 0
 
 rem ---------------------------------------------------------------- 开面板
 :do_panel
 echo.
-echo   --- 打开测试面板 ---
+echo   --- 打开测试面板 / Open the test panel ---
 echo.
 echo   浏览器会自己打开。那个新窗口别关，关了面板就停。
+echo   A browser opens by itself. Keep the new window open: closing it stops the panel.
 echo.
-start "OpenPLC 测试面板" "%~dp0PortTool.exe"
+start "OpenPLC PortTool" "%~dp0PortTool.exe"
 exit /b 0
 """
 
-README = """# OpenPLC 工装 —— 怎么用
+README_ZH = """# OpenPLC 工装 —— 怎么用
+
+English: `README.en.html`
 
 这个文件夹就是全部，不需要装开发环境。
 
@@ -206,8 +221,9 @@ README = """# OpenPLC 工装 —— 怎么用
     1) 烧固件进板子      (先接好 ST-Link，板子上电)
     2) 打开测试面板      (先接好 RS232 控制口)
     3) 两样都做          (先烧，再打开面板)
-    4) 看使用说明
-    0) 退出
+    4) 看使用说明（中文）
+    5) Read the guide (English)
+    0) 退出 / Quit
 ```
 
 输数字回车就行。做完回到菜单，可以接着做下一件。
@@ -232,6 +248,58 @@ README = """# OpenPLC 工装 —— 怎么用
 板上没有采样通路的那几项，**只能用万用表量**：待机功耗、3.3V / 5V / 5V_EXT、高边输出的电压电流、继电器触点的电压电流、模拟输出电流。面板在对应的卡片上会写明「这个数板子读不回来」。
 
 模拟输出还有一张**多点测量**卡：它逐点输出，每一点停下来等你把万用表读数填进去，最后算出增益和零点偏差。
+"""
+
+# The same guide in English. Change both together (DECISIONS.md 75 in $PROD).
+README_EN = """# OpenPLC fixture - how to use it
+
+中文：`README.zh-CN.html`
+
+This folder is everything. No development tools are needed.
+
+## 1. Install one program
+
+**STM32CubeProgrammer** - a free download from ST.
+
+<https://www.st.com/en/development-tools/stm32cubeprog.html>
+
+⚠️ **Not** STM32CubeIDE. What is needed is the small programmer, not the whole development environment. The ST-Link driver is installed with it.
+
+## 2. Double-click `start.cmd`
+
+It is the only entry point. It shows a menu:
+
+```
+    1) Flash the firmware  (ST-Link connected, board powered)
+    2) Open the test panel (RS232 control port connected)
+    3) Both                (flash, then open the panel)
+    4) 看使用说明（中文）
+    5) Read the guide (English)
+    0) Quit
+```
+
+Type a number and press Enter. After each job it returns to the menu.
+
+## 3. Test the ports
+
+Choose 2 (or 3) and a browser page opens by itself.
+
+1. On the left, pick the board's **RS232 control port** (usually the USB-serial adapter plugged into this PC, terminals C05/C06)
+2. Click Connect
+3. Every port appears on the left (Ethernet, USB, SD card, SDRAM, digital in/out, relays, analog, CAN, KNX, RS485 ...)
+4. Click a port, read what its card says - what is tested, how, and what counts as a pass - then click Start
+
+**Every card says which wires this test needs and which values pass.** No commands to remember.
+
+⚠️ Opening the panel also opens a black window. **Do not close it** while testing: closing it stops the panel.
+
+⚠️ Do not delete the `plans` folder next to it - **what counts as a pass for every test is written there**. Without it the panel shows readings but cannot give a verdict.
+
+## 4. What the board cannot test by itself
+
+A few items have no measuring path on the board and **need a multimeter**: standby power, 3.3 V / 5 V / 5V_EXT, high-side output voltage and current, relay contact voltage and current, analog output current. The panel says so on those cards ("the board cannot read this value back").
+
+Analog output also has a **multi-point** card: it steps through set points, waits at each one for you to type in the multimeter reading, then works out gain and offset.
 """
 
 
@@ -285,14 +353,15 @@ def main():
     crlf = START_CMD.replace(chr(10), chr(13) + chr(10))
     (OUT / "start.cmd").write_bytes(crlf.encode("gbk"))
 
-    md = OUT / "README.md"
-    md.write_text(README, encoding="utf-8")
-    rc = subprocess.call([sys.executable, str(HERE / "md2html.py"),
-                          str(md), str(OUT / "README.html")])
-    if rc == 0:
-        md.unlink()          # the engineer reads the HTML, not the source
-    else:
-        Warn("说明没转成 HTML，markdown 原文留在文件夹里了。")
+    for name, text in (("README.zh-CN", README_ZH), ("README.en", README_EN)):
+        md = OUT / (name + ".md")
+        md.write_text(text, encoding="utf-8")
+        rc = subprocess.call([sys.executable, str(HERE / "md2html.py"),
+                              str(md), str(OUT / (name + ".html"))])
+        if rc == 0:
+            md.unlink()          # the engineer reads the HTML, not the source
+        else:
+            Warn(name + " 没转成 HTML，markdown 原文留在文件夹里了。")
 
     for f in sorted(OUT.iterdir()):
         if f.is_dir():
