@@ -135,6 +135,13 @@ func runCDCAttempt(portName, filePath, uidHex string) {
 	}
 	defer port.Close()
 
+	if err := claimIfUnclaimed(func(cmd string) (string, error) {
+		return SendCommandReadResponse(port, cmd, CommandTimeout)
+	}); err != nil {
+		logf(err, "Cannot claim this board")
+		return
+	}
+
 	id, err := resolveUploadIdentity()
 	if err != nil {
 		logf(err, "Cannot authenticate to this board")

@@ -3,11 +3,16 @@ give the BG1 verdict (is the SDRAM staging buffer usable).
 
     python tools/flash_bootloader.py                  build + flash + watch
     python tools/flash_bootloader.py --skip-build      flash what is already built
+    python tools/flash_bootloader.py --elf <boot.elf>  flash this image, no build
     python tools/flash_bootloader.py --reset-only      only reset and watch; never writes flash
     python tools/flash_bootloader.py --seconds 20      watch longer
 
 ⚠️ CubeIDE must be CLOSED for a build: a headless build cannot take a locked
 workspace. --reset-only and --skip-build do not care.
+
+⚠️ Debug/ can be configured as the PortTool fixture image (PORTTOOL_ENABLE=1),
+which is not a bootloader. An image carrying the fixture's command table is
+refused.
 
 """
 
@@ -25,13 +30,24 @@ from common import (Fail, Ok, Section, Warn, assert_target_reachable,  # noqa: E
                     cfg, get_cube_ide_exe, get_programmer_cli, open_log_ports,
                     read_log_ports, read_text)
 
-# The sector is 128K, but the linker only gets 120K: the last 8K is the owner
-# record area (requirement R2-02). Reporting against 131,072 would overstate the
-# headroom by a whole 8K and hide the point at which the build starts failing --
-# read the cap out of the linker script instead of repeating it here, so the two
-# cannot disagree.
-DEFAULT_LIMIT = 122880
-SECTOR_BYTES = 131072
+# Sector 0 holds only bootloader code (the root area is in sector 15). Read the
+# cap out of the linker script so the two cannot disagree.
+DEFAULT_LIMIT = 131072
+
+# "pt.caps" is a command only the PortTool fixture image parses; the bootloader
+# answers "openplc_server_where_r_y". Both are string literals in the image.
+FIXTURE_MARK = b"pt.caps"
+BOOTLOADER_MARK = b"openplc_server_where_r_y"
+
+
+def looks_like_bootloader(image_path):
+    """None when the image is a bootloader, otherwise why it is not."""
+    data = Path(image_path).read_bytes()
+    if FIXTURE_MARK in data:
+        return "it is the PortTool fixture image (PORTTOOL_ENABLE=1), not a bootloader"
+    if BOOTLOADER_MARK not in data:
+        return "it does not answer IAP discovery, so it is not this bootloader"
+    return None
 
 
 def linker_limit(boot_repo):
@@ -97,19 +113,30 @@ def main():
     ap.add_argument("--reset-only", action="store_true")
     ap.add_argument("--seconds", type=int, default=12)
     ap.add_argument("--ports", nargs="*", default=None)
+    ap.add_argument("--elf", default="",
+                    help="flash this bootloader ELF instead of building Debug/")
     args = ap.parse_args()
 
-    if args.reset_only:
+    if args.reset_only or args.elf:
         args.skip_build = True
     ports = args.ports if args.ports else cfg.LOG_PORTS
 
     boot_repo = cfg.BOOT_REPO
-    elf = Path(boot_repo) / "Debug" / "open_plc_cube_ide.elf"
-    bin_path = Path(boot_repo) / "Debug" / "open_plc_cube_ide.bin"
+    elf = Path(args.elf) if args.elf else Path(boot_repo) / "Debug" / "open_plc_cube_ide.elf"
+    bin_path = elf.with_suffix(".bin")
     cli = get_programmer_cli()
 
     if not args.skip_build:
         if not build(boot_repo):
+            return 1
+
+    if not args.reset_only:
+        if not elf.exists():
+            Fail("no bootloader image at %s" % elf)
+            return 1
+        why = looks_like_bootloader(elf)
+        if why:
+            Fail("refusing to flash %s: %s" % (elf, why))
             return 1
 
     if bin_path.exists():
@@ -117,10 +144,9 @@ def main():
         limit = linker_limit(boot_repo)
         print("bin = {:,} B of {:,} usable ({:.1%} used, {:,} B free)".format(
             length, limit, length / limit, limit - length))
-        print("      sector is {:,} B; the top {:,} B are reserved for the owner "
-              "record area".format(SECTOR_BYTES, SECTOR_BYTES - limit))
         if length > limit:
-            Fail("the image no longer fits below the reserved area")
+            Fail("the image no longer fits sector 0")
+            return 1
 
     Section("Target check")
     assert_target_reachable(cli)

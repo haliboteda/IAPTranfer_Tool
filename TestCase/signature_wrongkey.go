@@ -28,11 +28,11 @@ import (
 	"strings"
 )
 
-var pubKeyByteRe = regexp.MustCompile(`0x([0-9a-fA-F]{2})`)
+var pubKeyLineRe = regexp.MustCompile(`Public key: ([0-9a-fA-F]{128})`)
 
 // genThrowawayKey makes a fresh P-256 key with "IAPTool genkey" and returns the
 // path to the PEM and the matching public key as hex, parsed from the
-// fw_pubkey.inc body genkey prints on stdout.
+// "Public key:" line genkey prints on stdout.
 func genThrowawayKey(iapTool, dir string) (string, string, error) {
 	cmd := exec.Command(iapTool, "genkey", "wrong_key")
 	cmd.Dir = dir
@@ -41,11 +41,10 @@ func genThrowawayKey(iapTool, dir string) (string, string, error) {
 		return "", "", fmt.Errorf("IAPTool genkey failed: %v\n%s", err, out)
 	}
 
-	var sb strings.Builder
-	for _, m := range pubKeyByteRe.FindAllStringSubmatch(string(out), -1) {
-		sb.WriteString(strings.ToLower(m[1]))
+	pubHex := ""
+	if m := pubKeyLineRe.FindStringSubmatch(string(out)); m != nil {
+		pubHex = strings.ToLower(m[1])
 	}
-	pubHex := sb.String()
 	if len(pubHex) != 128 {
 		return "", "", fmt.Errorf("genkey output parsed to %d hex chars, expected 128:\n%s", len(pubHex), out)
 	}

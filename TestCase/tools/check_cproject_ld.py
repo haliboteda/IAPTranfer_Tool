@@ -53,7 +53,7 @@ def main():
         print("      after-generation script did not (ProjectManager."
               "UAScriptAfterPath in the .ioc).")
         print("      Left as is, the port-tool image builds against the "
-              "bootloader's 120K script.")
+              "bootloader's 128K script.")
         return 1
 
     Ok("linker script option is %s" % WANT)

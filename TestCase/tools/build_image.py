@@ -54,9 +54,9 @@ KNOWN_WARNINGS = (
 
 TOOL_MARKER = "PORTTOOL_ENABLE=1: this image is the hardware test tool"
 
-# The two linker scripts. The bootloader's bounds FLASH at 120K because an
-# application and an owner record live above it; the tool's takes the whole
-# device because neither applies to an image ST-Link writes on its own.
+# The two linker scripts. The bootloader's bounds FLASH at sector 0 because
+# the application lives above it; the tool's takes the whole device because
+# that does not apply to an image ST-Link writes on its own.
 BOOT_LD = "STM32H743IIKX_FLASH.ld"
 TOOL_LD = "STM32H743IIKX_FLASH_PORTTOOL.ld"
 
@@ -66,9 +66,7 @@ def flash_limit():
 
     Only the bootloader is judged against this. The tool image is flashed
     whole by ST-Link and never travels through IAP, so its size is a number
-    to record, not a limit to pass. The linker script still bounds both at
-    120K because they share it - if the tool image ever grows past that, ld
-    says so on its own and no gate here is needed.
+    to record, not a limit to pass.
     """
     ld = Path(cfg.BOOT_REPO) / "STM32H743IIKX_FLASH.ld"
     m = re.search(r"FLASH\s*\(rx\)\s*:\s*ORIGIN\s*=\s*\S+?,\s*LENGTH\s*=\s*(\d+)K",

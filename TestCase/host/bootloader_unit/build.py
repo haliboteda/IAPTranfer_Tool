@@ -92,7 +92,6 @@ def main():
         IAP_SERVER / "iap_keyderive.c",
         IAP_SERVER / "iap_cert.c",
         IAP_SERVER / "fw_verify.c",
-        IAP_SERVER / "fw_pubkey.c",
         IAP_SERVER / "uecc" / "uECC.c",
         IAP_SERVER / "iap_auth.c",
         IAP_SERVER / "net_rand.c",

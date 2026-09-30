@@ -83,11 +83,10 @@ Resolution order:
 3. `<user config dir>/openplc/keys/fw_signing_key.pem` (`os.UserConfigDir()`;
    `%AppData%` on Windows) -- survives tool package upgrades
 4. `keys/fw_signing_key.pem` next to the executable
-5. Uploads only: `keys/published_root.TEST_ONLY.pem` next to the executable,
-   the published root key `compile_tool.sh` ships. Only an unclaimed board
-   accepts it; every use prints a warning
 
-The Arduino IDE passes no key, so steps 3-5 are what it relies on.
+The Arduino IDE passes no key, so steps 3-4 are what it relies on. On a board
+with no root (a factory board) an upload claims it first: with no key found,
+one is generated at step 3's path, and the path is printed.
 `local_config.json` and `keys/` are looked up relative to the **executable**,
 not the current directory.
 
@@ -138,59 +137,54 @@ check is then skipped with a warning and the upload proceeds as before.
 
 ### Generating keys
 
-To rotate the signing key, run `IAPServer/keys/rotate_keys.sh` -- it drives
-the command below, distributes every copy and takes a backup first. The piece
-is also available on its own:
-
 ```sh
-IAPTool genkey my_release_key > fw_pubkey.inc
+IAPTool genkey                  # the default key, path printed
+IAPTool genkey my_release_key   # my_release_key.pem in the current directory
 ```
 
-`genkey` writes `my_release_key.pem` (private, mode 0600) and prints the body
-of `IAPServer/keys/fw_pubkey.inc` on stdout. That file is `#include`d by the
-firmware, so the bootloader must be rebuilt and re-flashed over ST-Link before
-the new key takes effect. Keep the private key offline; it never goes on a
-device.
+`genkey` writes the private key (mode 0600), never overwrites an existing one,
+and prints its path and public key. No key is compiled into the firmware:
+changing the root is `setowner`, and the bootloader is never rebuilt for it.
+Keep the private key offline; it never goes on a device. On a new computer,
+copy it into the default location.
 
 Keys are interchangeable with `openssl` in both directions -- `genkey` emits
 standard SEC1 PEM, and `sign` accepts SEC1 or PKCS#8.
 
 ## Board ownership
 
-A board leaves the factory trusting the signing key published with this
-project, which means anyone can sign firmware it will run. Claiming it binds
-it to a key of your own, and from then on nothing else will start.
+A board leaves the factory with no root: it runs nothing and accepts nothing
+until it is claimed. The first `cdc` or `ether` upload claims it for this
+computer's key (generating one if there is none), then uploads. From then on
+nothing else will start. `<board>` below is an IP address or a USB port.
 
 ```sh
-IAPTool genkey owner                 # writes owner.pem - keep it offline
-IAPTool getowner 192.168.0.30        # which key does this board trust?
-IAPTool takeown  192.168.0.30 --key=owner.pem
-IAPTool setowner 192.168.0.30 --current-key=owner.pem --new-key=next.pem
+IAPTool getowner <board>             # which key does this board trust?
+IAPTool takeown  <board> --key=owner.pem       # what the first upload does
+IAPTool setowner <board> --current-key=owner.pem --new-key=next.pem
 ```
 
 ## Replacing the bootloader
 
-`flashboot` writes a new bootloader into sector 0 without an ST-Link, carrying
-the owner records across so the board stays claimed.
+`flashboot` writes a new bootloader into sector 0 without an ST-Link. The
+owner records live in sector 15, so the board stays claimed.
 
 ```sh
 IAPTool flashboot boot.bin 192.168.0.30 --key=owner.pem
 ```
 
 The key has to be the owner root itself: the board checks a bootloader image
-against the root, not against a leaf certificate. An unclaimed board has no
-root to check, so it demands BOOT0 held through its current boot instead.
+against the root, not against a leaf certificate. A board with no root refuses
+`flashboot`; claim it first.
 
 **Do not cut power during it.** The board is running out of the sector being
 rewritten; an interruption leaves it unable to boot, and only an ST-Link gets
 it back.
 
-`takeown` is refused unless BOOT0 was held through the board's current boot.
-The first claim carries no signature -- there is no owner yet to produce one --
-so physical presence is the only gate there can be. It also refuses to fall
-back to the signing key in `local_config.json`: claiming a board with the wrong
-key can only be undone by reflashing the bootloader over ST-Link, because the
-owner records live in the bootloader's own flash sector.
+`takeown` is accepted only while the board has no root, over USB or
+Ethernet, no button. Until the first claim, whoever reaches the board first
+claims it; a factory reset (hold BOOT0 for ten seconds after reset) puts the
+board back to no root.
 
 `setowner` needs no button. It is signed by the key the board trusts today, so
 a handover can be done over the network, and a stolen record cannot take a
@@ -207,10 +201,8 @@ IAPTool setowner 192.168.0.30 --current-key=owner.pem --new-key=next.pem --wipe
 ```
 
 `--wipe` hands the board over AND leaves the area holding nothing but the new
-record. The board erases and rewrites its own sector to do it, so it resets,
-and **a power cut during the erase means holding BOOT0 through a reset and
-re-flashing over USB DFU** -- the same recovery `flashboot` needs. Plain
-`setowner` appends one record and carries none of that risk; the board never
+record. The board rewrites sector 15 to do it (never the bootloader), keeping
+a copy in battery-backed SRAM while the sector is erased. The board never
 decides to wipe on its own.
 
 Changing the root *without* `--wipe` retires every leaf the old root issued,

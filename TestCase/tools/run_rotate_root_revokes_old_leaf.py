@@ -281,7 +281,7 @@ def build_precondition(st, args):
     if int(gen) == 0:
         Fail("this board is unclaimed, and setowner needs an existing owner.")
         Fail("  The board answers: setowner refused: board is unclaimed - use takeown")
-        Fail("  Claim it first (needs BOOT0 held): python tools/run_takeown.py")
+        Fail("  Claim it first: python tools/run_takeown.py")
         return False
     if not re.fullmatch(r"[0-9a-fA-F]{128}", root):
         Fail("the board did not answer getpubkey with a key: %s" % root)

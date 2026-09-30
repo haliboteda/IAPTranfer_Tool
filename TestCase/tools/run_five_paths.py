@@ -1,49 +1,39 @@
-"""The five user paths, end to end, from factory state.
+"""The five user paths, end to end, from factory state (decision 72).
 
-    python3 tools/run_five_paths.py                    the whole round
+    python3 tools/run_five_paths.py --elf <boot.elf>   the whole round
     python3 tools/run_five_paths.py --from 3           resume at path 3
     python3 tools/run_five_paths.py --only 1 2         just these
     python3 tools/run_five_paths.py --dry-run          print the plan, touch nothing
 
-Every case in this round can already be run on its own. What has never been
-run is the round: the paths share state, and the order is part of what is
-under test -- path 4 issues the leaf that path 5 revokes, and path 2's "the
-old application stopped working" only means anything because path 1 put one
-there. Running them separately proves each step and nothing about the story.
+Every case in this round can be run on its own. What the round adds is the
+story: the paths share state, and the order is part of what is under test --
+path 2's factory reset only means something because path 1 claimed the board,
+and path 5's certificate is issued by the root path 4 handed the board to.
 
 Plan and criteria: $PROD/docs/engineering/HOW-TO-RUN-TESTS.md, section
 "五条用户路径 · 从出厂态跑一整轮". This script is that section, executable.
 
-⚠️ YOU HAVE TO BE AT THE BOARD TWICE, both times to hold BOOT0: once in path 2
-(the first claim) and once in path 5 (re-claiming after path 3 erased the
-owner records). The script waits for the board itself to report the gesture,
-so there is nothing to type -- but it will sit there until you do it.
+⚠️ YOU HAVE TO BE AT THE BOARD ONCE, in path 2: reset it and hold BOOT0 for
+more than 10 s. The script waits for the board itself to report the factory
+reset, so there is nothing to type. Everything after path 2 runs unattended.
 
-⚠️ DESTRUCTIVE. It mass-erases the board, rotates the root compiled into the
-bootloader, and claims the board three times over. Do not point it at
-anything you are not finished with.
+⚠️ A USB cable to the board's CDC port is needed for path 1 (--cdc, or
+CDC_PORT in config/machine.py).
 
-Three sequencing traps, all of them the reason a naive run of the order table
-does not work. They are handled here, and named so the next person does not
-re-discover them:
+⚠️ DESTRUCTIVE. It mass-erases the board and claims it twice. Do not point it
+at anything you are not finished with.
 
-  * `inject_owner_record.py` (step 2-d) writes its record by REFLASHING the
-    bootloader, which erases the owner area -- including the claim step 2-b
-    just made. It is given the same root, so the board comes back claimed by
-    the same key and no second BOOT0 press is needed.
-  * `run_claim_invalidates_existing_app.py` (step 2-e) performs its own
-    takeown. Running step 2-b separately would claim the board twice, so 2-b
-    and 2-e are one invocation here.
-  * `run_rotate_root_revokes_old_leaf.py` (steps 5-c..5-e) performs its own
-    setowner, which IS step 5-b. Running run_setowner.py first would spend a
-    generation and hand the board to a key the later script does not know
-    about. Only the negative half of 5-a/b is run separately.
+The automatic claims run IAPTool with its user config directory moved into
+--keydir, so the keys it generates land there and this machine's real
+signing key is never read or overwritten.
 
 Exit code is the verdict: 0 every path held, 1 something failed, 2 a
 precondition was never reached (nothing was proven either way).
 """
 
 import argparse
+import os
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -52,17 +42,20 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE))
 
 from common import (Fail, Ok, Section, Warn, banner, cfg,  # noqa: E402
-                    get_iap_tool, get_programmer_cli, get_scratch_file,
-                    python_exe, run_capture, run_while_draining)
+                    get_iap_tool, get_programmer_cli, open_log_ports,
+                    python_exe, read_log_ports, run_capture, tcp_command,
+                    wait_for_board)
 
 PASS, FAIL, SETUP = "PASS", "FAIL", "SETUP"
+IAP_PORT = 56865
 
-# What rotate_keys.sh leaves behind. The published key it replaced is renamed
-# to .TEST_ONLY.pem.bak, so anything still pointing at the old name after
-# path 3 is pointing at a file that no longer exists -- which is how path 4
-# failed the first time this round was run.
-ROTATED_ROOT_KEY = "IAPServer/keys/fw_signing_key.pem"
-PUBLISHED_ROOT_KEY = "IAPServer/keys/fw_signing_key.TEST_ONLY.pem"
+# IAPTool's claim messages (auth.go claimIfUnclaimed) and the board's
+# (owner_slot.c, IAP_server.c).
+TOOL_NO_ROOT = "This board has no root yet"
+TOOL_CLAIMED = re.compile(r"Claimed\. From now on this board runs only firmware signed by (\S+)")
+LOG_FACTORY_RESET = "FACTORY RESET DONE"
+LOG_APP_REFUSED = "App signature invalid or absent"
+LOG_APP_RUNS = "APP Mod"
 
 
 class Round(object):
@@ -71,19 +64,26 @@ class Round(object):
     def __init__(self, args):
         self.args = args
         self.ip = args.ip or cfg.BOARD_IP
+        self.cdc = args.cdc or getattr(cfg, "CDC_PORT", "")
         self.results = []
         self.keys = {}          # name -> .pem path
         self.keydir = Path(args.keydir)
 
     # ---------------------------------------------------------------- plumbing
-    def tool(self, *argv):
-        """A tools/ script, as a child, with its output passed through."""
+    def tool(self, *argv, env=None, capture=False):
+        """A tools/ script, as a child. Returns (exit code, output or "")."""
         cmd = [python_exe(), str(HERE / argv[0])] + [str(a) for a in argv[1:]]
         print("    $ %s" % " ".join(Path(c).name if c.endswith(".py") else c
                                     for c in cmd[1:]))
         if self.args.dry_run:
-            return 0
-        return subprocess.run(cmd).returncode
+            return 0, ""
+        if not capture:
+            return subprocess.run(cmd, env=env).returncode, ""
+        proc = subprocess.run(cmd, env=env, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT)
+        out = proc.stdout.decode("utf-8", errors="replace")
+        print(out)
+        return proc.returncode, out
 
     def record(self, step, verdict, note=""):
         self.results.append((step, verdict, note))
@@ -101,200 +101,185 @@ class Round(object):
         print("    key %s -> %s" % (name, pem))
         return pem
 
-    def ensure_bootloader(self, *candidates):
+    def empty_config_env(self, name):
+        """Environment in which IAPTool's user config directory is a fresh,
+        empty one under --keydir: the automatic claim then has to generate
+        its key, and does so there."""
+        home = (self.keydir / name).resolve()
+        home.mkdir(parents=True, exist_ok=True)
+        env = dict(os.environ)
+        env["APPDATA"] = str(home)              # Windows
+        env["XDG_CONFIG_HOME"] = str(home)      # Linux
+        if sys.platform == "darwin":
+            env["HOME"] = str(home)             # ~/Library/Application Support
+        return env, home
+
+    def auto_claim(self, step, name, transport):
+        """Upload v1 to a board with no root and prove the tool claimed it.
+
+        Returns the key the board now trusts, or None.
+        """
+        env, home = self.empty_config_env(name)
+        argv = ["upload_and_watch.py", "--bin", self.args.v1,
+                "--expect-banner", "IAP_PROBE_APP up v1"] + transport
+        rc, out = self.tool(*argv, env=env, capture=True)
+        if self.args.dry_run:
+            self.record(step, PASS, "(dry run)")
+            return home / "openplc" / "keys" / "fw_signing_key.pem"
+        m = TOOL_CLAIMED.search(out)
+        if TOOL_NO_ROOT not in out or not m:
+            self.record(step, FAIL, "IAPTool did not claim the board")
+            return None
+        key = Path(m.group(1))
+        if home not in key.resolve().parents:
+            # A signing key configured elsewhere (local_config.json) was found
+            # first, so "no key on this machine" was never the situation.
+            self.record(step, SETUP, "IAPTool used %s instead of generating one; "
+                        "clear signing_key in local_config.json" % key)
+            return None
+        if not key.exists():
+            self.record(step, FAIL, "the key IAPTool printed does not exist: %s" % key)
+            return None
+        self.record(step, PASS if rc == 0 else FAIL,
+                    "generated %s, claimed, v1 runs" % key)
+        return key if rc == 0 else None
+
+    def ensure_bootloader(self, key):
         """Get the board out of its application and into the bootloader.
 
-        Every command this round sends to the bootloader -- takeown, setowner,
-        getpubkey -- is answered only by the bootloader, and a board that just
-        finished an upload is running the application instead. Without this a
-        step "fails" having never reached the board, which proves nothing and
-        reads exactly like the board misbehaving.
-
-        Several keys are tried because which one works is not obvious and
-        changes as the round goes on. The application checks the reboot
-        request against whatever owner_root_ro() resolves to: the owner root
-        once the board is claimed, and otherwise the root compiled into THAT
-        APPLICATION -- which is the root that was current when it was built,
-        not necessarily the one the bootloader trusts now. After path 3 those
-        are two different keys.
+        takeown, setowner and getpubkey are answered only by the bootloader,
+        and a board that just finished an upload is running the application.
+        Without this a step "fails" having never reached the board.
         """
         if self.args.dry_run:
             print("    $ enter_bootloader.py (if an application is running)")
             return True
-        for key in candidates:
-            if key and Path(key).exists():
-                if self.tool("enter_bootloader.py", "--key", key, "--seconds", "6") == 0:
-                    print("    (the application accepted %s)" % Path(key).name)
-                    return True
-        Warn("  no key could ask the application to step aside")
-        return False
-
-    def boot0_is_held(self):
-        """Did the board come up with BOOT0 held?
-
-        Step 2-a needs it NOT held and step 2-b needs it held, in that order.
-        An operator who presses when they are first told to has pressed before
-        2-a runs, and 2-a then claims the board instead of being refused --
-        a green light on the wrong thing. Ask the board rather than assume.
-        """
-        if self.args.dry_run:
-            return False
-        from common import LOG_BOOT0_UPLOAD, close_ports, open_log_ports
-        ports = list(self.args.ports if getattr(self.args, "ports", None)
-                     else cfg.LOG_PORTS)
-        handles = open_log_ports(ports)
-        _, buf = run_while_draining(
-            [str(get_programmer_cli()), "-c", "port=SWD", "mode=UR", "-rst"],
-            handles, get_scratch_file("boot0_probe.out"),
-            get_scratch_file("boot0_probe.err"), tail_seconds=6)
-        close_ports(handles)
-        return LOG_BOOT0_UPLOAD in "\n".join(buf.values())
-
-    def hold_boot0(self, why):
-        banner(["HOLD BOOT0 NOW: press RESET, hold BOOT0 while the system",
-                "LED blinks (about 2 s), then let go.", why])
+        rc, _ = self.tool("enter_bootloader.py", "--key", key, "--seconds", "6")
+        if rc != 0:
+            Warn("  the application did not step aside for %s" % Path(key).name)
+        return rc == 0
 
 
 def path_0(r):
     Section("0 · factory state")
-    Warn("  this mass-erases the board and reflashes the bootloader")
-    rc = r.tool("reset_board_to_factory_state.py")
+    Warn("  this mass-erases the board (calibration values are kept)")
+    argv = ["reset_board_to_factory_state.py"]
+    if r.args.elf:
+        argv += ["--elf", r.args.elf]
+    rc, _ = r.tool(*argv)
     if rc == 2:
         return r.record("0", SETUP, "factory state could not be proven")
     return r.record("0", PASS if rc == 0 else FAIL)
 
 
 def path_1(r):
-    Section("1 · burn your own program on an untouched board, then upgrade")
-    published = Path(cfg.BOOT_REPO) / PUBLISHED_ROOT_KEY
-
-    ok = True
-    ok &= r.record("1-install", PASS if r.tool(
-        "upload_and_watch.py", "--bin", r.args.v1, "--key", published,
-        "--expect-banner", "IAP_PROBE_APP up v1") == 0 else FAIL)
-    ok &= r.record("1-upgrade", PASS if r.tool(
-        "upload_and_watch.py", "--bin", r.args.v2, "--key", published,
-        "--expect-banner", "IAP_PROBE_APP up v2") == 0 else FAIL,
-        "the banner changed, so something really was replaced")
-    ok &= r.record("1-a/T2-08", PASS if r.tool(
-        "run_public_root_warning_is_persistent.py") == 0 else FAIL,
-        "the warning is on every boot, not just the first")
-    return ok
+    Section("1 · first upload over USB claims the factory board")
+    if not r.cdc:
+        return r.record("1/T2-35", SETUP, "no CDC port: pass --cdc or set CDC_PORT")
+    key = r.auto_claim("1/T2-35", "claim_usb", ["--cdc", r.cdc])
+    if key:
+        r.keys["first_owner"] = key
+    return key is not None
 
 
 def path_2(r):
-    Section("2 · claim the board, then burn and upgrade")
-    ok = True
+    Section("2 · factory reset, then the next upload claims it again")
+    first = r.keys.get("first_owner")
 
-    # Path 1 left an application running, and it owns the port the bootloader
-    # would answer on. The board is still unclaimed here, so its owner area is
-    # empty and the application falls back to the published root -- which is
-    # therefore the key that can ask it to step aside.
-    published = Path(cfg.BOOT_REPO) / PUBLISHED_ROOT_KEY
-    if not r.ensure_bootloader(published, Path(cfg.BOOT_REPO) / ROTATED_ROOT_KEY):
-        return r.record("2-a/T2-02", SETUP,
-                        "could not reach the bootloader; nothing was attempted")
+    banner(["RESET THE BOARD, THEN HOLD BOOT0 FOR MORE THAN 10 SECONDS,",
+            "until the system LED stays lit. Then let go.",
+            "Path 2 proves a factory reset returns the board to no root."])
+    if r.args.dry_run:
+        print("    (waits for %r on the log ports)" % LOG_FACTORY_RESET)
+    else:
+        handles = open_log_ports(list(r.args.ports or cfg.LOG_PORTS))
+        buf = read_log_ports(handles, r.args.boot0_timeout, until=LOG_FACTORY_RESET)
+        if LOG_FACTORY_RESET not in "\n".join(buf.values()):
+            return r.record("2-a/T2-05", SETUP, "no factory reset seen within %d s"
+                            % r.args.boot0_timeout)
+    ok = r.record("2-a/T2-05", PASS, "the board reported %r" % LOG_FACTORY_RESET)
 
-    # 2-a is the negative case: it needs BOOT0 NOT held. Asking the operator
-    # to press before this point turns it into a successful claim, which is
-    # a failure of this case reported as if the board had misbehaved.
-    if r.boot0_is_held():
-        return r.record("2-a/T2-02", SETUP,
-                        "BOOT0 is held right now; 2-a needs it released. "
-                        "Reset without touching it and run this path again.")
+    # The application path 1 installed is signed by a root the board no
+    # longer has: after a plain reset it must not start.
+    if not r.args.dry_run:
+        handles = open_log_ports(list(r.args.ports or cfg.LOG_PORTS))
+        run_capture([str(get_programmer_cli()), "-c", "port=SWD", "mode=UR", "-rst"])
+        log = "\n".join(read_log_ports(handles, 12, until=LOG_APP_REFUSED).values())
+        refused = LOG_APP_REFUSED in log and LOG_APP_RUNS not in log
+        wait_for_board(r.ip, timeout=30)
+        none = tcp_command(r.ip, IAP_PORT, "getpubkey").strip() == "none"
+        ok &= r.record("2-b/T2-09", PASS if refused and none else FAIL,
+                       "path 1's app no longer starts; getpubkey says none")
 
-    ok &= r.record("2-a/T2-02", PASS if r.tool(
-        "run_takeown.py", "--expect-refused") == 0 else FAIL,
-        "no BOOT0, no claim")
-
-    # The key is generated HERE and handed to the claim script, not left for
-    # it to generate: everything after path 2 has to sign with the same key,
-    # and a key the round never learns about ends the round.
-    owner = Path(r.args.owner_key) if r.args.owner_key else r.genkey("owner_after_claim")
-
-    r.hold_boot0("Path 2 claims the board for the first time.")
-    # 2-b and 2-e together: this script claims the board itself, so running
-    # run_takeown.py first would claim it twice.
-    ok &= r.record("2-b+2-e/T2-01+T2-09", PASS if r.tool(
-        "run_claim_invalidates_existing_app.py", "--key", owner,
-        "--boot0-timeout", r.args.boot0_timeout) == 0 else FAIL,
-        "claimed, and path 1's application stopped being accepted")
-
-    ok &= r.record("2-e-upload", PASS if r.tool(
-        "upload_and_watch.py", "--bin", r.args.v1, "--key", owner,
-        "--expect-banner", "IAP_PROBE_APP up v1") == 0 else FAIL,
-        "an application signed by the new owner runs again")
-    r.keys["owner"] = owner
-    return ok
+    key = r.auto_claim("2-c/T2-36", "claim_ether", ["--ip", r.ip])
+    if key:
+        if first and not r.args.dry_run and Path(first).read_bytes() == key.read_bytes():
+            return r.record("2-c/T2-36", FAIL, "the re-claim reused path 1's key")
+        r.keys["owner"] = key
+    return ok and key is not None
 
 
 def path_3(r):
-    Section("3 · compile your own root into the bootloader, then upgrade")
-    Warn("  this rewrites $BOOT/IAPServer/keys and erases the owner records")
-    if r.args.dry_run:
-        print("    $ rotate_keys.sh --yes ; build_image.py ; flash_bootloader.py --skip-build")
-    else:
-        rot = Path(cfg.BOOT_REPO) / "IAPServer" / "keys" / "rotate_keys.sh"
-        rc = subprocess.run([cfg.GIT_BASH, str(rot), "--yes"]).returncode
-        if rc != 0:
-            return r.record("3-rotate", SETUP, "rotate_keys.sh failed")
-        if r.tool("build_image.py") != 0:
-            return r.record("3-build", SETUP, "the rebuild failed")
-        if r.tool("flash_bootloader.py", "--skip-build") != 0:
-            return r.record("3-flash", SETUP, "flashing failed")
+    Section("3 · a claimed board keeps taking uploads over Ethernet")
+    owner = r.keys.get("owner") or (Path(r.args.owner_key) if r.args.owner_key else None)
+    if not owner:
+        return r.record("3-a/T2-02", SETUP, "no owner key: run path 2 or pass --owner-key")
+    if not r.ensure_bootloader(owner):
+        return r.record("3-a/T2-02", SETUP, "could not reach the bootloader")
 
-    return r.record("3-a/T2-07", PASS if r.tool(
-        "run_custom_root_has_no_warning.py",
-        "--bin", r.args.v2, "--expect-banner", "IAP_PROBE_APP up v2") == 0 else FAIL,
-        "own root, no warning, still takes firmware")
+    stranger = r.genkey("stranger")
+    ok = r.record("3-a/T2-02", PASS if r.tool(
+        "run_takeown.py", "--key", stranger, "--expect-refused")[0] == 0 else FAIL,
+        "a board with a root refuses a second claim")
+
+    ok &= r.record("3-b/upgrade", PASS if r.tool(
+        "upload_and_watch.py", "--bin", r.args.v2, "--ip", r.ip, "--key", owner,
+        "--expect-banner", "IAP_PROBE_APP up v2")[0] == 0 else FAIL,
+        "v1 -> v2 over Ethernet, signed by the owner")
+    return ok
 
 
 def path_4(r):
-    Section("4 · issue a leaf certificate, then upgrade")
-    # The root to issue from is the one path 3 rotated in, NOT the published
-    # key -- rotate_keys.sh renamed that one out of the way, so the default
-    # here points at a file that is gone.
-    root = Path(cfg.BOOT_REPO) / ROTATED_ROOT_KEY
-    if not root.exists():
-        return r.record("4-c/T2-11", SETUP,
-                        "no rotated root key at %s -- did path 3 run?" % root)
+    Section("4 · change the root with setowner")
+    owner = r.keys.get("owner") or (Path(r.args.owner_key) if r.args.owner_key else None)
+    if not owner:
+        return r.record("4-a/T2-03", SETUP, "no owner key: run path 2 or pass --owner-key")
+    if not r.ensure_bootloader(owner):
+        return r.record("4-a/T2-03", SETUP, "could not reach the bootloader")
 
-    # Path 3 ended with an upload, so an application is running and holding
-    # the port. It was built before the rotation, so the key it trusts is the
-    # published one -- which rotate_keys.sh has renamed out of the way.
-    if not r.ensure_bootloader(root,
-                               Path(cfg.BOOT_REPO) / (PUBLISHED_ROOT_KEY + ".bak"),
-                               Path(cfg.BOOT_REPO) / PUBLISHED_ROOT_KEY):
-        return r.record("4-c/T2-11", SETUP,
-                        "could not reach the bootloader; nothing was attempted")
+    ok = r.record("4-a/T2-03-", PASS if r.tool(
+        "run_setowner.py", "--current-key", owner, "--bad-signature")[0] == 0 else FAIL,
+        "a bad signature changes nothing")
+    owner2 = r.genkey("owner2")
+    ok &= r.record("4-b/T2-03", PASS if r.tool(
+        "run_setowner.py", "--current-key", owner, "--new-key", owner2)[0] == 0 else FAIL,
+        "the current owner handed the board to a new root")
+    if not ok:
+        return False
+    r.keys["owner2"] = owner2
 
-    return r.record("4-c/T2-11", PASS if r.tool(
-        "run_delegated_cert_on_real_board.py", "--bin", r.args.v1,
-        "--root-key", root) == 0 else FAIL,
-        "a colleague uploaded with a leaf the board's root issued")
+    ok &= r.record("4-c/T2-10", PASS if r.tool(
+        "run_old_root_image_is_refused.py", "--bin", r.args.v1,
+        "--old-key", owner, "--current-key", owner2)[0] == 0 else FAIL,
+        "the old root's image is refused, app region untouched")
+    ok &= r.record("4-d/upload", PASS if r.tool(
+        "upload_and_watch.py", "--bin", r.args.v1, "--ip", r.ip, "--key", owner2,
+        "--expect-banner", "IAP_PROBE_APP up v1")[0] == 0 else FAIL,
+        "the new root's image installs and runs")
+    return ok
 
 
 def path_5(r):
-    Section("5 · revoke / replace a leaf, then upgrade")
-    r.hold_boot0("Path 3 erased the owner records, and setowner needs a claimed board.")
-    owner2 = r.genkey("owner_for_path5")
-    ok = r.record("5-0/takeown", PASS if r.tool(
-        "run_takeown.py", "--key", owner2,
-        "--boot0-timeout", r.args.boot0_timeout) == 0 else FAIL, "re-claimed")
-    if not ok:
-        return False
-
-    ok &= r.record("5-a/T2-03-", PASS if r.tool(
-        "run_setowner.py", "--current-key", owner2, "--bad-signature") == 0 else FAIL,
-        "a bad signature changes nothing")
-
-    # 5-b is the rotation this script performs itself; running run_setowner.py
-    # for it as well would spend a generation the script below does not expect.
-    ok &= r.record("5-b..5-e/T2-12..T2-14", PASS if r.tool(
-        "run_rotate_root_revokes_old_leaf.py",
-        "--bin", r.args.v1, "--current-key", owner2) == 0 else FAIL,
-        "changing the root retired the old leaf, and a new one works")
-    return ok
+    Section("5 · a colleague uploads with a leaf certificate")
+    root = r.keys.get("owner2") or (Path(r.args.owner_key) if r.args.owner_key else None)
+    if not root:
+        return r.record("5/T2-11", SETUP, "no root key: run path 4 or pass --owner-key")
+    if not r.ensure_bootloader(root):
+        return r.record("5/T2-11", SETUP, "could not reach the bootloader")
+    return r.record("5/T2-11", PASS if r.tool(
+        "run_delegated_cert_on_real_board.py", "--bin", r.args.v2,
+        "--root-key", root)[0] == 0 else FAIL,
+        "the colleague's own key plus a certificate from the root")
 
 
 PATHS = {0: path_0, 1: path_1, 2: path_2, 3: path_3, 4: path_4, 5: path_5}
@@ -304,19 +289,22 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__,
                                  formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--ip", default="")
+    ap.add_argument("--cdc", default="", help="the board's USB CDC port, for path 1")
+    ap.add_argument("--elf", default="",
+                    help="bootloader ELF path 0 flashes (default: $BOOT/Debug)")
     ap.add_argument("--v1", default="../Output/probe-images/iap_probe_v1.bin")
     ap.add_argument("--v2", default="../Output/probe-images/iap_probe_v2.bin")
     ap.add_argument("--owner-key", default="",
-                    help="skip generating one and use this for path 2 onwards")
+                    help="resume after path 2 with this owner key")
     ap.add_argument("--keydir", default="../Output/five-paths-keys")
+    ap.add_argument("--ports", nargs="*", default=None)
     ap.add_argument("--from", dest="start", type=int, default=0,
                     help="resume at this path; 0 is factory state")
     ap.add_argument("--only", nargs="*", type=int, default=None)
     ap.add_argument("--boot0-timeout", type=int, default=600,
-                    help="how long each BOOT0 step waits for you. Generous on "
-                         "purpose: the countdown starts when the step is "
-                         "reached, which is before anybody has read the "
-                         "message telling them to press anything.")
+                    help="how long path 2 waits for the factory reset. Generous on "
+                         "purpose: the countdown starts when the step is reached, "
+                         "which is before anybody has read the message.")
     ap.add_argument("--dry-run", action="store_true",
                     help="print what would run and touch nothing")
     args = ap.parse_args()
@@ -330,9 +318,8 @@ def main():
     print("  images %s -> %s" % (args.v1, args.v2))
     if args.dry_run:
         Warn("  dry run: nothing below touches the board")
-    presses = sum(1 for n in wanted if n in (2, 5))
-    if presses:
-        Warn("  you will be asked to hold BOOT0 %d time(s)" % presses)
+    if 2 in wanted:
+        Warn("  you will be asked once, in path 2, to hold BOOT0 for 10 s")
 
     r = Round(args)
     for n in wanted:

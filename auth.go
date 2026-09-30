@@ -37,15 +37,13 @@ type uploadIdentity struct {
 func resolveUploadIdentity() (uploadIdentity, error) {
 	var id uploadIdentity
 
-	keyPath, published := findUploadKey()
+	keyPath := findSigningKey()
 	if keyPath == "" {
 		return id, fmt.Errorf("no signing key found.\n"+
 			"  Authenticating an upload means signing a challenge, which needs the private key.\n"+
 			"  Put it at %s, or pass --key=<key.pem>", defaultKeyLocation())
 	}
-	if published {
-		logf("** signing with the PUBLISHED key %s: only an unclaimed board accepts this **", keyPath)
-	}
+	fmt.Printf("Signing key: %s\n", keyPath)
 	key, err := loadSigningKey(keyPath)
 	if err != nil {
 		return id, err
@@ -112,6 +110,67 @@ func signImageInMemory(binPath string, key *ecdsa.PrivateKey) (string, error) {
 // supplies its own (CDC serial, or the ethernet TCP connection).
 type pubKeyQuery func() (string, error)
 
+// boardExchange sends one text command to the bootloader and returns its
+// reply. Each transport supplies its own.
+type boardExchange func(cmd string) (string, error)
+
+// noRootReply is what getpubkey answers on a board that trusts no key yet:
+// fresh from the factory, or factory-reset. See
+// $PROD/docs/modules/M1/IAP-PROTOCOL.md.
+const noRootReply = "none"
+
+// claimIfUnclaimed makes a board with no root trust this machine's key before
+// an upload: the first upload is what claims a factory board (decision 72).
+// Uses the key the upload would sign with, generating one at the default
+// location when there is none. A board that already has a root is left alone.
+func claimIfUnclaimed(exchange boardExchange) error {
+	reply, err := exchange(CM_GetPubKey)
+	if err != nil || strings.TrimSpace(reply) != noRootReply {
+		// Either it has a root, or it cannot say; the key check that follows
+		// reports both.
+		return nil
+	}
+
+	fmt.Println("This board has no root yet: claiming it for this computer's key.")
+	keyPath := findSigningKey()
+	if keyPath == "" {
+		keyPath = userKeyLocation()
+		if keyPath == "" {
+			return fmt.Errorf("no user config directory to create a signing key in; pass --key=<key.pem>")
+		}
+		if _, err := generateSigningKey(keyPath); err != nil {
+			return err
+		}
+	}
+	pub, err := ownerPublicKeyHex(keyPath)
+	if err != nil {
+		return err
+	}
+
+	reply, err = exchange("takeown " + pub)
+	if err != nil {
+		return fmt.Errorf("the claim did not get through: %v", err)
+	}
+	if !strings.Contains(reply, Rsp_OK) {
+		return fmt.Errorf("the board refused the claim: %s", strings.TrimSpace(reply))
+	}
+	fmt.Printf("Claimed. From now on this board runs only firmware signed by %s\n", keyPath)
+	fmt.Println("  Losing that file means a factory reset (hold BOOT0 for 10 s) to reclaim the board.")
+	return nil
+}
+
+// otherOwnerHint tells someone whose key a board does not trust the two ways
+// to get one it does. keyPath is where this machine looked for its key.
+func otherOwnerHint(keyPath string) string {
+	return fmt.Sprintf("  This board belongs to another key. Either:\n"+
+		"    - copy that root private key from the computer that claimed the board to\n"+
+		"      %s, or\n"+
+		"    - ask whoever holds that root for a certificate: send them the output of\n"+
+		"      `IAPTool pubkey`, they run `IAPTool cert <that pubkey>`, and you save the\n"+
+		"      result as %s%s",
+		keyPath, keyPath, certSuffix)
+}
+
 // verifyIdentityMatchesDevice confirms up front that this board will accept
 // what we are about to send, so a mismatch is reported before spending time on
 // the transfer instead of after it.
@@ -132,6 +191,9 @@ func verifyIdentityMatchesDevice(id uploadIdentity, askDevice pubKeyQuery) error
 	}
 
 	devicePubHex := strings.ToLower(strings.TrimSpace(reply))
+	if devicePubHex == noRootReply {
+		return fmt.Errorf("this board has no root and was not claimed; it accepts nothing until it is")
+	}
 	devicePub, decodeErr := hex.DecodeString(devicePubHex)
 	if decodeErr != nil || len(devicePub) != sigLen {
 		logf("This bootloader does not support %q (replied %q) -- skipping key match check",
@@ -150,13 +212,11 @@ func verifyIdentityMatchesDevice(id uploadIdentity, askDevice pubKeyQuery) error
 
 	if id.delegated {
 		return fmt.Errorf("this certificate was not issued by this board's root.\n"+
-			"  board trusts: %s...\n"+
-			"  Ask the holder of that root for a certificate, or point this board's owner at the right key",
-			devicePubHex[:16])
+			"  board trusts: %s...\n%s",
+			devicePubHex[:16], otherOwnerHint(id.keyPath))
 	}
 	return fmt.Errorf("this board's bootloader verifies against a different signing key.\n"+
 		"  board: %s...\n"+
-		"  local: %s...\n"+
-		"  Use the private key that matches this board, or flash a bootloader built from the local key",
-		devicePubHex[:16], hex.EncodeToString(id.cert.LeafPub)[:16])
+		"  local: %s...\n%s",
+		devicePubHex[:16], hex.EncodeToString(id.cert.LeafPub)[:16], otherOwnerHint(id.keyPath))
 }

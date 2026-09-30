@@ -1,14 +1,14 @@
-"""Case T1-34: the Arduino IDE's upload command, run against fake_board.py
-playing a board that is running an app.
+"""Case T1-34: the Arduino IDE's upload command, run against fake_board.py.
 
 What the IDE runs is `arduino-cli upload -l network -p <ip>` with
 upload_method=ethMethod, which calls the IAPTool inside the board package with
 no options. Three cases:
 
-  unclaimed  board trusts the published root, no user key
-             -> falls back to the published key, warns, upload succeeds
-  claimed    board trusts an owner key that sits in the user config dir
-             -> upload succeeds
+  unclaimed  a factory board (no root, in its bootloader), no user key
+             -> a key is generated in the user config dir, the board is
+                claimed for it, upload succeeds
+  claimed    board running an app, trusts an owner key that sits in the user
+             config dir -> upload succeeds
   wrong-key  the user config dir holds some other key
              -> the board ignores the reboot request, arduino-cli fails with
                 "did not accept the reboot request"
@@ -17,9 +17,8 @@ Success is judged from the board's side too: it must have accepted the reboot
 and received the whole image.
 
 Isolation: the package's IAPTool is copied to a scratch directory without the
-package's keys/fw_signing_key.pem (which would shadow the published-key
-fallback), and APPDATA / TEMP point into scratch, so the real user key and the
-upload lock are never touched. The fake board has its own UID, so no real
+package's keys/ directory, and APPDATA / TEMP point into scratch, so the real
+user key and the upload lock are never touched. The fake board has its own UID, so no real
 board's discovery reply can be taken for it.
 
 Criterion and what this cannot test: $PROD/docs/modules/M1-firmware-upgrade.md, T1-34.
@@ -51,7 +50,6 @@ from common import EXE, get_iap_tool  # noqa: E402
 FQBN = ("OpenPLC_Alpha:stm32:OPEN-PLC:pnum=PLC_H743,usb=CDCgen,xusb=FS,"
         "upload_method=ethMethod,knxrole=dual_device")
 EXAMPLE = "DO_Outputs"
-PUBLISHED_KEY = "published_root.TEST_ONLY.pem"
 # Not a real STM32 UID: IAPTool matches boards by UID, so a real board on the
 # LAN can never be mistaken for this one.
 FAKE_UID = "fa4eb0a2d0000000000000a1"
@@ -89,16 +87,11 @@ def compile_example(build):
 
 
 def stage_tool(tool_dir):
-    """The package's IAPTool with its config and only the published key."""
+    """The package's IAPTool with its config and no keys."""
     src = get_iap_tool()
-    published = src.parent / "keys" / PUBLISHED_KEY
-    if not published.exists():
-        Fail("the board package ships no %s beside %s" % (PUBLISHED_KEY, src))
-        return None
-    (tool_dir / "keys").mkdir(parents=True)
+    tool_dir.mkdir(parents=True)
     shutil.copy2(str(src), str(tool_dir / ("IAPTool" + EXE)))
     shutil.copy2(str(src.parent / "local_config.json"), str(tool_dir / "local_config.json"))
-    shutil.copy2(str(published), str(tool_dir / "keys" / PUBLISHED_KEY))
     return tool_dir / ("IAPTool" + EXE)
 
 
@@ -164,18 +157,18 @@ def run_cases(scratch, env, user_keys, tmp, started):
         return 2
     port = json.loads(read_text(tool_dir / "local_config.json")).get("server_port") or "56865"
 
-    published_pub = pubkey_of(iap, tool_dir / "keys" / PUBLISHED_KEY, env)
     for name in ("owner", "other"):
         run([iap, "genkey", name], env=env, cwd=scratch / "keys")
     owner_pem, other_pem = scratch / "keys" / "owner.pem", scratch / "keys" / "other.pem"
     owner_pub = pubkey_of(iap, owner_pem, env) if owner_pem.exists() else None
-    if not (published_pub and owner_pub and other_pem.exists()):
+    if not (owner_pub and other_pem.exists()):
         Fail("could not prepare keys with %s" % iap)
         return 2
 
-    # id, key the board trusts, user key to place (or None), expect success, line
+    # id, key the board trusts ("none" = factory board in its bootloader),
+    # user key to place (or None), expect success, line
     cases = [
-        ("unclaimed", published_pub, None, True, "signing with the PUBLISHED key"),
+        ("unclaimed", "none", None, True, "Claimed."),
         ("claimed", owner_pub, owner_pem, True, "The board reset and is answering again"),
         ("wrong-key", owner_pub, other_pem, False, "did not accept the reboot request"),
     ]
@@ -183,6 +176,7 @@ def run_cases(scratch, env, user_keys, tmp, started):
     failed = 0
     ip = None
     for cid, trusted, user_key, expect_ok, line in cases:
+        factory = trusted == "none"
         Section("%s  -- expecting: %s" % (cid, line))
         user_dest = user_keys / "fw_signing_key.pem"
         if user_dest.exists():
@@ -190,9 +184,10 @@ def run_cases(scratch, env, user_keys, tmp, started):
         if user_key is not None:
             shutil.copy2(str(user_key), str(user_dest))
 
-        board, board_log, handles = start_fake_board(
-            scratch, cid, [trusted, "180", "--port", port, "--uid", FAKE_UID,
-                           "--app", BOARD_APP_VERSION])
+        board_argv = [trusted, "180", "--port", port, "--uid", FAKE_UID]
+        if not factory:
+            board_argv += ["--app", BOARD_APP_VERSION]
+        board, board_log, handles = start_fake_board(scratch, cid, board_argv)
         t0 = time.time()
         try:
             if not wait_for_listener(port):
@@ -227,12 +222,18 @@ def run_cases(scratch, env, user_keys, tmp, started):
         if expect_ok:
             if rc != 0:
                 problems.append("arduino-cli exited %d" % rc)
-            if not rebooted:
-                problems.append("board never accepted a reboot request")
+            if factory:
+                if "TAKEOWN ACCEPTED" not in blog:
+                    problems.append("board was never claimed")
+                if not user_dest.exists():
+                    problems.append("no key was generated at %s" % user_dest)
+            else:
+                if not rebooted:
+                    problems.append("board never accepted a reboot request")
+                if not came_back:
+                    problems.append("board did not go silent after the image")
             if not full:
                 problems.append("board did not receive the full image")
-            if not came_back:
-                problems.append("board did not go silent after the image")
         else:
             if rc == 0:
                 problems.append("arduino-cli exited 0")

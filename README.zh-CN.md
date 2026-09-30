@@ -76,10 +76,9 @@ r||s），给需要签名文件的人用；上传不用这些文件：上传时�
 3. `<用户配置目录>/openplc/keys/fw_signing_key.pem`（`os.UserConfigDir()`；
    Windows 上是 `%AppData%`）—— 工具包升级后仍然保留
 4. 可执行文件旁边的 `keys/fw_signing_key.pem`
-5. 仅限上传：可执行文件旁边的 `keys/published_root.TEST_ONLY.pem`，
-   即 `compile_tool.sh` 附带的公开根密钥。只有未认领的板子接受它；每次使用都会打印警告
 
-Arduino IDE 不传密钥，所以它靠的是第 3–5 步。
+Arduino IDE 不传密钥，所以它靠的是第 3–4 步。板子没有根（出厂板）时，上传会先认领它：
+一把密钥都找不到就在第 3 步的位置生成一把，并打印路径。
 `local_config.json` 和 `keys/` 相对于**可执行文件**查找，不是当前目录。
 
 ## 没有根密钥时上传
@@ -122,50 +121,44 @@ IAPTool ether app.bin 192.168.1.50           # 别的都不用改
 
 ### 生成密钥
 
-要轮换签名密钥，运行 `IAPServer/keys/rotate_keys.sh` —— 它调用下面的命令，
-分发每一份拷贝，并先做备份。这一步也可以单独用：
-
 ```sh
-IAPTool genkey my_release_key > fw_pubkey.inc
+IAPTool genkey                  # 默认位置的密钥，打印路径
+IAPTool genkey my_release_key   # 当前目录下的 my_release_key.pem
 ```
 
-`genkey` 写出 `my_release_key.pem`（私钥，权限 0600），并在标准输出打印
-`IAPServer/keys/fw_pubkey.inc` 的内容。这个文件被固件 `#include`，所以新密钥生效前
-要重新编译 bootloader 并用 ST-Link 重新烧录。私钥离线保存，它永远不上设备。
+`genkey` 写出私钥（权限 0600），不覆盖已有的文件，并打印路径和公钥。固件里不编任何密钥：
+换根用 `setowner`，不用重编 bootloader。私钥离线保存，它永远不上设备；换电脑时把它拷到新电脑的默认位置。
 
 密钥和 `openssl` 双向通用 —— `genkey` 输出标准 SEC1 PEM，`sign` 接受 SEC1 或 PKCS#8。
 
 ## 板子归属
 
-板子出厂时信任本项目公开的签名密钥，也就是说任何人都能签出它会运行的固件。
-认领后它绑定到你自己的密钥，从此别的都起不来。
+板子出厂时没有根：认领之前什么都不跑、什么都不收。第一次 `cdc` 或 `ether` 上传会先把它
+认领给这台电脑的密钥（没有就生成一把），再上传。从此别的都起不来。下面的 `<board>` 是 IP 地址或 USB 口。
 
 ```sh
-IAPTool genkey owner                 # 写出 owner.pem —— 离线保存
-IAPTool getowner 192.168.0.30        # 这块板子信任哪把密钥？
-IAPTool takeown  192.168.0.30 --key=owner.pem
-IAPTool setowner 192.168.0.30 --current-key=owner.pem --new-key=next.pem
+IAPTool getowner <board>             # 这块板子信任哪把密钥？
+IAPTool takeown  <board> --key=owner.pem       # 第一次上传自动做的就是这一步
+IAPTool setowner <board> --current-key=owner.pem --new-key=next.pem
 ```
 
 ## 更换 bootloader
 
-`flashboot` 不用 ST-Link 就把新的 bootloader 写进扇区 0，并把归属记录带过去，
-板子仍然保持已认领。
+`flashboot` 不用 ST-Link 就把新的 bootloader 写进扇区 0。归属记录在扇区 15，
+所以板子仍然保持已认领。
 
 ```sh
 IAPTool flashboot boot.bin 192.168.0.30 --key=owner.pem
 ```
 
 密钥必须是归属根本身：板子按根检查 bootloader 镜像，不按叶证书。
-未认领的板子没有根可查，所以改为要求在当前这次启动时按住 BOOT0。
+没有根的板子拒绝 `flashboot`，要先认领。
 
 **过程中不要断电。** 板子正在被改写的扇区里运行；中断后它无法启动，
 只有 ST-Link 能救回来。
 
-除非板子这次启动时按住了 BOOT0，否则 `takeown` 会被拒绝。
-第一次认领不带签名 —— 还没有归属者能签 —— 所以唯一能有的关卡就是人在现场。
-它也不会退回去用 `local_config.json` 里的签名密钥：用错密钥认领了板子，
-只能用 ST-Link 重烧 bootloader 才能撤销，因为归属记录就在 bootloader 自己的 flash 扇区里。
+`takeown` 只在板子没有根时被接受，USB 或网口都行，不用按键。第一次认领之前，
+谁先连上板子谁就能认领；恢复出厂（复位后按住 BOOT0 十秒）让板子回到没有根。
 
 `setowner` 不用按键。它由板子当前信任的密钥签名，所以可以通过网络交接；
 偷来的记录也接管不了板子 —— 板子检查的是签名，不是代数。
@@ -179,10 +172,8 @@ IAPTool flashboot boot.bin 192.168.0.30 --key=owner.pem
 IAPTool setowner 192.168.0.30 --current-key=owner.pem --new-key=next.pem --wipe
 ```
 
-`--wipe` 在交接板子的**同时**让归属区只剩新的那条记录。板子为此擦除并重写
-自己的扇区，所以会复位，而且**擦除时断电就要按住 BOOT0 复位、再通过 USB DFU 重烧**
-—— 和 `flashboot` 需要的恢复方法一样。普通的 `setowner` 只追加一条记录，没有这个风险；
-板子不会自己决定擦除。
+`--wipe` 在交接板子的**同时**让归属区只剩新的那条记录。板子为此重写扇区 15
+（从不碰 bootloader），擦除期间在电池供电的备份 SRAM 里留一份副本。板子不会自己决定擦除。
 
 不带 `--wipe` 换根会让旧根签发的所有叶证书失效，不用再一个个撤销 ——
 但已经被那些撤销记录占掉的槽位不会释放。

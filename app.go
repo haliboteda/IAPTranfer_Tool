@@ -35,9 +35,8 @@ type signingOptions struct {
 	// wipeOwner says --wipe was typed: setowner should erase and rewrite the
 	// owner area rather than append to it.
 	wipeOwner bool
-	// keyExplicit says --key was actually typed. takeown must not fall back to
-	// the firmware signing key from local_config.json: claiming a customer's
-	// board with the project's own key is not recoverable without an ST-Link.
+	// keyExplicit says --key was actually typed. A manual takeown names its key
+	// explicitly: claiming with the wrong one takes a factory reset to undo.
 	keyExplicit bool
 }
 
@@ -46,13 +45,16 @@ var g_signing signingOptions
 const usageText = `Usage:
   IAPTool cdc    <file.bin> <port>       [--key=<key.pem>] [--cert=<cert.txt>]
   IAPTool ether  <file.bin> <ip>         [--key=<key.pem>] [--cert=<cert.txt>]
+                   uploads an application. A board with no root (new, or
+                   factory-reset) is first claimed for the signing key; with no
+                   key anywhere, one is generated at the default location below.
   IAPTool flashboot <boot.bin> <ip> --key=<owner.pem>
                    replaces the board's bootloader in place. --key must be the
-                   owner root: a leaf certificate cannot authorise this. An
-                   unclaimed board needs BOOT0 held through its current boot
-                   instead. Do not cut power during it.
+                   owner root: a leaf certificate cannot authorise this. A board
+                   with no root refuses it. Do not cut power during it.
   IAPTool sign   <file.bin> [<key.pem>]  [--key=<key.pem>] [--out=<prefix>]
-  IAPTool genkey [<name>]    writes <name>.pem, prints keys/fw_pubkey.inc on stdout
+  IAPTool genkey [<name>]    writes <name>.pem, or the default key location when no
+                   name is given; prints the path and the public key
   IAPTool pubkey [<key.pem>] the key's public half as 128 hex characters, the form
                    "cert" and "getpubkey" speak. Send this to whoever holds the
                    root when you need a certificate issued for your key.
@@ -63,18 +65,20 @@ const usageText = `Usage:
   IAPTool signraw <hex> [<key.pem>]  raw r||s signature over SHA-256 of those
                    bytes, hex on stdout. For the bootloader's owner-record
                    chain (setowner), not for firmware images.
-  IAPTool getowner <ip>      which key this board trusts, and at which generation
-  IAPTool getapprevoked <ip> was this board's firmware signed by a leaf that has
+
+  The commands below take <board>: a serial port (the board's USB port, answered
+  only while it is in its bootloader) or an IP.
+  IAPTool getowner <board>   which key this board trusts, and at which generation
+  IAPTool getapprevoked <board> was this board's firmware signed by a leaf that has
                    since been revoked? Such firmware keeps running, so this is the
                    only way to find the boards worth re-uploading after a revoke.
-  IAPTool takeown  <ip> --key=<owner.pem>
-                   claims an unclaimed board for that key. BOOT0 must have been
-                   held through the board's current boot - the first claim carries
-                   no signature, so presence is the only gate. Hard to undo.
-  IAPTool setowner <ip> --current-key=<owner.pem> --new-key=<next.pem> [--wipe]
+  IAPTool takeown  <board> --key=<owner.pem>
+                   claims a board with no root for that key, without uploading.
+                   The first upload does the same by itself.
+  IAPTool setowner <board> --current-key=<owner.pem> --new-key=<next.pem> [--wipe]
                    hands a claimed board over to another key. The handover is
                    signed by the current owner, so no button is needed.
-  IAPTool revoke   <ip> --key=<owner.pem> --leaf=<pubkey>
+  IAPTool revoke   <board> --key=<owner.pem> --leaf=<pubkey>
                    revokes one leaf (128-hex-char public key), signed by the
                    current owner. That leaf's next upload is refused; firmware
                    it already installed keeps running (see getapprevoked).
@@ -82,28 +86,26 @@ const usageText = `Usage:
 
   --key            ECDSA P-256 private key (PEM). When omitted, falls back to
                    "signing_key" in local_config.json, then to
-                   <user config dir>/openplc/keys/fw_signing_key.pem, then to
-                   keys/fw_signing_key.pem next to this executable. Uploads fall
-                   back last to keys/published_root.TEST_ONLY.pem next to this
-                   executable, which only an unclaimed board accepts. Uploading
-                   needs the private key itself: the image is signed in memory
-                   and so is the board's challenge.
+                   <user config dir>/openplc/keys/fw_signing_key.pem (the default
+                   location), then to keys/fw_signing_key.pem next to this
+                   executable. Uploading needs the private key itself: the image
+                   is signed in memory and so is the board's challenge. To upload
+                   from another computer, copy the key to the same place there.
   --cert           Certificate presented to the board, as issued by the holder of
                    the root it trusts. When omitted, falls back to "<the signing
                    key>.cert", and with no certificate there the signing key
                    certifies itself - which is what one person with one key wants.
   --out            Output prefix for "sign". Defaults to the .bin path without its extension.
-  --wipe           For setowner only: also empty the owner record area, which
-                   is the only way to reclaim revocation slots. The board has to
-                   erase and rewrite its own flash sector to do it, so it resets
-                   and a power cut during the erase means a DFU re-flash. Plain
-                   setowner just appends a record and carries no such risk.
+  --wipe           For setowner only: also empty the revocation records, which is
+                   the only way to reclaim revocation slots. The board rewrites
+                   its state sector to do it and resets.
   --force          Flash even when the image is older than what the board runs.
                    One-shot: refused again until an upload arrives without it.
                    The Arduino IDE passes this from
                    Tools > Force flash (allow older version).
 
-To rotate the signing key, run IAPServer/keys/rotate_keys.sh.`
+A factory reset (hold BOOT0 for 10 s) makes a board forget its root; the next
+upload claims it again.`
 
 func main() {
 	// Load config from JSON file
@@ -141,18 +143,20 @@ func main() {
 		logf(err, "Failed to sign %s", args[1])
 
 	case "genkey":
-		name := "fw_signing_key"
+		path := userKeyLocation()
 		if len(args) >= 2 {
-			name = args[1]
+			path = args[1] + ".pem"
 		}
-		err := generateSigningKey(name)
+		if path == "" {
+			logf(true, "No user config directory; name the key: IAPTool genkey <name>")
+		}
+		_, err := generateSigningKey(path)
 		logf(err, "Failed to generate signing key")
 
 	case "pubkey":
 		// The one form a root holder can act on: "cert <leafPubHex>" takes
 		// exactly these 128 characters, and so does comparing against what a
-		// board answers to getpubkey. genkey prints the C initialiser instead,
-		// which is the wrong shape for both.
+		// board answers to getpubkey.
 		keyPath := findSigningKey()
 		if len(args) >= 2 {
 			keyPath = args[1]

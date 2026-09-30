@@ -17,7 +17,6 @@
 #include <stdint.h>
 
 #include "owner_root_ro.h"
-#include "fw_pubkey.h"
 #include "iap_keyderive.h"
 #include "fake_owner_area.h"
 #include "iap_keyderive_stub.h"
@@ -154,13 +153,11 @@ int main(void)
 
 	arrange_board();
 
-	/* Without this the rest would only prove R4 against the compiled-in
-	 * fallback key, which no record can name by accident anyway. */
-	owner_root_ro_get(resolved_root);
+	/* Without this the rest would prove nothing: no root, nothing revoked. */
+	CHECK(owner_root_ro_get(resolved_root),
+			"the board has a root");
 	CHECK(memcmp(resolved_root, g_root_in_force, PUBKEY_SIZE) == 0,
 			"the chain resolves to the root the 'O' record installed");
-	CHECK(memcmp(resolved_root, fw_public_key, PUBKEY_SIZE) != 0,
-			"that root is not the compiled-in fallback");
 
 	/* R4. */
 	CHECK(!owner_root_ro_is_revoked(g_root_in_force),

@@ -21,7 +21,6 @@ Exit 0 = everything verified, 1 = something did not, 2 = prerequisites missing.
 """
 
 import argparse
-import re
 import shutil
 import sys
 import tempfile
@@ -31,16 +30,7 @@ HERE = Path(__file__).resolve().parent
 sys.path.insert(0, str(HERE.parent.parent / "tools"))
 
 from common import (EXE, GOOS_DIR, Fail, Ok, Section, Warn, cfg,  # noqa: E402
-                    get_go_bin, have_cmd, python_exe, read_text, run_emit)
-
-
-def parse_pubkey_inc(path):
-    """The 0xNN byte array the bootloader #includes, as lower-case hex.
-
-    Parsed rather than copied so this cannot go stale the first time anyone
-    rotates keys.
-    """
-    return "".join(re.findall(r"0x([0-9a-fA-F]{2})", read_text(path))).lower()
+                    get_go_bin, have_cmd, python_exe, run_capture, run_emit)
 
 
 def main():
@@ -68,23 +58,22 @@ def main():
             run_emit(["go", "build", "-o", "Output/%s/IAPTool%s" % (GOOS_DIR, EXE), "."],
                      cwd=cfg.TOOL_REPO)
 
-        key = Path(cfg.BOOT_REPO) / "IAPServer/keys/fw_signing_key.TEST_ONLY.pem"
-        inc = Path(cfg.BOOT_REPO) / "IAPServer/keys/fw_pubkey.inc"
-        for p in (iap_tool, key, inc):
-            if not Path(p).exists():
-                Fail("not found: %s" % p)
-                return 2
-
-        # The public key comes from the same .inc the bootloader compiles in, so
-        # this checks the committed key pair, not an ad-hoc one.
-        pub_hex = parse_pubkey_inc(inc)
-        if len(pub_hex) != 128:
-            Fail("fw_pubkey.inc parsed to %d hex chars" % len(pub_hex))
+        if not Path(iap_tool).exists():
+            Fail("not found: %s" % iap_tool)
             return 2
-        print("  key pair: IAPServer/keys/fw_signing_key.TEST_ONLY.pem -> %s..."
-              % pub_hex[:16])
 
+        # A throwaway key pair from the shipping tool: no key is committed any
+        # more (decision 72), and the public half comes from the tool's own
+        # "pubkey", the form a board answers to getpubkey.
         scratch = Path(tempfile.mkdtemp(prefix="cryptoref-"))
+        key = scratch / "k.pem"
+        run_capture([iap_tool, "genkey", scratch / "k"])
+        out, rc = run_capture([iap_tool, "pubkey", key])
+        pub_hex = out.strip().splitlines()[-1].strip().lower() if out.strip() else ""
+        if (rc != 0) or (len(pub_hex) != 128):
+            Fail("IAPTool genkey/pubkey gave no 128-hex-char public key: %r" % out)
+            return 2
+        print("  key pair: fresh from IAPTool genkey -> %s..." % pub_hex[:16])
 
         msg = scratch / "msg.bin"
         msg.write_bytes(bytes((i * 17 + 3) % 256 for i in range(4096)))

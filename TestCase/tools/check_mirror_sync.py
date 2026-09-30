@@ -385,6 +385,11 @@ compare_anchor("owner record signed prefix (bytes)", {
 
 # The two segments. Only the bootloader and the app address the area, so the
 # tool has no anchor to offer here.
+compare_anchor("root area base address", {
+    "bootloader IAPServer/owner_slot.h": get_anchor(boot_owner, r'#define\s+OWNER_SLOT_BASE\s+(0x[0-9A-Fa-f]+)UL'),
+    "core OpenPLC_IAP/src/owner_root_ro.c": get_anchor(core_owner, r'#define\s+OWNER_SLOT_BASE\s+(0x[0-9A-Fa-f]+)UL'),
+})
+
 compare_anchor("'O' segment: record size (bytes)", {
     "bootloader IAPServer/owner_slot.h": get_anchor(boot_owner, r'#define\s+OWNER_RECORD_SIZE\s+(\d+)U'),
     "core OpenPLC_IAP/src/owner_root_ro.c": get_anchor(core_owner, r'#define\s+OWNER_RECORD_SIZE\s+(\d+)U'),
@@ -572,7 +577,6 @@ compare_anchor("calibration area layout", {
 
 # --- what this script does not check ----------------------------------------
 Section("not covered by this script -- still manual")
-print("  - fw_pubkey.inc: bootloader-only by design, nothing to compare")
 print("  - $CORE_LIVE vs $CORE_REPO: use tools/check_core_sync.py")
 
 Section("result")

@@ -84,7 +84,6 @@ def main():
         CORE_SRC / "owner_root_ro.c",
         CORE_SRC / "sha256.c",
         CORE_SRC / "fw_verify.c",
-        CORE_SRC / "fw_pubkey.c",
         CORE_SRC / "uecc" / "uECC.c",
         HERE / "test_main.c",
         "-o", binary,

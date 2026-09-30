@@ -2,27 +2,15 @@
 
     python3 tools/run_takeown.py                    claim with a freshly generated key
     python3 tools/run_takeown.py --key owner.pem    claim with a specific key
-    python3 tools/run_takeown.py --expect-refused   the board should say no (negative case)
+    python3 tools/run_takeown.py --expect-refused   the board already has a root (negative case)
 
 The claim is driven through the shipping tool -- `IAPTool takeown` -- because
 that is the path a customer has. The check afterwards is NOT: it asks the board
 directly over TCP, so the tool cannot be the one confirming its own work.
 
-⚠️ THIS NEEDS SOMEBODY AT THE BOARD, and that is the whole point. takeown is
-gated on BOOT0 having been held through the startup window: the first claim
-carries no signature -- there is no owner yet to sign it -- so physical presence
-is the only gate there can be. See $PROD/docs/modules/M2-ownership.md.
-
-Before running: press RESET, then hold BOOT0 until the relay finishes clicking
-and let go. The board should be sitting in "UPLOAD Mod ... (BOOT0 held)".
-
-⚠️ RECOVERY: claiming is meant to be hard to undo. The only way back is to
-reflash the bootloader over ST-Link -- the owner records live in the
-bootloader's own sector, so erasing it to write the bootloader takes them with
-it, and the application that was rejected while the board was claimed starts
-again by itself:
-
-    python3 tools/flash_bootloader.py
+A board is claimable only while it has no root (new, or factory-reset); no
+button is involved (decision 72, $PROD/docs/modules/M2-ownership.md). The way
+back is a factory reset: hold BOOT0 for 10 s.
 
 Exit 0 = the board ended up in the expected state, 1 = it did not, 2 = setup.
 """
@@ -34,9 +22,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from common import (LOG_BOOT0_UPLOAD, cfg, Section, Ok, Fail,  # noqa: E402
-                    Warn, banner, get_go_bin, run_capture, tcp_command,
-                    wait_for_boot0_upload_mode)
+from common import (cfg, Section, Ok, Fail,  # noqa: E402
+                    Warn, get_go_bin, run_capture, tcp_command)
 
 
 def genkey(iap):
@@ -60,13 +47,9 @@ def main():
     ap.add_argument("--port", default="56865")
     ap.add_argument("--key", default="", help="the owner's private key (PEM)")
     ap.add_argument("--expect-refused", action="store_true")
-    ap.add_argument("--boot0-timeout", type=int, default=180,
-                    help="how long to wait for the operator to do the BOOT0 "
-                         "gesture. 0 means a caller has already confirmed it "
-                         "-- the board announces the gesture once per boot, so "
-                         "waiting for it twice in one boot never succeeds. "
-                         "Ignored with --expect-refused, which needs the "
-                         "opposite.")
+    ap.add_argument("--boot0-timeout", type=int, default=0,
+                    help="unused since decision 72 (claiming needs no BOOT0); "
+                         "accepted so older callers still run")
     ap.add_argument("--ports", nargs="*", default=None)
     args = ap.parse_args()
 
@@ -80,35 +63,6 @@ def main():
         Fail("IAPTool not built")
         return 2
 
-    # Said at run time, not only in the docstring at the top of this file: the
-    # board has to ALREADY be in this state before the first command goes out,
-    # and a requirement nobody sees is a requirement nobody meets.
-    banner(["PRESS RESET, THEN HOLD BOOT0 UNTIL THE RELAYS STOP CLICKING.",
-            "Let go. The board should print: UPLOAD Mod ... (BOOT0 held)"])
-
-    print("  Why physical presence: the first claim carries no signature (there is no")
-    print("  owner yet to sign it), so a button is the only gate there can be.")
-    print()
-
-    # Wait for the BOARD to say the gesture landed, rather than asking the
-    # operator to confirm it. Without this the script queried the board
-    # immediately after printing the banner, so an unattended run raced the
-    # human and always saw "not held" -- the refusal looked like the case
-    # failing rather than like nobody having pressed anything yet.
-    # 0 means a caller has already seen the gesture. The board prints
-    # "UPLOAD Mod ... (BOOT0 held)" once per boot, so a second script waiting
-    # for it in the same boot waits for something that will never come again.
-    if not args.expect_refused and args.boot0_timeout > 0:
-        ports = list(args.ports if args.ports is not None else cfg.LOG_PORTS)
-        Section("waiting for BOOT0")
-        print("  up to %d s for the board to print %r" % (args.boot0_timeout, LOG_BOOT0_UPLOAD))
-        seen, _ = wait_for_boot0_upload_mode(ports, args.boot0_timeout)
-        if not seen:
-            Fail("the board never reported BOOT0 held; nothing was attempted")
-            Warn("  reset the board, hold BOOT0 while the system LED blinks, let go")
-            return 2
-        Ok("  the board reports BOOT0 was held")
-
     Section("before")
     was = tcp_command(ip, args.port, "getpubkey")
     # The generation BEFORE, because the claim is judged on a delta, not on a
@@ -117,8 +71,15 @@ def main():
     was_gen = tcp_command(ip, args.port, "getowner")
     print("  getpubkey: %s" % was)
     print("  getowner:  %s" % was_gen)
-    if not re.fullmatch(r"[0-9a-fA-F]{128}", was):
-        Fail("the board did not answer getpubkey with a key -- is it in the bootloader?")
+    has_root = re.fullmatch(r"[0-9a-fA-F]{128}", was) is not None
+    if not has_root and was.strip() != "none":
+        Fail("the board did not answer getpubkey with a key or 'none' -- is it in the bootloader?")
+        return 2
+    if has_root != args.expect_refused:
+        Warn("SETUP - the board %s a root; %s needs it %s." % (
+            "has" if has_root else "has no",
+            "--expect-refused" if args.expect_refused else "a claim",
+            "to have one" if args.expect_refused else "to have none (factory-reset it: hold BOOT0 10 s)"))
         return 2
 
     key = Path(args.key) if args.key else None
@@ -129,8 +90,8 @@ def main():
         # that renders as mojibake is a warning nobody reads.
         print("  private key kept at: %s" % key)
         print("  NOTE: from now on that key is the only one that can sign firmware")
-        print("        this board will run. Back it up - losing it costs a")
-        print("        bootloader reflash (tools/flash_bootloader.py) and a new claim.")
+        print("        this board will run. Back it up - losing it costs a factory")
+        print("        reset (hold BOOT0 10 s) and a new claim.")
     if not key.exists():
         Fail("no such key: %s" % key)
         return 2
@@ -155,7 +116,7 @@ def main():
         if rc == 0:
             Fail("expected a refusal, but IAPTool reported success")
             return 1
-        if "refused" not in out.lower():
+        if "refused" not in out.lower() and "already trusts" not in out.lower():
             Fail("IAPTool failed for some other reason:\n%s" % out.strip())
             return 1
         Ok("refused, as expected")
@@ -167,7 +128,6 @@ def main():
 
     if rc != 0:
         Fail("takeown did not succeed:\n%s" % out.strip())
-        Fail("(BOOT0 must have been held through the startup window of THIS boot)")
         return 1
     if not claimed:
         Fail("could not tell from IAPTool's output which key it claimed with")
@@ -189,10 +149,8 @@ def main():
         return 1
     Ok("claimed: the board now reports the new key as its root, at generation %d" % got)
     print()
-    print("Next: reset the board. The published-root warning should be gone, the boot")
-    print("log should say 'claimed at generation %d', and an application signed by the" % got)
-    print("OLD key must now be refused - that is what proves the new key is in use.")
-    print("To undo: python3 tools/flash_bootloader.py  (erases the sector the records live in)")
+    print("Next: an application signed by any other key must now be refused - that is")
+    print("what proves the new key is in use. To undo: factory reset (hold BOOT0 10 s).")
     return 0
 
 

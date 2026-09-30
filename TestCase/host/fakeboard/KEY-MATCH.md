@@ -74,9 +74,9 @@ broken config.
 
 ## Keys
 
-The "good" key is parsed out of `$BOOT_REPO/IAPServer/keys/fw_pubkey.inc`, the
-same file the bootloader compiles in, so a key rotation cannot leave a stale
-copy here. The "bad" key is generated per run by `IAPTool genkey`, so nothing
-needs committing and openssl is not required.
+Every key is generated per run by `IAPTool genkey` in the scratch directory,
+so nothing needs committing and openssl is not required. The tool runs with its
+user config dir inside scratch too, so it never reads or writes the real
+user's key at the default location.
 
 ---

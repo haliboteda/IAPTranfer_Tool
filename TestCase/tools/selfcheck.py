@@ -56,7 +56,6 @@ CATALOG = [
     ("P2",           "ENG-03 R1-06 R1-07 R2-01 R1-14 R3-04", "cross-repo mirrored code has not diverged"),
     ("P3",           "ENG-04",                 "Arduino core: live matches the git repo"),
     ("P11",          "ENG-05",                 "the packaged IAPTool is not behind the repository"),
-    ("T2-06",        "R2-02",                  "the published-root warning still recognises the published root"),
     ("P7",           "-",                      "every cited case is defined, and every defined case is cited"),
     ("P8",           "-",                      "no claim is written out in more than one document"),
     ("P14",          "-",                      "no unfinished work lives only in a map's CHANGE-LIST"),
@@ -67,11 +66,15 @@ CATALOG = [
     ("T1-16",        "R1-20",                  "host C unit tests (real sha256.c / iap_keyderive.c / iap_auth.c)"),
     ("T2-21",        "R2-04",                  "the root in force cannot revoke itself (real owner_root_ro.c over a fake record area)"),
     ("T2-22-T2-23",  "R2-04",                  "revocation area: warns at 8 slots left, refuses the 97th without writing"),
-    ("T1-33",        "R1-36",                  "flashboot compaction keeps the chain and the live revocations, drops the rest"),
+    ("T1-33",        "R1-36",                  "sector-15 compaction keeps the record in force and the live revocations, drops the rest"),
     ("T2-24",        "R2-04",                  "setowner --wipe judges the handover before erasing, and reclaims every slot"),
     ("T2-27",        "R2-04",                  "a revocation naming the root in force is ignored (real owner_slot.c, the bootloader's own copy of R4)"),
+    ("T2-31",        "R2-01",                  "a board with no root trusts nothing and takes a takeown with no gate"),
+    ("T2-32",        "R2-01",                  "a factory reset returns the board to no root, and it can be claimed again"),
+    ("T2-33",        "R2-02",                  "40 handovers in a row: the full owner segment is reclaimed, root and revocations survive"),
+    ("T2-34",        "R2-02",                  "a sector-15 reclaim cut by a power loss: backup copy restores it, no copy means no root"),
     ("T4-01",        "-",                      "port tool protocol contract (real porttool.c, then the Go parser)"),
-    ("T1-18a-T1-18g", "R1-21",                  "IAPTool key/certificate match against a stand-in board"),
+    ("T1-18a-T1-18g", "R1-21",                  "IAPTool key/certificate match and first-upload claim against a stand-in board"),
     ("T1-19-T1-20",  "R1-24",                  "crypto cross-check against independent implementations"),
     ("P4",           "R3-04",                  "Arduino variant assertions (FMC reserved pins, UART routing)"),
     ("P15",          "R1-33",                  "the application's start address stays 1024-aligned"),
@@ -96,7 +99,7 @@ def print_catalog():
     for cid, covers, name in CATALOG:
         print("  %-*s  covers %-*s  %s" % (width, cid, cov, covers, name))
     print("")
-    print("  %d steps. --quick skips T1-16 / T2-21 / T2-22-T2-23 / T1-33 / T2-24 / T4-01 / T1-18a-T1-18g / T1-19-T1-20 / P4 / P15."
+    print("  %d steps. --quick skips T1-16 / T2-21 / T2-22-T2-23 / T1-33 / T2-24 / T2-27 / T2-31-T2-34 / T4-01 / T1-18a-T1-18g / T1-19-T1-20 / P4 / P15."
           % len(CATALOG))
     print("  P7, P8 and P9 check the documents, not the firmware.")
 
@@ -192,9 +195,6 @@ def main():
     run_step("P11", "the packaged IAPTool is not behind the repository",
              [python_exe(), HERE / "check_tool_sync.py"], cwd=tool_repo)
 
-    run_step("T2-06", "the published-root warning still recognises the published root",
-             [python_exe(), HERE / "check_public_root.py"], cwd=tool_repo)
-
     # These two guard the documents rather than the product. They are here because
     # a table that has drifted from the cases, or a fact claimed in two files, is
     # exactly as expensive to find later as a code divergence -- and 2026-08-22
@@ -264,10 +264,10 @@ def main():
                  [python_exe(), TESTTOOL / "host" / "owner_capacity" / "build.py", "capacity"],
                  needs=cc_need, cwd=tool_repo)
 
-        # Same harness, other end of the area: what survives the erase during
-        # a flashboot. Two phases, because the read-back has to happen in a
+        # Same harness, other end of the area: what survives a sector-15
+        # reclaim. Two phases, because the read-back has to happen in a
         # process that has not scanned the area yet.
-        run_step("T1-33", "flashboot compaction keeps the chain and the live revocations, drops the rest",
+        run_step("T1-33", "sector-15 compaction keeps the record in force and the live revocations, drops the rest",
                  [python_exe(), TESTTOOL / "host" / "owner_capacity" / "build.py", "compact"],
                  needs=cc_need, cwd=tool_repo)
 
@@ -282,6 +282,25 @@ def main():
                  [python_exe(), TESTTOOL / "host" / "owner_capacity" / "build.py", "self-revoke"],
                  needs=cc_need, cwd=tool_repo)
 
+        run_step("T2-31", "a board with no root trusts nothing and takes a takeown with no gate",
+                 [python_exe(), TESTTOOL / "host" / "owner_capacity" / "build.py", "no-root"],
+                 needs=cc_need, cwd=tool_repo)
+
+        run_step("T2-32", "a factory reset returns the board to no root, and it can be claimed again",
+                 [python_exe(), TESTTOOL / "host" / "owner_capacity" / "build.py", "reset"],
+                 needs=cc_need, cwd=tool_repo)
+
+        run_step("T2-33", "40 handovers in a row: the full owner segment is reclaimed, root and revocations survive",
+                 [python_exe(), TESTTOOL / "host" / "owner_capacity" / "build.py", "rotate"],
+                 needs=cc_need, cwd=tool_repo)
+
+        # The only step that runs the real reclaim: bootloader_state.c and
+        # bkp_stash.c over a RAM sector and a RAM backup SRAM, power cut
+        # before every flash operation in turn.
+        run_step("T2-34", "a sector-15 reclaim cut by a power loss: backup copy restores it, no copy means no root",
+                 [python_exe(), TESTTOOL / "host" / "sector15_reclaim" / "build.py"],
+                 needs=cc_need, cwd=tool_repo)
+
         # build.py runs both halves: the C harness against the real firmware
         # source, then the Go test over the transcript it just wrote. They are
         # one step because running either alone lets the two drift apart, which
@@ -290,7 +309,7 @@ def main():
                  [python_exe(), TESTTOOL / "host" / "porttool_caps" / "build.py"],
                  needs=cc_need, cwd=tool_repo)
 
-        run_step("T1-18a-T1-18g", "IAPTool key/certificate match against a stand-in board",
+        run_step("T1-18a-T1-18g", "IAPTool key/certificate match and first-upload claim against a stand-in board",
                  [python_exe(), TESTTOOL / "host" / "fakeboard" / "run_cases.py"],
                  cwd=tool_repo)
 

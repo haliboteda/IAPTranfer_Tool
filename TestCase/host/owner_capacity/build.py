@@ -1,5 +1,5 @@
-"""Builds and runs the revocation-capacity harness against the real
-owner_slot.c in the bootloader. Cases T2-22, T2-23, T1-33 and T2-24.
+"""Builds and runs the owner-area harness against the real owner_slot.c in
+the bootloader. Cases T2-22, T2-23, T1-33, T2-24, T2-31, T2-32 and T2-33.
 
     python build.py
 
@@ -77,9 +77,12 @@ PHASE_GROUPS = {
     "compact": ("compact", "compact-verify"),
     "wipe": ("wipe", "wipe-verify"),
     "self-revoke": ("self-revoke",),
+    "no-root": ("no-root",),
+    "reset": ("reset",),
+    "rotate": ("rotate",),
 }
 ALL_PHASES = ("capacity", "compact", "compact-verify", "wipe", "wipe-verify",
-              "self-revoke")
+              "self-revoke", "no-root", "reset", "rotate")
 
 
 def main(argv):
@@ -112,13 +115,13 @@ def main(argv):
         "-I", IAP_SERVER,
         "-I", IAP_SERVER / "uecc",
         HERE / "stubs" / "fake_owner_flash.c",
+        HERE / "stubs" / "reclaim_stub.c",
         # The machine-id stub is shared with T2-21 rather than copied: two
         # copies of the same fake uid would be two things to keep in step.
         SHARED_STUBS / "iap_keyderive_stub.c",
         IAP_SERVER / "owner_slot.c",
         IAP_SERVER / "sha256.c",
         IAP_SERVER / "fw_verify.c",
-        IAP_SERVER / "fw_pubkey.c",
         IAP_SERVER / "uecc" / "uECC.c",
         HERE / "test_main.c",
         "-o", binary,

@@ -3,8 +3,9 @@
     python run.py                   all of them
     python run.py --only CAN        only examples whose name matches
 
-Per example: compile it, lay out flash as after one successful upload (the
-bootloader, the signed app, one metadata record), run Renode, and judge that the
+Per example: compile it, lay out flash as after a claim and one successful
+upload (the bootloader, the signed app, a claimed root area, one metadata
+record, the sector-15 marker), run Renode, and judge that the
 bootloader jumped into the app, setup() ran once, loop() is still being entered
 at the end, and nothing faulted. Criteria and what this cannot see:
 $PROD/docs/modules/M3-app-runtime.md, "测试怎么跑".
@@ -32,11 +33,16 @@ FQBN = ("OpenPLC_Alpha:stm32:OPEN-PLC:pnum=PLC_H743,usb=CDCgen,xusb=FS,"
 
 FLASH, FLASH_SIZE = 0x08000000, 2 << 20
 APP = 0x08020000
-# Metadata area and record layout: $BOOT/IAPServer/bootloader_state.c. The
-# bootloader re-verifies this record at every boot, so a drift shows up here as
+# Sector-15 layout: $BOOT/IAPServer/bootloader_state.c and owner_slot.h. The
+# bootloader re-verifies all of it at every boot, so a drift shows up here as
 # "did not jump into the app".
-META = 0x081E2000
+ROOT_AREA = 0x081E2000
+META = 0x081E4000
+MARKER = 0x081FFFE0
 REC_METADATA, REC_SLOTS = 0x4D, 7
+OWNER_FORMAT_VER = 4
+# The UID the Renode run pins (run_renode()); the owner record names that board.
+RENODE_UID = bytes(12)
 
 # The bootloader spends about 6.5 s of virtual time in its boot-relay window.
 RUN_SECONDS = 15
@@ -52,9 +58,20 @@ def symbols(nm, elf):
             for m in re.finditer(r"^([0-9a-f]{8}) [TtWBbDd] (\S+)\r?$", out, re.M)}
 
 
-def flash_banks(boot_bin, app_bin, iap, key, work):
+def owner_record(root_pub):
+    # The first claim: unsigned, generation 1, bound to this board's uid.
+    rec = struct.pack("<BBHII", ord("O"), 0, OWNER_FORMAT_VER, 1, 0) + root_pub + RENODE_UID
+    return rec + bytes(64) + bytes(8)
+
+
+def flash_banks(boot_bin, app_bin, iap, work):
     # APPDATA points IAPTool away from the user's own key directory.
     env = dict(os.environ, APPDATA=str(work / "appdata"))
+    key = work / "root.pem"
+    subprocess.run([str(iap), "genkey", str(work / "root")], env=env, capture_output=True, check=True)
+    root_pub = bytes.fromhex(subprocess.run([str(iap), "pubkey", str(key)], env=env,
+                                            capture_output=True, text=True, check=True)
+                             .stdout.strip().splitlines()[-1].strip())
     subprocess.run([str(iap), "sign", str(app_bin), str(key), "--out=" + str(work / "app")],
                    env=env, capture_output=True, check=True)
     cert = subprocess.run([str(iap), "cert", "--key=" + str(key)], env=env,
@@ -69,6 +86,11 @@ def flash_banks(boot_bin, app_bin, iap, key, work):
     img[:len(boot)] = boot
     img[APP - FLASH:APP - FLASH + len(app)] = app
     img[META - FLASH:META - FLASH + len(rec)] = rec
+    owner = owner_record(root_pub)
+    assert len(owner) == 160
+    img[ROOT_AREA - FLASH:ROOT_AREA - FLASH + len(owner)] = owner
+    marker = struct.pack("<II", 0x4C353153, 1) + bytes(24)
+    img[MARKER - FLASH:MARKER - FLASH + len(marker)] = marker
     (work / "bank1.bin").write_bytes(img[:FLASH_SIZE // 2])
     (work / "bank2.bin").write_bytes(img[FLASH_SIZE // 2:])
 
@@ -79,6 +101,10 @@ def run_renode(renode, work, sym, sd_image):
     lines = [
         'mach create "plc"',
         "machine LoadPlatformDescription @platforms/cpus/stm32h743.repl",
+        # The platform fills the UID with random words; pin it to RENODE_UID.
+        "sysbus WriteDoubleWord 0x1FF1E800 0",
+        "sysbus WriteDoubleWord 0x1FF1E804 0",
+        "sysbus WriteDoubleWord 0x1FF1E808 0",
         # LoadBinary only: LoadELF zero-fills .data/.bss at their flash load address.
         "sysbus LoadBinary @%s/bank1.bin 0x%08X" % (w, FLASH),
         "sysbus LoadBinary @%s/bank2.bin 0x%08X" % (w, FLASH + FLASH_SIZE // 2),
@@ -142,7 +168,6 @@ def main():
     tools = Path(cfg.A15) / "packages" / "OpenPLC_Alpha" / "tools"
     nm = sorted(tools.glob("xpack-arm-none-eabi-gcc/*/bin/arm-none-eabi-nm" + EXE))
     iap = get_iap_tool()
-    key = iap.parent / "keys" / "published_root.TEST_ONLY.pem"
 
     missing = [
         (not renode or not Path(renode).exists(), "Renode not found. Set $RENODE in config/machine.py"),
@@ -150,7 +175,6 @@ def main():
         (not cli_config or not Path(cli_config).exists(), "arduino-cli config not found at %s" % cli_config),
         (not boot_bin.exists(), "bootloader image not found at %s -- build the bootloader first" % boot_bin),
         (not nm, "arm-none-eabi-nm not found under %s" % tools),
-        (not key.exists(), "published root key not found at %s" % key),
     ]
     if any(bad for bad, _ in missing):
         for bad, why in missing:
@@ -184,7 +208,7 @@ def main():
             failed.append(ex.name)
             continue
         elf, app_bin = build / (ex.name + ".ino.elf"), build / (ex.name + ".ino.bin")
-        flash_banks(boot_bin, app_bin, iap, key, work)
+        flash_banks(boot_bin, app_bin, iap, work)
         out = run_renode(renode, work, symbols(nm[-1], elf), sd_image)
         checks, pc = judge(out, work, app_bin)
         for name, ok in checks:

@@ -10,11 +10,14 @@ This is NOT a bootloader model. It answers commands with fixed strings and does
 no verification whatsoever -- what is under test is IAPTool's behaviour, not the
 device's. Device behaviour is covered by the T/N/S cases against real hardware.
 
-Usage:  fake_board.py <pubkey-hex | "unknown"> [seconds] [--port N]
+Usage:  fake_board.py <pubkey-hex | "unknown" | "none"> [seconds] [--port N]
                       [--uid UID] [--app VERSION]
 
   pubkey-hex   64-byte P-256 public key as 128 hex chars, returned by getpubkey
   "unknown"    answer getpubkey with "Unknown command", i.e. an old bootloader
+  "none"       a board with no root (factory state): getpubkey answers "none",
+               takeown <pubkey> is accepted once and that key becomes the root,
+               and flash is refused until then
   seconds      how long to stay up (default 25)
   --port       port to serve, default 56865 -- must match "server_port" in the
                local_config.json IAPTool reads, or the tool dials nothing
@@ -64,7 +67,8 @@ REBOOT_SILENCE = 1.0
 IMAGE_SILENCE = 3.0
 
 _lock = threading.Lock()
-_state = {"role": "CUSAPP" if APP_VERSION else "BOOTLD", "silent_until": 0.0}
+_state = {"role": "CUSAPP" if APP_VERSION else "BOOTLD", "silent_until": 0.0,
+          "root": PUBKEY}
 
 
 def log(m):
@@ -74,6 +78,20 @@ def log(m):
 def current_role():
     with _lock:
         return _state["role"]
+
+
+def current_root():
+    with _lock:
+        return _state["root"]
+
+
+def take_own(pub):
+    """takeown: accepted only while there is no root."""
+    with _lock:
+        if _state["root"] != "none":
+            return False
+        _state["root"] = pub.lower()
+        return True
 
 
 def identity():
@@ -176,12 +194,25 @@ def handle_tcp(conn):
             elif cmd == "getuid":
                 conn.sendall(UID.encode())
             elif cmd == "getpubkey":
-                if PUBKEY == "unknown":
+                if current_root() == "unknown":
                     conn.sendall(b"Unknown command")
                 else:
-                    conn.sendall(PUBKEY.encode())
+                    conn.sendall(current_root().encode())
+            elif cmd.startswith("takeown "):
+                pub = cmd.split()[1]
+                if take_own(pub):
+                    log("TAKEOWN ACCEPTED %s" % pub.lower())
+                    conn.sendall(b"OK")
+                else:
+                    log("TAKEOWN REFUSED")
+                    conn.sendall(b"Refused")
+            elif cmd == "getowner":
+                conn.sendall(b"0" if current_root() == "none" else b"1")
             elif cmd == "authchallenge":
                 conn.sendall(NONCE.encode())
+            elif cmd.startswith("flash") and current_root() == "none":
+                log("FLASH REFUSED: no root")
+                conn.sendall(b"Refused")
             elif cmd.startswith("flash"):
                 expected = int(cmd.split()[1])
                 state = "FLASH"

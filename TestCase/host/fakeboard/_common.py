@@ -9,6 +9,7 @@ which is on sys.path ahead of this directory.
 """
 
 import json
+import os
 import re
 import shutil
 import socket
@@ -28,32 +29,40 @@ FAKE_BOARD = HERE / "fake_board.py"
 DEFAULT_PORT = "56865"
 
 
-def parse_hex_bytes(text):
-    """Every 0xNN in the text, concatenated as lower-case hex."""
-    return "".join(re.findall(r"0x([0-9a-fA-F]{2})", text)).lower()
+def parse_pubkey(text):
+    """The public key IAPTool genkey printed ("Public key: <128 hex>"), or ""."""
+    m = re.search(r"Public key: ([0-9a-fA-F]{128})", text)
+    return m.group(1).lower() if m else ""
 
 
-def boot_key_paths():
-    """The committed test key pair, as (fw_pubkey.inc, signing key .pem)."""
-    keys = Path(cfg.BOOT_REPO) / "IAPServer" / "keys"
-    return keys / "fw_pubkey.inc", keys / "fw_signing_key.TEST_ONLY.pem"
+def isolated_env(scratch):
+    """An environment whose user config dir is inside scratch, so the tool never
+    reads or writes the real user's key at the default location."""
+    home = scratch / "userhome"
+    home.mkdir(exist_ok=True)
+    return dict(os.environ, APPDATA=str(home), XDG_CONFIG_HOME=str(home),
+                HOME=str(home))
 
 
-def trusted_pubkey_hex():
-    """The key the bootloader was built to trust, or None with the reason printed.
+def user_key_path(env):
+    """Where IAPTool looks for, and generates, its default key under env
+    (Go's os.UserConfigDir()/openplc/keys/fw_signing_key.pem)."""
+    if sys.platform == "win32":
+        base = Path(env["APPDATA"])
+    elif sys.platform == "darwin":
+        base = Path(env["HOME"]) / "Library" / "Application Support"
+    else:
+        base = Path(env["XDG_CONFIG_HOME"])
+    return base / "openplc" / "keys" / "fw_signing_key.pem"
 
-    Parsed out of the byte array the build #includes rather than kept as a second
-    copy here, which would go stale the first time anyone rotates keys.
-    """
-    inc_path, _ = boot_key_paths()
-    if not inc_path.exists():
-        Fail("not found: %s" % inc_path)
-        return None
-    good_hex = parse_hex_bytes(read_text(inc_path))
-    if len(good_hex) != 128:
-        Fail("fw_pubkey.inc parsed to %d hex chars, expected 128" % len(good_hex))
-        return None
-    return good_hex
+
+def run_env(argv, env, cwd=None):
+    """run_capture with an explicit environment: (merged output, exit code)."""
+    proc = subprocess.run([str(a) for a in argv],
+                          cwd=None if cwd is None else str(cwd), env=env,
+                          stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                          text=True, errors="replace")
+    return proc.stdout or "", proc.returncode
 
 
 def resolve_port():

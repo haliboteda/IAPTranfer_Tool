@@ -3,18 +3,19 @@ package main
 // Board ownership: claim a board for a customer's own signing key, hand it
 // over to another key, and ask which key it currently trusts.
 //
-// The bootloader answers these commands on the same TCP port the upload uses,
-// one exchange per connection because it serves a single client at a time:
+// The bootloader answers these commands on the upload channels -- the TCP
+// port, or the USB CDC port -- one exchange per connection because it serves a
+// single client at a time:
 //
-//   getpubkey                          the 64-byte root public key, hex
-//   getowner                           generation of the record in force, 0 = unclaimed
-//   takeown  <pubkey>                  claim; refused unless BOOT0 was held at startup
+//   getpubkey                          the 64-byte root public key, hex; "none" = no root
+//   getowner                           generation of the record in force
+//   takeown  <pubkey>                  claim; accepted only while the board has no root
 //   setowner <gen> <pubkey> <sig>      hand over; refused unless the CURRENT owner signed
 //   revoke   <leafhex> <sig>           revoke one leaf; refused unless the CURRENT owner signed
 //   getapprevoked                      "yes" / "no" / "none" - was the installed image's signer revoked
 //
-// See $PROD/docs/modules/M2-ownership.md for why the first claim is
-// gated on a button and every later one on a signature. Revocation names a
+// See $PROD/docs/modules/M2-ownership.md for why the first claim has no
+// gate and every later one needs a signature. Revocation names a
 // leaf by the first 16 bytes of its public key, not a tool-assigned number --
 // see $PROD/maps/owner-revoke-and-boot-upgrade/issues/OWN-01-revoke-by-serial-or-by-pubkey.md.
 
@@ -25,6 +26,7 @@ import (
 	"fmt"
 	"net"
 	"regexp"
+	"runtime"
 	"strconv"
 	"strings"
 )
@@ -48,11 +50,37 @@ const (
 
 var pubKeyPattern = regexp.MustCompile(`^[0-9a-fA-F]{128}$`)
 
-// ownerCommand runs one command and returns the device's reply.
-func ownerCommand(ip, cmd string) (string, error) {
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(ip, getPort()), Timeout)
+// isSerialTarget says whether target names a serial port (COM3, /dev/ttyACM0)
+// rather than a board on the network.
+func isSerialTarget(target string) bool {
+	if net.ParseIP(target) != nil {
+		return false
+	}
+	if runtime.GOOS == "windows" {
+		return strings.HasPrefix(strings.ToUpper(target), "COM")
+	}
+	return strings.HasPrefix(target, "/dev/")
+}
+
+// ownerCommand runs one command on the board at target -- a serial port or an
+// IP -- and returns the device's reply.
+func ownerCommand(target, cmd string) (string, error) {
+	if isSerialTarget(target) {
+		port, err := openPort(target, l_config.BaudRate)
+		if err != nil {
+			return "", fmt.Errorf("cannot open %s: %v", target, err)
+		}
+		defer port.Close()
+		reply, err := SendCommandReadResponse(port, cmd, CommandTimeout)
+		if err != nil {
+			// A running sketch owns the USB port and answers nothing.
+			return "", fmt.Errorf("%v (is the board in its bootloader? only the bootloader answers on %s)", err, target)
+		}
+		return reply, nil
+	}
+	conn, err := net.DialTimeout("tcp", net.JoinHostPort(target, getPort()), Timeout)
 	if err != nil {
-		return "", fmt.Errorf("cannot reach %s: %v", ip, err)
+		return "", fmt.Errorf("cannot reach %s: %v", target, err)
 	}
 	defer conn.Close()
 	return sendAndReadResponse(conn, []byte(cmd+"\n"))
@@ -68,7 +96,8 @@ func ownerPublicKeyHex(keyPath string) (string, error) {
 	return publicKeyHex(&key.PublicKey), nil
 }
 
-// ownerReadState returns the generation in force and the trusted key.
+// ownerReadState returns the generation in force and the trusted key; the key
+// is "" on a board with no root.
 func ownerReadState(ip string) (uint32, string, error) {
 	genReply, err := ownerCommand(ip, "getowner")
 	if err != nil {
@@ -79,7 +108,9 @@ func ownerReadState(ip string) (uint32, string, error) {
 		return 0, "", err
 	}
 	key = strings.TrimSpace(key)
-	if !pubKeyPattern.MatchString(key) {
+	if key == noRootReply {
+		key = ""
+	} else if !pubKeyPattern.MatchString(key) {
 		return 0, "", fmt.Errorf("the board answered getpubkey with %q - is it in the bootloader?", key)
 	}
 	gen, err := strconv.ParseUint(strings.TrimSpace(genReply), 10, 32)
@@ -159,28 +190,23 @@ func ownerGetUID(ip string) (string, error) {
 	return uidHex, nil
 }
 
-// RunGetOwner prints which key the board trusts and how it got there.
+// RunGetOwner prints which key the board trusts and how to change that.
 func RunGetOwner(ip string) {
 	gen, key, err := ownerReadState(ip)
 	logf(err, "cannot read this board's ownership state")
 
-	if gen == 0 {
-		fmt.Println("Unclaimed. The board still trusts the key built into its bootloader.")
-	} else {
-		fmt.Printf("Claimed at generation %d.\n", gen)
+	if key == "" {
+		fmt.Println("No root. This board trusts no key yet (new, or factory-reset).")
+		fmt.Println("The next upload claims it for the uploading computer's key.")
+		return
 	}
+	fmt.Printf("Claimed at generation %d.\n", gen)
 	fmt.Printf("Trusted key: %s\n", key)
-	fmt.Println("Only firmware signed by that key will start.")
-
-	// Without these lines the output reads like a dead end. It is not: a board
-	// that was just factory-reset still reports a non-zero generation (the reset
-	// writes a record of its own), so "Claimed at generation N" on its own
-	// misleads. The wire protocol cannot say "cleared" and deliberately will not
-	// be extended to -- see $PROD/docs/modules/M2-ownership.md.
+	fmt.Println("Only firmware signed by that key, or by a key it certified, will start.")
 	fmt.Println()
 	fmt.Println("To hand this board to a different key:")
-	fmt.Println("  setowner - signed by the current owner's key, no button needed")
-	fmt.Println("  takeown  - after a factory reset (hold BOOT0), physical presence required")
+	fmt.Println("  setowner      - signed by the current owner's key, no button needed")
+	fmt.Println("  factory reset - hold BOOT0 for 10 s; the next upload then claims it")
 }
 
 // RunGetAppRevoked reports whether the image installed on this board was
@@ -207,51 +233,36 @@ func RunGetAppRevoked(ip string) {
 	}
 }
 
-// RunTakeOwn claims an unclaimed board for the key in keyPath.
+// RunTakeOwn claims a board that has no root for the key in keyPath. An upload
+// does this by itself; the command is for claiming without uploading.
 func RunTakeOwn(ip, keyPath string) {
 	if strings.TrimSpace(keyPath) == "" {
 		logf(true, "takeown needs --key=<owner.pem>, the key this board should trust from now on.\n"+
 			"Generate one first:  IAPTool genkey owner\n"+
-			"There is deliberately no default: claiming a board with the wrong key is hard to undo.")
+			"There is deliberately no default: claiming a board with the wrong key takes a factory reset to undo.")
 	}
 	pub, err := ownerPublicKeyHex(keyPath)
 	logf(err, "cannot use that key")
 
-	gen, was, err := ownerReadState(ip)
+	_, was, err := ownerReadState(ip)
 	logf(err, "cannot read this board's ownership state")
-	// Reported, not enforced. "getowner" answers a generation and nothing else,
-	// so a board cleared by a factory reset is indistinguishable here from a
-	// claimed one -- its generation keeps counting. Refusing on gen != 0 turned
-	// a board that the bootloader would have accepted (owner_slot_claim()
-	// allows a cleared record) into one that could not be claimed at all.
-	// The board makes the decision and says why; this only says what we saw.
-	// Issue: $PROD/maps/owner-revoke-and-boot-upgrade/issues/OWN-11-getowner-cannot-say-cleared.md
-	if gen != 0 {
-		fmt.Printf("This board reports generation %d, key %s...\n", gen, was[:32])
-		fmt.Println("If it is still claimed the board will refuse, and setowner with the")
-		fmt.Println("current owner's key is the way to hand it over. If it was cleared by a")
-		fmt.Println("factory reset the claim goes through -- the board decides, not this tool.")
-		fmt.Println()
+	if was != "" {
+		logf(true, "This board already trusts %s...\n"+
+			"Hand it over with setowner and the current owner's key, or factory-reset it\n"+
+			"(hold BOOT0 for 10 s) and claim it again.", was[:32])
 	}
 
-	fmt.Println("About to claim this board for:")
+	fmt.Println("Claiming this board for:")
 	fmt.Printf("  %s\n", pub)
-	fmt.Println("From then on it runs only firmware signed by that key, and the only way")
-	fmt.Println("back is to reflash the bootloader over ST-Link - the owner records live")
-	fmt.Println("in the bootloader's own flash sector.")
-	fmt.Println()
-	fmt.Println("The board must have BOOT0 held through THIS boot: the first claim carries")
-	fmt.Println("no signature, so physical presence is the only gate there can be.")
-	fmt.Println("If it was not held, the board answers Refused and nothing changes.")
+	fmt.Println("From then on it runs only firmware signed by that key. The way back is a")
+	fmt.Println("factory reset: hold BOOT0 for 10 s.")
 	fmt.Println()
 
 	reply, err := ownerCommand(ip, "takeown "+pub)
 	logf(err, "the takeown command did not get through")
 	reply = strings.TrimSpace(reply)
-
 	if !strings.Contains(reply, Rsp_OK) {
-		logf(true, "The board refused: %s\n"+
-			"Press RESET, hold BOOT0 until start-up finishes, let go, then try again.", reply)
+		logf(true, "The board refused: %s", reply)
 	}
 
 	gen, now, err := ownerReadState(ip)
@@ -263,13 +274,10 @@ func RunTakeOwn(ip, keyPath string) {
 	fmt.Println("that can produce firmware this board will run.")
 }
 
-// RunSetOwner hands a claimed board over to a new key, signed by the current one.
 // RunSetOwner hands a claimed board to newKeyPath, signed by currentKeyPath.
 //
-// With wipe, the board erases sector 0 and rewrites it with its own bootloader
-// and an owner area holding nothing but the new record. That is the only way
-// to get revocation slots back, and it costs a reset plus the risk that a
-// power cut during the erase leaves the board needing a DFU re-flash. The
+// With wipe, the board also empties its revocation records, the only way to
+// get those slots back; it rewrites its state sector to do so and resets. The
 // board never decides to do this on its own -- the operator asks for it
 // (OWN-07).
 func RunSetOwner(ip, currentKeyPath, newKeyPath string, wipe bool) {
@@ -285,8 +293,9 @@ func RunSetOwner(ip, currentKeyPath, newKeyPath string, wipe bool) {
 
 	gen, trusted, err := ownerReadState(ip)
 	logf(err, "cannot read this board's ownership state")
-	if gen == 0 {
-		logf(true, "This board is unclaimed - there is no owner to sign a handover. Use takeown.")
+	if trusted == "" {
+		logf(true, "This board has no root - there is no owner to sign a handover.\n"+
+			"The next upload claims it, or use takeown.")
 	}
 	if trusted != strings.ToLower(currentPub) {
 		logf(true, "The board does not trust the key in %s:\n  board trusts  %s\n  you offered   %s\n"+
@@ -309,9 +318,7 @@ func RunSetOwner(ip, currentKeyPath, newKeyPath string, wipe bool) {
 	verb := "setowner"
 	if wipe {
 		verb = "setownerwipe"
-		fmt.Println("  --wipe: the board will erase and rewrite its own flash sector.")
-		fmt.Println("  DO NOT CUT POWER. If it is interrupted, hold BOOT0 through a reset")
-		fmt.Println("  to reach the ST ROM DFU and re-flash the bootloader over USB.")
+		fmt.Println("  --wipe: the board will rewrite its state sector and reset.")
 	}
 
 	reply, err := ownerCommand(ip, fmt.Sprintf("%s %d %s %s", verb, next, newPub, strings.TrimSpace(sig)))
@@ -360,10 +367,8 @@ func RunRevoke(ip, currentKeyPath, leafPubHex string) {
 
 	gen, trusted, err := ownerReadState(ip)
 	logf(err, "cannot read this board's ownership state")
-	if gen == 0 {
-		// gen is read only to spot an unclaimed board; a revocation takes no
-		// generation of its own.
-		logf(true, "This board is unclaimed - there is no owner to sign a revocation. Use takeown.")
+	if trusted == "" {
+		logf(true, "This board has no root - there is no owner to sign a revocation.")
 	}
 	if trusted != strings.ToLower(currentPub) {
 		logf(true, "The board does not trust the key in %s:\n  board trusts  %s\n  you offered   %s\n"+

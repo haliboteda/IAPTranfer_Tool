@@ -96,6 +96,18 @@ func runEtherFlow(filePath, ip, verb string) {
 		checkVersionGate(filePath, board, true, g_forceFlash)
 	}
 
+	// A board with no root is always in its bootloader: nothing it could run
+	// has been verified. Only an application upload claims it; flashboot on
+	// such a board is refused by the board.
+	if verb == CM_Flash && strings.HasPrefix(strings.ToUpper(board.Role), "BOOTLD") {
+		if err := claimIfUnclaimed(func(cmd string) (string, error) {
+			return ownerCommand(ip, cmd)
+		}); err != nil {
+			logf(err, "Cannot claim this board")
+			return
+		}
+	}
+
 	// Resolved once and reused: a run that starts from the application state
 	// authenticates twice (the reboot, then the flash), and issuing a fresh
 	// self-signed certificate for each would burn two serial numbers on one
@@ -154,8 +166,8 @@ func runEtherFlow(filePath, ip, verb string) {
 			logf(true, "%s (uid=%s) is still not in its bootloader after %d reboot request(s):\n"+
 				"  the board did not accept the reboot request.\n"+
 				"  Most likely the key %s is not the one this board trusts.\n"+
-				"  `IAPTool getowner %s` shows which key it trusts (the bootloader answers it, the running app does not).",
-				ip, targetUID, sent, id.keyPath, ip)
+				"  `IAPTool getowner %s` shows which key it trusts (the bootloader answers it, the running app does not).\n%s",
+				ip, targetUID, sent, id.keyPath, ip, otherOwnerHint(id.keyPath))
 			return
 		}
 		logf("[PATH] bootloader found at %s (uid=%s) -> tcp transfer", bootBoard.IP, bootBoard.UID)

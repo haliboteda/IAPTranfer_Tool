@@ -109,8 +109,11 @@ def main():
     tool = get_iap_tool()
     cli = get_programmer_cli()
     app = Path(args.bin) if args.bin else Path(cfg.TOOL_REPO) / "Output" / "iap_probe_app.bin"
-    root_key = (Path(args.root_key) if args.root_key else
-                Path(cfg.BOOT_REPO) / "IAPServer" / "keys" / "fw_signing_key.TEST_ONLY.pem")
+    if not args.root_key:
+        Fail("pass --root-key: the private half of the root this board trusts "
+             "(the key that claimed it)")
+        return 2
+    root_key = Path(args.root_key)
 
     Section("Setup")
     if not app.exists():

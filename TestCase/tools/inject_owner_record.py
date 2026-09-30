@@ -1,5 +1,5 @@
-"""Put a hand-made owner record into the board's owner slot area, for testing the
-bootloader's record handling (requirement R2-02, module M1).
+"""Put a hand-made owner record into the board's root area, for testing the
+bootloader's record handling (requirement R2-02, module M2).
 
     python3 tools/inject_owner_record.py                  one record, generation 1
     python3 tools/inject_owner_record.py --generation 7   pick the generation
@@ -7,25 +7,22 @@ bootloader's record handling (requirement R2-02, module M1).
     python3 tools/inject_owner_record.py --corrupt        wrong format_ver, must be ignored
     python3 tools/inject_owner_record.py --v1             the previous format (v3), must be ignored
     python3 tools/inject_owner_record.py --wrong-uid      another board's uid, must be ignored
-    python3 tools/inject_owner_record.py --restore        put the plain bootloader back
+    python3 tools/inject_owner_record.py --restore        empty the root area again
 
-⚠️ WHY THIS IS NOT JUST "PROGRAMMER, WRITE 160 BYTES AT 0x0801E000"
+⚠️ WHY THIS IS NOT JUST "PROGRAMMER, WRITE 160 BYTES AT 0x081E2000"
 
-The owner area lives in the top 8K of the bootloader's OWN flash sector.
-STM32_Programmer_CLI erases a sector before writing into it, so a plain
+The root area lives in sector 15, next to the calibration values and the
+firmware metadata. STM32_Programmer_CLI erases the whole 128 KiB sector before
+writing into it, so writing only the record would take the calibration values
+and the metadata with it.
 
-    STM32_Programmer_CLI -c port=SWD -w record.bin 0x0801E000
+So this reads the whole sector over SWD, replaces only the root area, and
+writes the sector back as one image. Calibration, metadata and the layout
+marker come back byte for byte.
 
-erases the bootloader and leaves a board that prints nothing at all. That was
-established the hard way; the board needed a reflash to come back.
-
-So the record has to be flashed TOGETHER with the bootloader: this script pads
-the bootloader image out to the start of the owner area, appends the record, and
-writes the result as one image at 0x08000000. One erase, and both parts survive it.
-
-Once the bootloader can append records itself (M1 step 4) this stays useful for
-the cases that firmware is not supposed to be able to produce -- a record from a
-future format version, or one with a signature that does not verify.
+It stays useful for the cases firmware is not supposed to be able to produce --
+a record from a future format version, or one with a signature that does not
+verify.
 
 Exit 0 = flashed, 1 = the board did not report an owner slot, 2 = prerequisites missing.
 """
@@ -34,17 +31,22 @@ import argparse
 import re
 import struct
 import sys
-import tempfile
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (cfg, Section, Ok, Fail,  # noqa: E402
-                    assert_target_reachable, get_programmer_cli,
+                    assert_target_reachable, get_programmer_cli, get_scratch_file,
                     open_log_ports, read_log_ports, run_capture, tcp_command)
+from reset_board_to_factory_state import read_bytes  # noqa: E402
 
-# Must match owner_slot.h and the FLASH LENGTH in STM32H743IIKX_FLASH.ld.
-OWNER_BASE = 0x0801E000
-OWNER_OFFSET = OWNER_BASE - 0x08000000      # 0x1E000 = 122880
+# Must match $BOOT/IAPServer/owner_slot.h and bootloader_state.c.
+STATE_SECTOR_BASE = 0x081E0000
+SECTOR_SIZE = 128 * 1024
+OWNER_BASE = 0x081E2000
+OWNER_OFFSET = OWNER_BASE - STATE_SECTOR_BASE      # root area inside sector 15
+OWNER_SIZE = 8 * 1024
+MARKER_OFFSET = SECTOR_SIZE - 32
+MARKER_MAGIC = 0x4C353153                          # "S15L"
 # Two fixed-length segments in the 8 KiB area: 32 'O' records of 160 B at
 # offset 0, then 96 'R' records of 32 B at offset 5120 (5120 + 3072 = 8192).
 # 'O' slot i lives at OWNER_OFFSET + i * RECORD_SIZE; this script only writes 'O'.
@@ -58,8 +60,8 @@ OWNER_FORMAT_VER = 4
 PREVIOUS_FORMAT_VER = 3
 UID_LEN = 12
 
-INTERESTING = re.compile(r"Owner slot|Bootloader state|APP Mod|UPLOAD Mod|"
-                         r"NOT in effect|Reset cause|PUBLISHED|Claim it")
+INTERESTING = re.compile(r"Owner slot|Bootloader state|Sector 15|APP Mod|UPLOAD Mod|"
+                         r"NOT in effect|Reset cause|no root")
 
 
 def record(generation, format_ver, flags, key_hex, filler, uid=b"", record_type=0x4F):
@@ -113,7 +115,8 @@ def main():
                     help="write the previous format (v3), which this firmware must reject")
     ap.add_argument("--wrong-uid", action="store_true",
                     help="carry another board's uid, as a copied record would")
-    ap.add_argument("--restore", action="store_true")
+    ap.add_argument("--restore", action="store_true",
+                    help="empty the root area; everything else in sector 15 is kept")
     ap.add_argument("--ip", default=getattr(cfg, "BOARD_IP", ""))
     ap.add_argument("--port", default="56865")
     ap.add_argument("--also-unsigned", type=int, default=0,
@@ -123,23 +126,13 @@ def main():
     ap.add_argument("--seconds", type=int, default=10)
     args = ap.parse_args()
 
-    boot_bin = Path(cfg.BOOT_REPO) / "Debug" / "open_plc_cube_ide.bin"
-    if not boot_bin.exists():
-        Fail("no bootloader .bin at %s - build it first" % boot_bin)
-        return 2
     cli = get_programmer_cli()
-
-    image = boot_bin.read_bytes()
-    if len(image) > OWNER_OFFSET:
-        Fail("the bootloader is %s B and would run into the owner area at %s B"
-             % (format(len(image), ",d"), format(OWNER_OFFSET, ",d")))
-        return 2
+    area = bytearray(b"\xFF" * OWNER_SIZE)
 
     if args.restore:
-        Section("restoring the plain bootloader")
-        out = image
+        Section("emptying the root area")
     else:
-        Section("building bootloader + owner record")
+        Section("building the owner record")
 
         # format_ver: 4 normally, 99 for --corrupt and 3 (PREVIOUS_FORMAT_VER)
         # for --v1, both of which the scanner must reject rather than try to
@@ -178,16 +171,9 @@ def main():
                 print("  root_pubkey: %s..." % args.key[:32])
             else:
                 filler = 0xAA
-        rec = record(args.generation, ver, flags, key_hex, filler, uid)
-
+        area[0:RECORD_SIZE] = record(args.generation, ver, flags, key_hex, filler, uid)
         print("  type 'O', format_ver %d, generation %d, flags %d"
               % (ver, args.generation, flags))
-
-        # 0xFF for the gap, so the unused part of the area still reads as erased.
-        total = RECORD_SIZE * (2 if args.also_unsigned > 0 else 1)
-        out = bytearray(b"\xFF" * (OWNER_OFFSET + total))
-        out[0:len(image)] = image
-        out[OWNER_OFFSET:OWNER_OFFSET + RECORD_SIZE] = rec
 
         if args.also_unsigned > 0:
             # A second record with a HIGHER generation and no signature.
@@ -207,17 +193,30 @@ def main():
                 att = record(args.also_unsigned, OWNER_FORMAT_VER, 0, "", 0xBB, uid)
                 print("  plus an UNSIGNED record at generation %d (should be rejected)"
                       % args.also_unsigned)
-            out[OWNER_OFFSET + RECORD_SIZE:OWNER_OFFSET + 2 * RECORD_SIZE] = att
-        out = bytes(out)
+            area[RECORD_SIZE:2 * RECORD_SIZE] = att
 
-    tmp = Path(tempfile.gettempdir()) / "bootloader_with_owner.bin"
-    tmp.write_bytes(out)
-    print("  image: %s bytes" % format(len(out), ",d"))
+    Section("reading sector 15")
+    assert_target_reachable(cli)
+    sector = read_bytes(cli, STATE_SECTOR_BASE, SECTOR_SIZE)
+    if sector is None:
+        Fail("could not read sector 15 over SWD - nothing written")
+        return 2
+    magic = struct.unpack_from("<I", sector, MARKER_OFFSET)[0]
+    if magic != MARKER_MAGIC:
+        # Without the layout marker the bootloader rebuilds the sector on the next
+        # boot and the record would be thrown away with everything else.
+        Fail("sector 15 has no layout marker - boot the decision-72 bootloader once first")
+        return 2
+    image = bytearray(sector)
+    image[OWNER_OFFSET:OWNER_OFFSET + OWNER_SIZE] = area
+    tmp = Path(get_scratch_file("sector15_with_owner.bin"))
+    tmp.write_bytes(bytes(image))
+    print("  calibration, metadata and marker kept; root area replaced")
 
     Section("flashing")
-    assert_target_reachable(cli)
     open_ports = open_log_ports(cfg.LOG_PORTS)
-    text, _ = run_capture([cli, "-c", "port=SWD", "mode=UR", "-w", str(tmp), "0x08000000", "-rst"])
+    text, _ = run_capture([cli, "-c", "port=SWD", "mode=UR", "-w", str(tmp),
+                           hex(STATE_SECTOR_BASE), "-rst"])
     for line in text.splitlines():
         if re.search(r"Download|verified|Error|Reset", line):
             print("  " + line)
@@ -225,9 +224,6 @@ def main():
     all_text = "\n".join(read_log_ports(open_ports, args.seconds).values())
 
     Section("boot log")
-    # "PUBLISHED root" belongs in this list: it is the line that says whether the
-    # board is still trusting a key everybody has, which is the whole subject
-    # here. Leaving it out once made a correct result look like a missing warning.
     for line in all_text.splitlines():
         if INTERESTING.search(line):
             print("    | " + line)

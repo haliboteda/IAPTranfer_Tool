@@ -26,7 +26,8 @@ from common import Fail, Ok, Section, Warn, cfg, get_iap_tool  # noqa: E402
 # Output/<GOOS> in this repo -> <platform> directory in the board package
 TARGETS = [("windows", "win", ".exe"), ("darwin", "macosx", ""), ("linux", "linux", "")]
 
-# Shipped beside IAPTool as its last-resort upload key; see compile_tool.sh.
+# No longer shipped: boards leave the factory with no root (decision 72). A copy
+# an older build left in the package is removed so nothing can pick it up.
 PUBLISHED_KEY = "published_root.TEST_ONLY.pem"
 
 
@@ -63,17 +64,14 @@ def main():
             Warn("  %-8s no %s/ directory in the package" % (goos, plat))
             continue
         print("  %-8s %s -> %s" % (goos, src.name, dst))
-        # The published root key compile_tool.sh put beside the build.
-        key_src = src.parent / "keys" / PUBLISHED_KEY
-        key_dst = dst.parent / "keys" / PUBLISHED_KEY
-        if key_src.exists():
-            print("  %-8s keys/%s -> %s" % (goos, PUBLISHED_KEY, key_dst))
+        stale_key = dst.parent / "keys" / PUBLISHED_KEY
+        if stale_key.exists():
+            print("  %-8s remove %s" % (goos, stale_key))
         if not args.check:
             try:
                 shutil.copy2(src, dst)
-                if key_src.exists():
-                    key_dst.parent.mkdir(exist_ok=True)
-                    shutil.copy2(key_src, key_dst)
+                if stale_key.exists():
+                    stale_key.unlink()
                 copied += 1
             except OSError as e:
                 Fail("  %-8s %s" % (goos, e))

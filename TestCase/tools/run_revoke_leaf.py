@@ -376,7 +376,7 @@ def build_precondition(st, args):
     if gen == 0:
         Fail("this board is unclaimed, and a revocation needs an owner to sign it.")
         Fail("  The board answers: revoke refused: board is unclaimed - use takeown first")
-        Fail("  Claim it first (needs BOOT0 held): python tools/run_takeown.py")
+        Fail("  Claim it first: python tools/run_takeown.py")
         return False
     if not re.fullmatch(r"[0-9a-fA-F]{128}", root):
         Fail("the board did not answer getpubkey with a key: %s" % root)

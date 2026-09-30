@@ -13,7 +13,7 @@ fine; it runs over a handful of signatures, not a firmware image.
 Usage:
     ecdsa_verify.py <pubkey-hex-128> <message-file> <sig-file>
 
-  pubkey-hex   uncompressed point X||Y as 128 hex chars (the fw_pubkey.inc body)
+  pubkey-hex   uncompressed point X||Y as 128 hex chars (what IAPTool pubkey prints)
   message-file the bytes that were signed; SHA-256 of them is the digest
   sig-file     64 raw bytes, r||s big-endian -- the format IAPTool writes
 

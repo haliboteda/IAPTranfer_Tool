@@ -2,7 +2,7 @@
 
     python3 tools/run_flashboot.py --bin <boot.bin> --key <owner.pem>
     python3 tools/run_flashboot.py --bin <boot.bin> --key <owner.pem> --sign-with-leaf
-    python3 tools/run_flashboot.py --unclaimed --bin <boot.bin> --key <owner.pem>
+    python3 tools/run_flashboot.py --unclaimed --bin <boot.bin> --key <any.pem>
 
 WHAT EACH MODE PROVES
 
@@ -10,18 +10,12 @@ WHAT EACH MODE PROVES
                        T1-31 it still reports the same owner and generation
   --sign-with-leaf     T1-30 an image signed by a leaf is refused, and sector 0
                        is untouched -- the board still boots the old bootloader
-  --unclaimed          T1-32 a board with no owner refuses ...
-  --unclaimed
-      --boot0-held     ... unless BOOT0 was held, which is the other half
+  --unclaimed          T1-32 a board with no root refuses flashboot outright:
+                       there is no root to check the image against
 
 These flags state how the board has been SET UP; they do not set it up. For
 --sign-with-leaf, pass a leaf key as --key. For --unclaimed, the board must
-have no owner (factory reset, or a bootloader just written over ST-Link).
-
-⚠️ --boot0-held also SKIPS the reset this script normally does first, because
-that reset would throw the held state away. Do the gesture -- reset, then
-immediately hold BOOT0 until the system LED stays lit -- and run this straight
-after, without resetting in between.
+have no root (factory reset, or a bootloader just written over ST-Link).
 
 ⚠️ DESTRUCTIVE, AND NOT RECOVERABLE WITHOUT AN ST-LINK. A failure between the
 erase and the last write leaves a board that does not boot. That is inherent
@@ -106,9 +100,7 @@ def board_banner(ports, seconds, ip, port=IAP_PORT, reset=True, owner_key=None):
     -- it is where ownership and the app verdict show up -- but the version
     itself only exists as the reply to `info`.
 
-    reset=False leaves the board alone: a boot whose BOOT0 was held is state
-    this function would otherwise destroy, and that state is the thing under
-    test.
+    reset=False leaves the board alone.
     """
     log = ""
     if reset:
@@ -160,11 +152,7 @@ def main():
     ap.add_argument("--sign-with-leaf", action="store_true",
                     help="T1-30: --key is a leaf, not the root; expect a refusal")
     ap.add_argument("--unclaimed", action="store_true",
-                    help="T1-32: the board has no owner")
-    ap.add_argument("--boot0-held", action="store_true",
-                    help="T1-32: the operator just did the BOOT0 gesture, so "
-                         "this run must SUCCEED. Skips the reset before the "
-                         "upgrade, which would clear the held state.")
+                    help="T1-32: the board has no root; expect a refusal")
     args = ap.parse_args()
 
     image = Path(args.bin)
@@ -172,8 +160,8 @@ def main():
         Fail("no such image: %s" % image)
         return 2
     size = image.stat().st_size
-    if size > 120 * 1024:
-        Fail("%d bytes will not fit the 120 KiB bootloader region" % size)
+    if size > 128 * 1024:
+        Fail("%d bytes will not fit sector 0 (128 KiB)" % size)
         return 1
     ip = args.ip or getattr(cfg, "BOARD_IP", "")
     if not ip:
@@ -183,14 +171,12 @@ def main():
         Fail("need --key: the board checks a bootloader image against the owner root")
         return 2
     ports = list(args.ports if args.ports is not None else cfg.LOG_PORTS)
-    # An unclaimed board refuses unless presence was asserted; that pair is
-    # the whole of R1-37, so both halves run the same script.
-    expect_refusal = args.sign_with_leaf or (args.unclaimed and not args.boot0_held)
+    # A board with no root has nothing to check an image against (R1-37).
+    expect_refusal = args.sign_with_leaf or args.unclaimed
 
     Section("Before")
     owner_key = args.owner_key or (None if args.sign_with_leaf else args.key)
     before, before_log = board_banner(ports, args.tail_seconds, ip, args.port,
-                                      reset=not args.boot0_held,
                                       owner_key=owner_key)
     print(before_log)
     old = BANNER_RE.search(before)
@@ -246,20 +232,25 @@ def main():
             Ok("  sector 0 untouched: still Boot Loader %s" % new.group(1))
         # Asked of the BOARD, not of the tool: the board narrates its own
         # refusal on serial, and "the result is asked of the board, never of
-        # the tool" is the rule these cases are written to.
-        said = ("needs BOOT0 held through startup" if args.unclaimed
-                else "Signature verification FAILED")
-        if said.lower() in during.lower():
-            Ok("  the board said why: %r" % said)
+        # the tool" is the rule these cases are written to. On a board with no
+        # root IAPTool stops before sending (getpubkey answers "none"), so the
+        # board's own evidence there is the unchanged banner above.
+        if args.unclaimed:
+            said = "has no root"
         else:
-            Fail("  the board never said why; expected %r on its log" % said)
+            said = "Signature verification FAILED"
+        if said.lower() in during.lower():
+            Ok("  refusal reason seen: %r" % said)
+        else:
+            Fail("  no refusal reason; expected %r in the board log or IAPTool output" % said)
             fails += 1
 
         # Separately: did IAPTool pass that verdict on to the operator? A
         # refusal the tool reports as success is its own defect, and one a
         # customer would read as "the bootloader was replaced".
         tool_noticed = ("unexpected ack" in during.lower()
-                        or "file send failed" in during.lower())
+                        or "file send failed" in during.lower()
+                        or "has no root" in during.lower())
         if tool_noticed:
             Ok("  IAPTool reported the refusal")
         else:
@@ -276,17 +267,8 @@ def main():
             Fail("  the board does not boot after the upgrade")
             return 1
         Ok("  board runs Boot Loader %s" % new.group(1))
-        if args.unclaimed:
-            # Nothing to compare: the point of this half is that presence
-            # alone got the image in, and an unclaimed board has no owner to
-            # carry across.
-            Ok("  BOOT0 was held, so an unclaimed board accepted the image")
-            gen_after = root_after = gen_before = root_before = None
-        else:
-            gen_after, root_after = owner_fingerprint(ip, args.key)
-        if args.unclaimed:
-            pass
-        elif gen_after == gen_before and root_after == root_before and gen_after is not None:
+        gen_after, root_after = owner_fingerprint(ip, args.key)
+        if gen_after == gen_before and root_after == root_before and gen_after is not None:
             Ok("  ownership survived: generation %s, same root" % gen_after)
         else:
             Fail("  ownership changed: generation %s -> %s, root %s -> %s"

@@ -1,15 +1,10 @@
 """T2-10 -- after a root change, firmware signed by the OLD root cannot be installed.
 
-    python tools/run_old_root_image_is_refused.py --bin ../Output/iap_probe_app.bin
-    python tools/run_old_root_image_is_refused.py --bin <file.bin> --old-key <published.pem>
+    python tools/run_old_root_image_is_refused.py --bin <file.bin> --old-key <old.pem>
     python tools/run_old_root_image_is_refused.py --bin <file.bin> --app-bytes 0x40000
 
-Case (3)-b of
-$PROD/maps/five-paths-e2e-test/issues/E2E-02-what-does-security-mean-per-path.md.
-A customer who builds the bootloader with their own root is buying exactly one
-thing: images signed by the published root -- whose private half is in the
-repository, so anyone can produce one -- stop being installable. This is the
-case that says so.
+After setowner hands a board to a new root, images signed by the old root must
+stop being installable. This is the case that says so.
 
 Two claims, both checked:
 
@@ -74,28 +69,11 @@ APP_SIZE = 1792 * 1024
 # Printed on every boot whatever the ownership state, so its absence means the
 # capture failed rather than the board having nothing to say.
 LOG_CAPTURE_PROOF = "Bootloader state:"
-LOG_PUBLIC_ROOT = "trusts the PUBLISHED root key"
 
 # The two shapes IAPTool's own refusal takes: a key that certifies itself, and
 # a key carrying a certificate from some other root.
 TOOL_REFUSED_KEY = "verifies against a different signing key"
 TOOL_REFUSED_CERT = "was not issued by this board's root"
-
-
-def default_old_key():
-    """Where the published root's private key ends up once a rotation has run.
-
-    rotate_keys.sh leaves the pre-rotation file as <name>.bak beside the key and
-    also copies it into a timestamped snapshot, then deletes the original.
-    """
-    keys = Path(cfg.BOOT_REPO) / "IAPServer" / "keys"
-    snapshots = sorted(keys.glob("backup/*/*fw_signing_key.TEST_ONLY.pem"))
-    for cand in ([keys / "fw_signing_key.TEST_ONLY.pem.bak"]
-                 + list(reversed(snapshots))
-                 + [keys / "fw_signing_key.TEST_ONLY.pem"]):
-        if cand.exists():
-            return cand
-    return None
 
 
 def working_copy(key):
@@ -195,8 +173,8 @@ def main():
                     help="the image to offer; the positive control installs it")
     ap.add_argument("--ip", default="")
     ap.add_argument("--port", default="56865")
-    ap.add_argument("--old-key", default="",
-                    help="the root the board used to trust (the published one)")
+    ap.add_argument("--old-key", required=True,
+                    help="the root the board trusted before setowner handed it over")
     ap.add_argument("--current-key", default="",
                     help="the root the board trusts now; used for the positive control")
     ap.add_argument("--app-bytes", default=hex(APP_SIZE),
@@ -251,9 +229,6 @@ def main():
         Warn("  Check the log ports listed above.")
         return 2
     Ok("  boot log            captured")
-    if LOG_PUBLIC_ROOT in log:
-        Warn("  published-root warning is present: this board still trusts the key")
-        Warn("  that ships in the repository. Read the key check below.")
 
     if not wait_for_board(ip, timeout=60.0):
         Warn("SETUP - %s never answered discovery." % ip)
@@ -266,11 +241,9 @@ def main():
         return 2
     print("  board root:         %s..." % board_pub[:32])
 
-    old_key = Path(args.old_key) if args.old_key else default_old_key()
-    if old_key is None or not old_key.exists():
-        Warn("SETUP - no old root private key found. Pass --old-key <published.pem>.")
-        Warn("  After a rotation it is at IAPServer/keys/fw_signing_key.TEST_ONLY.pem.bak")
-        Warn("  or in IAPServer/keys/backup/<stamp>/ in the bootloader repository.")
+    old_key = Path(args.old_key)
+    if not old_key.exists():
+        Warn("SETUP - no such key: %s" % old_key)
         return 2
     print("  old root key:       %s" % old_key)
     old_key = working_copy(old_key)

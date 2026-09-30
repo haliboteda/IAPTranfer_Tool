@@ -77,7 +77,8 @@ def genkey(iap, label):
                (datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ") + "-" + label))
     scratch.mkdir(parents=True, exist_ok=True)
     out, _ = run_capture([iap, "genkey", "new_owner"], cwd=scratch)
-    pub = "".join(re.findall(r"0x([0-9a-fA-F]{2})", out)).lower()
+    m = re.search(r"Public key: ([0-9a-fA-F]{128})", out)
+    pub = m.group(1).lower() if m else ""
     return scratch / "new_owner.pem", pub
 
 
