@@ -13,8 +13,8 @@ import (
 )
 
 // Helper function to open a serial port with specified baud rate.
-// PortTool opens the same adapters the same way, so the behaviour lives in
-// internal/serialx and both binaries share it.
+// PortTool opens the same adapters the same way; internal/serialx is mirrored
+// byte for byte in its repo (P2).
 func openPort(comName string, baudRate int) (serial.Port, error) {
 	return serialx.Open(comName, baudRate)
 }

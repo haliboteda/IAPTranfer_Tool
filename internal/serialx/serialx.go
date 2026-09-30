@@ -2,9 +2,10 @@
 //
 // IAPTool and PortTool both talk to the same boards through the same kinds of
 // USB adapter, and the retry and timeout behaviour here was arrived at by
-// watching real ones fail. Two copies of it would drift, and the drift would
-// show up as "works in one tool, flaky in the other" on a bench, which is the
-// most expensive place to find it.
+// watching real ones fail. The two repos each carry this package and it must
+// stay byte-identical in both: drift shows up as "works in one tool, flaky in
+// the other" on a bench. P2 compares them; see $PROD/docs/repo/ARCHITECTURE.md,
+// cross-repo mirror 14.
 package serialx
 
 import (

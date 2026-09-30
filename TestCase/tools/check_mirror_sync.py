@@ -142,7 +142,7 @@ def get_signed_bytes_recipe(path):
     return re.sub(r"\s+", " ", m.group(1)).strip()
 
 
-def compare_bytes(name, left, right):
+def compare_bytes(name, left, right, source="the bootloader (ARCHITECTURE.md rule 1)"):
     """Two files that must be identical to the byte. Reported like an anchor."""
     global failed, skipped
 
@@ -162,13 +162,14 @@ def compare_bytes(name, left, right):
     Fail("        %s  (%d bytes)" % (left, len(a)))
     Fail("        %s  (%d bytes)" % (right, len(b)))
     Fail("        these two carry no repo-specific content -- sync them, do not")
-    Fail("        adjust this check. Source is the bootloader (ARCHITECTURE.md rule 1).")
+    Fail("        adjust this check. Source is %s." % source)
     failed += 1
 
 
 BOOT = Path(cfg.BOOT_REPO)
 LIVE = Path(cfg.CORE_LIVE)
 TOOL = Path(cfg.TOOL_REPO)
+PORTTOOL = Path(cfg.PORTTOOL_REPO)
 
 boot_udp = BOOT / "IAPServer/udp_server.c"
 core_udp = LIVE / "libraries/OpenPLC_IAP/src/udp_server.c"
@@ -572,8 +573,23 @@ def get_calib_layout_go(path):
 compare_anchor("calibration area layout", {
     "bootloader IAPServer/calib_area.h": get_calib_layout_c(BOOT / "IAPServer/calib_area.h"),
     "core OpenPLC_Ports/src/openplc_calib.h": get_calib_layout_c(LIVE / "libraries/OpenPLC_Ports/src/openplc_calib.h"),
-    "tool internal/calarea/calarea.go": get_calib_layout_go(TOOL / "internal/calarea/calarea.go"),
+    "porttool internal/calarea/calarea.go": get_calib_layout_go(PORTTOOL / "internal/calarea/calarea.go"),
 })
+
+# IAPTool and PortTool each carry the serial layer (decision 76). Neither copy
+# is the source: change one, copy it to the other in the same change.
+Section("serialx: IAPTool vs PortTool")
+_sx_tool, _sx_pt = TOOL / "internal/serialx", PORTTOOL / "internal/serialx"
+_names_tool = sorted(q.name for q in _sx_tool.glob("*.go"))
+_names_pt = sorted(q.name for q in _sx_pt.glob("*.go"))
+if _names_tool != _names_pt:
+    Fail("DIFF  serialx file list")
+    Fail("        only in tool:     %s" % sorted(set(_names_tool) - set(_names_pt)))
+    Fail("        only in porttool: %s" % sorted(set(_names_pt) - set(_names_tool)))
+    failed += 1
+for _name in sorted(set(_names_tool) & set(_names_pt)):
+    compare_bytes("serialx/" + _name, _sx_tool / _name, _sx_pt / _name,
+                  source="neither copy -- sync both in one change (ARCHITECTURE.md mirror 14)")
 
 # --- what this script does not check ----------------------------------------
 Section("not covered by this script -- still manual")

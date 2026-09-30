@@ -684,6 +684,7 @@ def probe(verbose=True):
     show("BOOT_REPO", cfg.BOOT_REPO, "bootloader repo; set it in config/machine.py")
     show("CORE_REPO", cfg.CORE_REPO, "Arduino core repo; set it in config/machine.py")
     show("TOOL_REPO", cfg.TOOL_REPO, "this repo; set it in config/machine.py")
+    show("PORTTOOL_REPO", getattr(cfg, "PORTTOOL_REPO", ""), "PortTool repo; run tools/init_machine.py")
     show("CORE_LIVE", cfg.CORE_LIVE, "install the board package in the Arduino IDE first")
     show_cmd("go", "go", "H1/H3 and every IAPTool build need it")
     show_cmd("python", "python3" if not IS_WIN else "python", "K1-K7 / X1-X2 need it")

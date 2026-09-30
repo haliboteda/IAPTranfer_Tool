@@ -5,33 +5,20 @@ English: [README.md](README.md)
 
 ## 从源码编译
 
-这个仓库出两个程序：`IAPTool`（给固件签名并上传）和 `PortTool`（端口测试面板）。
-两个都只需要 Go 1.23 或更新的版本。第一次编译要下载三个模块，所以要能上网。
-
+`IAPTool` 给固件签名并上传。只需要 Go 1.23 或更新的版本；第一次编译要下载模块，所以要能上网。
 在仓库根目录运行：
 
 ```
-go build -o IAPTool .                     # 本机用的 IAPTool
-go build -o PortTool ./cmd/porttool       # 本机用的 PortTool
+go build -o IAPTool .                     # 本机用的
 ```
 
-在 Windows 上把输出文件命名为 `IAPTool.exe` 和 `PortTool.exe`。
+在 Windows 上把输出文件命名为 `IAPTool.exe`。要给别的系统编译，设置 `GOOS` / `GOARCH`
+（不需要 C 编译器），例如 `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o IAPTool .`
 
-要给别的系统编译，设置 `GOOS` / `GOARCH`（不需要 C 编译器）：
+端口测试面板（`PortTool`）在它自己的仓库 `OpenPLC_PortsTestingTool` 里。
 
-```
-GOOS=linux   GOARCH=amd64 CGO_ENABLED=0 go build -o PortTool ./cmd/porttool
-GOOS=darwin  GOARCH=arm64 go build -o PortTool ./cmd/porttool      # Apple 芯片
-GOOS=windows GOARCH=amd64 go build -o PortTool.exe ./cmd/porttool
-```
-
-PortTool 的网页已经编进可执行文件，测试方案没有：把 `TestCase/plans/*.json`
-拷到 `PortTool` 旁边的 `plans/` 文件夹里。
-
-在 Linux 上，运行 PortTool 的用户要有串口的访问权限，通常是加入 `dialout` 组。
-
-`compile_tool.sh` 和 `build.py` 是维护者出版本用的脚本：它们还会编固件、
-往 Arduino 板卡包里填东西，需要其他 OpenPLC 仓库。只编这两个工具用不到它们。
+`compile_tool.sh` 和 `build.py` 是维护者出版本用的脚本：它们还会编 bootloader、
+往 Arduino 板卡包里填东西，需要其他 OpenPLC 仓库。只编 IAPTool 用不到它们。
 
 ## 用法
 

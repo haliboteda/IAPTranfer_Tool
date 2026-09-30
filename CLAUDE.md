@@ -11,15 +11,7 @@
 | 在哪 | 是什么 |
 |---|---|
 | 根目录的 `.go` | `IAPTool`：CDC / 以太网两条烧写通道、签名、认证、上传锁 |
-| `cmd/porttool/` | `PortTool`：给硬件工程师的端口测试面板。**受众不同，所以是第二个 exe** —— 他的工具里不该有固件签名和 takeown |
-| `internal/serialx/` | 两个 exe 共用的串口层：开口、重试、枚举（带 VID/PID）。macOS 上不开 cgo，VID/PID 由系统自带的 `ioreg` 补 —— 见 `enum_darwin.go` |
-| `internal/ptproto/` | `pt.*` 协议解析：四类行分流、`pt.caps`、采样帧、tick 回绕。**面板和 CLI 共用同一份，两边判据不会分叉** |
-| `internal/ptboard/` | 一条串口连接的对话管理：**永不停止地读**（停读就丢帧，这条链没有重传）、命令逐条串行（协议没有请求 id）、环形缓冲 + 订阅 |
-| `internal/ptpanel/` | 面板的 HTTP 面 + `go:embed` 的页面。推送用 **SSE 不是 WebSocket**（标准库，零依赖）。`Open` 字段是给测试注入假板子的缝 |
-| `internal/ptcheck/` | **限值与读数比对的唯一去处**。面板和产线序列都调它，两边不可能对同一个数得出不同结论 —— 和 `ptproto` 管解析是同一条规矩 |
-| `internal/ptplan/` | 方案文件（JSON）的读写与校验。**限值是步骤自己的参数，没有独立的限值表**（`$PROD/docs/tables/DECISIONS.md` 第 24 条）。`CheckAgainstCaps` 报只有板子能settle的事：端口不存在、参数固件不收、以及**给 `loop=ctrl` 端口写 `miss` 判据这种假判据** |
-| `internal/ptseq/` | 执行器。**六个通用字段的语义住在这里**：`execute_condition` 的门、重试、前后延时、超时。⚠️ 门看的是「上一个真正跑过的步骤」，所以被跳过的步骤不会把前面的失败洗掉 |
-| `internal/ptreport/` | 报告。三条规矩：**每次尝试都留**（重试不覆盖原失败）、**原始值都留**（限值会改，要能重判）、**超时与判定失败分开记**（前者多半是接线/探针，后者多半是板子） |
+| `internal/serialx/` | 串口层：开口、重试、枚举（带 VID/PID）。**和 `$PORTTOOL/internal/serialx/` 逐字节相同，改一边必须同步另一边**，P2 查（`$PROD/docs/repo/ARCHITECTURE.md`「跨仓镜像的代码」第 14 条）。macOS 上不开 cgo，VID/PID 由系统自带的 `ioreg` 补 —— 见 `enum_darwin.go` |
 | `iapcrypto/` | 加密原语。**测试用例 import 它，不重写** |
 | `$PROD/docs/engineering/HOW-TO-RUN-TESTS.md` | **每个用例的判据、前置条件、怎么跑。**2026-09-16 搬进文档仓 |
 | `TestCase/tools/` | 自动化脚本（烧写、抓串口、跑用例、各种一致性检查） |
@@ -90,30 +82,9 @@ python tools/selfcheck.py --list   # 先看它会跑哪几步、各证明哪条�
 
 | 目标 | 命令 |
 |---|---|
-| **编 / 烧 / 交付（菜单）** | **双击 `build.cmd`**，或者 `python build.py`。不带参数给菜单（八项）；`--fixture` / `--boot` / `--tool` / `--flash` / `--deliver` 可组合。⚠️ 编固件前 CubeIDE 要关掉 |
-| **出一版给硬件工程师** | **双击 `delivery.cmd`** —— 编固件 + 编工具 + 打包，一步到位。产物在 `Output/delivery/`，整个文件夹发给他；他那边只要装 STM32CubeProgrammer |
-| `IAPTool` + `PortTool`（三平台） | `./compile_tool.sh` —— 一次出七个二进制（三平台各两个 amd64，外加 `Output/darwin-arm64/PortTool`），别手搓 `go build`，输出布局见 `$PROD/maps/porttool-on-linux-and-macos/issues/XPT-02-whether-to-ship-arm64.md` |
+| **编 bootloader / IAPTool（菜单）** | **双击 `build.cmd`**，或者 `python build.py`。`--boot` / `--tool` 可组合。⚠️ 编固件前 CubeIDE 要关掉。**工装固件、PortTool 和交付打包在 `$PORTTOOL`**（决策 76） |
+| `IAPTool`（三平台） | `./compile_tool.sh` —— 三平台各一个 amd64，并拷进板卡包（P11 查），别手搓 `go build` |
 | `TestCase`（本机） | `go build -o Output/<GOOS>/TestCase ./TestCase` |
-
-## 面板上的字一律说大白话
-
-**用户 2026-09-11 定：「所有提示信息都要用大白话来说明。」**
-
-⚠️ **而且是中文** —— 用户 2026-09-11 第二次指出：**「页面上英文的地方没有翻译成中文。」** 面板上**人看的字一处英文都不留**：标题、按钮、参数名、下拉选项、读数标签、提示、错误。唯一的例外是**协议原文的回显**（日志窗里的 `pt.start dout ...`、帧原文）—— 那是给对机器的，照原样显示，但它旁边必须有中文说明。
-
-（这一条只管面板。代码注释、`#error` 文案、工具的 stdout/stderr 仍然是英文，见 `~/.claude/rules/language.md`。）
-
-`PortTool` 面板的受众是**硬件工程师**，不是写这套协议的人。所以面板上出现的每一句话：
-
-| 不要 | 要 |
-|---|---|
-| 直接抄协议字面量（`loop=ctrl`、`mode=extloop`、`mv=1:500`） | 说清它是什么意思、要他做什么 |
-| 英文标签（`duty`、`freq`、`hold`、`seq/rx/miss`、`Klemmblock`） | 中文（`占空比`、`频率`、`保持`、`发/收/丢`、`端子排`） |
-| 端口内部名（`dout3`、`rs4851`） | 工程师嘴里的名字（`DO3`、`RS485`），出处见 `Hardware/Klemmenbezeichnungen-R.pdf` |
-| 裸错误码（`err=0x10000000`） | 译成原因，原始码可以跟在后面 |
-| 只给数字 | 带单位、带范围、带"这算过还是不过" |
-
-⚠️ **哪些数字不是判据，要在面板上说出来** —— 例如 `loop=ctrl` 端口回报的那三个计数只说明控制口活着，不是该端口的结论（`$PROD/docs/tables/DECISIONS.md` 第 9 条）。
 
 ## 边界
 

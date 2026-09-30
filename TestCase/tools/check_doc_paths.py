@@ -87,7 +87,8 @@ PATH_TEXT = re.compile(r"^\$?(?:[\w.:+-]*/[\w./:+-]*|[\w.+-]+\.(?:md|c|h|cpp|go|
 # be written at all. A backticked $PROD/... is the only citation shape that gets
 # checked -- which means this name extends the check across a repo boundary
 # rather than costing it coverage.
-VAR_PATH = re.compile(r"\$(BOOT|TOOL|CORE|PROD)(?:_REPO)?[:/]([\w./+-]+)")
+# $PORTTOOL joined on 2026-09-30, when PortTool got its own repo (decision 76).
+VAR_PATH = re.compile(r"\$(PORTTOOL|BOOT|TOOL|CORE|PROD)(?:_REPO)?[:/]([\w./+-]+)")
 # `docs/...` in backticks. Only docs/, because that prefix pins the base to a
 # repo root -- every other bare path in these documents is relative to whichever
 # repo the surrounding paragraph is about, which is not knowable from here.
@@ -206,6 +207,8 @@ def sources(boot, tool, core, prod):
                        (tool, ["TestCase/tools", "TestCase/host", "TestCase/plans",
                                "internal", "iapcert", "."]),
                        (core, ["libraries", "cores", "tools"]),
+                       (Path(getattr(cfg, "PORTTOOL_REPO", "") or ""),
+                        ["TestCase/tools", "TestCase/host", "TestCase/plans", "internal", "cmd", "."]),
                        (prod, ["tools"])):
         if root is None or not str(root) or not root.exists():
             continue
@@ -237,6 +240,7 @@ def resolve(token, doc, doc_root, boot, tool, core, skills, prod):
     m = VAR_PATH.match(token)
     if m:
         base = {"BOOT": boot, "TOOL": tool, "CORE": core,
+                "PORTTOOL": Path(getattr(cfg, "PORTTOOL_REPO", "") or ""),
                 "PROD": prod_docs()}[m.group(1)]
         if not base or not str(base):
             return None

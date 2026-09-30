@@ -183,6 +183,14 @@ def main():
     run_step("H3", "go vet over the whole module",
              ["go", "vet", "./..."], needs="go", cwd=tool_repo, indent=2)
 
+    # PortTool moved to its own repo (decision 76); its Go checks still run here.
+    porttool_repo = cfg.PORTTOOL_REPO
+    run_step("T1-15", "host Go tests, PortTool repo",
+             ["go", "test", "./TestCase/..."], needs="go", cwd=porttool_repo, indent=2)
+
+    run_step("H3", "go vet over the whole module, PortTool repo",
+             ["go", "vet", "./..."], needs="go", cwd=porttool_repo, indent=2)
+
     run_step("P1", "firmware version agrees in all three places",
              [python_exe(), HERE / "check_version_sync.py"], cwd=tool_repo)
 
@@ -306,8 +314,8 @@ def main():
         # one step because running either alone lets the two drift apart, which
         # is the failure this case exists to prevent.
         run_step("T4-01", "port tool protocol contract (real porttool.c, then the Go parser)",
-                 [python_exe(), TESTTOOL / "host" / "porttool_caps" / "build.py"],
-                 needs=cc_need, cwd=tool_repo)
+                 [python_exe(), Path(porttool_repo) / "TestCase" / "host" / "porttool_caps" / "build.py"],
+                 needs=cc_need, cwd=porttool_repo)
 
         run_step("T1-18a-T1-18g", "IAPTool key/certificate match and first-upload claim against a stand-in board",
                  [python_exe(), TESTTOOL / "host" / "fakeboard" / "run_cases.py"],
