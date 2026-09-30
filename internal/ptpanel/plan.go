@@ -340,6 +340,7 @@ func (s *Server) handlePlanRun(w http.ResponseWriter, r *http.Request) {
 		SN:          body.SN,
 		PortName:    port,
 		BaseDir:     planDir(),
+		SerialPeer:  RememberedPeer,
 		// A UserConfirm step fails here rather than blocking: the run is one
 		// synchronous request, so there is nowhere to put the question.
 		Confirm: func(prompt string) (bool, error) {

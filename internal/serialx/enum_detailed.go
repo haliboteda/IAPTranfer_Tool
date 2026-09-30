@@ -3,6 +3,7 @@
 package serialx
 
 import (
+	"runtime"
 	"strings"
 
 	"go.bug.st/serial/enumerator"
@@ -22,14 +23,18 @@ func listPorts() ([]PortInfo, error) {
 		if d == nil {
 			continue
 		}
-		out = append(out, PortInfo{
+		p := PortInfo{
 			Name:    d.Name,
 			Product: strings.TrimSpace(d.Product),
 			VID:     d.VID,
 			PID:     d.PID,
 			Serial:  d.SerialNumber,
 			IsUSB:   d.IsUSB,
-		})
+		}
+		if runtime.GOOS == "linux" {
+			describeFromSysfs(&p)
+		}
+		out = append(out, p)
 	}
 	return out, nil
 }

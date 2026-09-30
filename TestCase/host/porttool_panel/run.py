@@ -2,6 +2,8 @@
 
     python run.py --port COM12          the board's RS232 control port
     python run.py --port COM12 --show   watch it happen in a visible window
+    python run.py --wsl Debian --port /dev/ttyUSB1
+                                        case T4-03: the Linux build, run in WSL
 
 Why a browser and not the HTTP API: case T4-01 already covers the protocol and the
 parser, and the panel's own API is covered by the Go tests. What neither of them
@@ -55,8 +57,16 @@ def check(cond, what, detail=""):
     return cond
 
 
+# Set by --wsl: the distribution the Linux build runs in. The browser stays on
+# Windows and reaches the panel through WSL's localhost forwarding.
+WSL = ""
+
+
 def panel_exe():
-    p = Path(cfg.TOOL_REPO) / "Output" / "windows" / ("PortTool" + EXE)
+    if WSL:
+        p = Path(cfg.TOOL_REPO) / "Output" / "linux" / "PortTool"
+    else:
+        p = Path(cfg.TOOL_REPO) / "Output" / "windows" / ("PortTool" + EXE)
     if not p.exists():
         Fail("no PortTool at %s - run compile_tool.sh" % p)
         sys.exit(2)
@@ -82,7 +92,10 @@ def start_panel(exe):
     """
     log = Path(tempfile.gettempdir()) / "porttool_panel_test.log"
     fh = open(log, "w", encoding="utf-8", errors="replace")
-    proc = subprocess.Popen([str(exe), "--no-browser"], cwd=str(exe.parent),
+    cmd = [str(exe), "--no-browser"]
+    if WSL:
+        cmd = ["wsl", "-d", WSL, "--cd", str(exe.parent), "./" + exe.name, "--no-browser"]
+    proc = subprocess.Popen(cmd, cwd=str(exe.parent),
                             stdout=fh, stderr=subprocess.STDOUT)
     deadline = time.time() + 20
     while time.time() < deadline:
@@ -208,6 +221,10 @@ def watch_for_page_errors(page):
 
 def stop_panel(proc):
     """Ends the panel, and does not wait forever for it to agree."""
+    if WSL:
+        # Ending wsl.exe does not end the program it started inside WSL.
+        subprocess.run(["wsl", "-d", WSL, "-e", "pkill", "-x", "PortTool"],
+                       capture_output=True)
     proc.terminate()
     try:
         proc.wait(timeout=5)
@@ -225,7 +242,10 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--port", required=True, help="the board's RS232 control port")
     ap.add_argument("--show", action="store_true", help="visible browser window")
+    ap.add_argument("--wsl", metavar="DISTRO", help="run the Linux build in this WSL distribution (T4-03)")
     args = ap.parse_args()
+    global WSL
+    WSL = args.wsl or ""
 
     try:
         from playwright.sync_api import sync_playwright
@@ -1175,6 +1195,12 @@ def run_checks(page, com):
     rows = page.locator("#portlist .p")
     check(rows.count() > 0, "the serial port list is shown, not hidden in a dropdown",
           "%d rows" % rows.count())
+    # R4-03: a port name alone does not say which adapter it is - on Linux a
+    # bare ttyUSB0 says nothing at all. A row with USB ids must also say what
+    # the device calls itself or which driver took it.
+    unnamed = [t for t in (rows.nth(i).inner_text().strip() for i in range(rows.count()))
+               if "[" in t and " - " not in t and " (" not in t]
+    check(not unnamed, "every USB port row says what the adapter is", "; ".join(unnamed))
     check(page.locator("#connect").is_disabled(),
           "connect is refused until a port is picked")
     check(page.locator("#portlist .p.on").count() == 0,
@@ -1295,7 +1321,9 @@ def run_checks(page, com):
         # detected=0 when the slot is empty, mounted=0 when the card is
         # there but exFAT. Either is a fail; the reason names which.
         "din":   ("fail", "位图"),      # nothing is driving the inputs
-        "ain":   ("fail", "AI1"),       # no signal source on D12/D13
+        # AI hardware is being reworked; not judged until it is back.
+        # See $PROD/waiting/WAITING-ON.md.
+        "ain":   ("either", None),
         # *** eth used to be expected to fail here. *** It needed a TCP peer and
         # nothing opened one, so conn stayed 0. The panel became that peer on
         # 2026-09-14 (autoPeer): it reads the address out of the board's own

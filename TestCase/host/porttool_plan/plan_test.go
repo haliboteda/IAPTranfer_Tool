@@ -1190,6 +1190,8 @@ func TestStation6PlanRuns(t *testing.T) {
 		Sleep:       func(time.Duration) {},
 		ToolVersion: "test",
 		Confirm:     func(string) (bool, error) { return true, nil },
+		// The RS485 step's peer is "serial": somebody has bound an adapter.
+		SerialPeer: func(string) (string, int, bool) { return "bound-adapter", 0, true },
 		// The plan's last step archives the report to "dir:reports/station6",
 		// relative to BaseDir. Left empty that resolves against the working
 		// directory, so every `go test` dropped another report into the source
@@ -1239,5 +1241,77 @@ func TestStation6PlanRuns(t *testing.T) {
 	if findings := plan.CheckAgainstCaps(parsed); len(findings) != 0 {
 		t.Fatalf("the shipped plan disagrees with the caps it was written for:\n%s",
 			strings.Join(findings, "\n"))
+	}
+}
+
+// ---------- serial peer ----------
+
+// A plan never names the adapter (DECISIONS.md 73 in $PROD): the runner asks
+// for the one recorded on this machine, and with none it stops before starting
+// the port - otherwise the step fails on miss and reads like a broken board.
+const serialPeerPlan = `{"schema":1,"name":"rs485","limit_version":"2026-09-30","steps":[
+  {"id":"rs485","type":"PtSession","port":"rs485","frames":1,"timeout_ms":2000,
+   "peer":{"serial":true},
+   "checks":[{"field":"miss","op":"count_zero"}]}]}`
+
+func serialPeerReplies(cmd string, nth int) ([]string, []string) {
+	if lines, ok := standardReplies(cmd); ok {
+		return lines, nil
+	}
+	if strings.HasPrefix(cmd, "pt.start rs485") {
+		return []string{"OK rs485 started"}, []string{"!rs485 t=1 seq=1 rx=0 miss=0 junk=0 overrun=0"}
+	}
+	return []string{"ERR unexpected " + cmd}, nil
+}
+
+func runSerialPeer(t *testing.T, chosen func(string) (string, int, bool), open func(string, string, int) (io.ReadWriteCloser, error)) (ptreport.Report, *scriptBoard) {
+	t.Helper()
+	plan, err := ptplan.Parse([]byte(serialPeerPlan))
+	if err != nil {
+		t.Fatalf("plan: %v", err)
+	}
+	fake := newScriptBoard(t, serialPeerReplies)
+	board := ptboard.New(fake, 0)
+	t.Cleanup(func() { board.Close() })
+	runner := &ptseq.Runner{OpenPeer: open, SerialPeer: chosen,
+		Board: board, Sleep: func(time.Duration) {}, ToolVersion: "test"}
+	rep, err := runner.Run(plan)
+	if err != nil {
+		t.Fatalf("run: %v", err)
+	}
+	return rep, fake
+}
+
+func TestSerialPeerNotChosenStopsBeforeTheBoard(t *testing.T) {
+	rep, fake := runSerialPeer(t, func(string) (string, int, bool) { return "", 0, false }, refusePeer)
+	st := rep.Steps[0]
+	if st.Outcome != ptreport.OutcomeError {
+		t.Fatalf("outcome %s, want ERROR", st.Outcome)
+	}
+	if err := st.Attempts[len(st.Attempts)-1].Err; !strings.Contains(err, "bind one") {
+		t.Fatalf("the error should say what to do, got %q", err)
+	}
+	for _, c := range fake.commands() {
+		if strings.HasPrefix(c, "pt.start rs485") {
+			t.Fatalf("the port was started with no peer; commands %v", fake.commands())
+		}
+	}
+}
+
+func TestSerialPeerOpensTheRecordedAdapter(t *testing.T) {
+	var gotAddr string
+	var gotBaud int
+	open := func(kind, addr string, baud int) (io.ReadWriteCloser, error) {
+		gotAddr, gotBaud = addr, baud
+		return nil, fmt.Errorf("fake")
+	}
+	runSerialPeer(t, func(port string) (string, int, bool) {
+		if port != "rs485" {
+			t.Errorf("asked for %q, want rs485", port)
+		}
+		return "/dev/ttyUSB0", 57600, true
+	}, open)
+	if gotAddr != "/dev/ttyUSB0" || gotBaud != 57600 {
+		t.Fatalf("opened %q at %d, want /dev/ttyUSB0 at 57600", gotAddr, gotBaud)
 	}
 }

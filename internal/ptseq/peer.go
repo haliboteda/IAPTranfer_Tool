@@ -93,16 +93,19 @@ func realPeerOpener(kind, addr string, baud int) (io.ReadWriteCloser, error) {
 // still finishes on a verdict.
 const peerGrace = 10 * time.Second
 
-func newPeerPlan(step ptplan.Step, open peerOpener, now time.Time) *peerPlan {
+func newPeerPlan(step ptplan.Step, com string, comBaud int, open peerOpener, now time.Time) *peerPlan {
 	if step.Peer == nil {
 		return &peerPlan{}
 	}
 	baud := step.Peer.Baud
 	if baud == 0 {
+		baud = comBaud
+	}
+	if baud == 0 {
 		baud = serialx.DefaultBaud
 	}
 	return &peerPlan{
-		com:   step.Peer.COM,
+		com:   com,
 		usb:   step.Peer.USB,
 		tcp:   step.Peer.TCP,
 		baud:  baud,

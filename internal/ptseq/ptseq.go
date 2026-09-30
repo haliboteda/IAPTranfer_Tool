@@ -59,6 +59,10 @@ type Runner struct {
 	// bench. kind is "serial" or "tcp".
 	OpenPeer func(kind, addr string, baud int) (io.ReadWriteCloser, error)
 
+	// SerialPeer names the adapter this machine recorded for a board port, for
+	// a step whose peer is "serial". Nil or !ok means nobody has chosen one.
+	SerialPeer func(boardPort string) (com string, baud int, ok bool)
+
 	// ReadSN and WriteReport are the two ends of the "interfaces only"
 	// boundary. Nil uses the file and stdin handling below.
 	ReadSN      func(source string) (string, error)
@@ -288,6 +292,20 @@ func (r *Runner) attempt(step ptplan.Step, n int) ptreport.Attempt {
 // The subscription opens before pt.start: a session at a short period can push
 // its first frame before the reply to pt.start has been read.
 func (r *Runner) doSession(step ptplan.Step, timeout time.Duration, att *ptreport.Attempt) {
+	var peerCOM string
+	var peerBaud int
+	if step.Peer != nil && step.Peer.Serial {
+		ok := false
+		if r.SerialPeer != nil {
+			peerCOM, peerBaud, ok = r.SerialPeer(step.Port)
+		}
+		if !ok {
+			att.Outcome = ptreport.OutcomeError
+			att.Err = fmt.Sprintf("no serial adapter chosen for %s on this machine: bind one once in the panel", step.Port)
+			return
+		}
+	}
+
 	events, unsubscribe := r.Board.Subscribe(256)
 	defer unsubscribe()
 
@@ -325,7 +343,7 @@ func (r *Runner) doSession(step ptplan.Step, timeout time.Duration, att *ptrepor
 	if open == nil {
 		open = realPeerOpener
 	}
-	pending := newPeerPlan(step, open, r.now())
+	pending := newPeerPlan(step, peerCOM, peerBaud, open, r.now())
 
 	want := step.FrameCount()
 	var last ptproto.Frame

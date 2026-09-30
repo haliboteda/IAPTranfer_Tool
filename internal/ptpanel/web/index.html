@@ -1554,7 +1554,7 @@ function ensurePortPlan(name) {
   api("/api/portplan?port=" + encodeURIComponent(name)).then(pp => {
     Object.assign(planRunArgs, (pp && pp.runs) || {});
     planParams[name] = (pp && pp.known)
-      ? {params: pp.params || {}, frames: pp.frames || 3, step: pp.step, peer: pp.peer || "", peerCom: pp.peerCom || ""}
+      ? {params: pp.params || {}, frames: pp.frames || 3, step: pp.step, peer: pp.peer || ""}
       : null;
   }).catch(() => { planParams[name] = null; })
     .finally(() => { planPending[name] = false; renderPanel(); });

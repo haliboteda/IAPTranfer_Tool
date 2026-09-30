@@ -122,9 +122,10 @@ type Peer struct {
 	// address comes from DHCP, so a plan cannot know it in advance.
 	TCP string `json:"tcp,omitempty"`
 
-	// COM is a serial port on this machine, e.g. "COM16" for the adapter on
-	// the RS485 terminal.
-	COM string `json:"com,omitempty"`
+	// Serial is the adapter this machine recorded for the port, chosen by a
+	// person in the panel. A plan never names it: port names change with the
+	// machine and the plug order (DECISIONS.md 73 in $PROD).
+	Serial bool `json:"serial,omitempty"`
 
 	// USB finds the board's own CDC port by its USB ids. ⚠️ That port only
 	// exists once the usb session has started, because that is when the board

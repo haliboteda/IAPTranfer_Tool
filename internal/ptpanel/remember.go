@@ -114,6 +114,16 @@ func rememberPeer(boardPort, com string, baud int) {
 	savePortMap(m)
 }
 
+// RememberedPeer is the adapter recorded for a board port, for a plan step
+// whose peer is "serial" - in the panel and in `porttool run` alike.
+func RememberedPeer(boardPort string) (com string, baud int, ok bool) {
+	p, ok := loadPortMap().Peers[boardPort]
+	if !ok || p.COM == "" {
+		return "", 0, false
+	}
+	return p.COM, p.Baud, true
+}
+
 // forgetPeer drops a binding when it is unbound, so the panel does not keep
 // offering an adapter somebody deliberately took away.
 func forgetPeer(boardPort string) {

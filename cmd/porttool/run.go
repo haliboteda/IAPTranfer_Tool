@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"IAPTool/internal/ptboard"
+	"IAPTool/internal/ptpanel"
 	"IAPTool/internal/ptplan"
 	"IAPTool/internal/ptreport"
 	"IAPTool/internal/ptseq"
@@ -187,6 +188,8 @@ built with PORTTOOL_ENABLE=1.
 		// A path in a plan is relative to the plan, so a plan and the files it
 		// names can be copied to a production PC together.
 		BaseDir: filepath.Dir(fs.Arg(0)),
+		// Chosen in the panel and recorded beside this program.
+		SerialPeer: ptpanel.RememberedPeer,
 	}
 
 	fmt.Printf("%s (limits %s) against porttool %s on %s\n\n",

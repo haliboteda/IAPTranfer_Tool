@@ -592,7 +592,7 @@
         "period": 2000
       },
       "peer": {
-        "com": "COM16"
+        "serial": true
       },
       "frames": 4,
       "timeout_ms": 30000,

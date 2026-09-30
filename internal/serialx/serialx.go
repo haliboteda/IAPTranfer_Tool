@@ -75,6 +75,7 @@ func RetryOpen(name string, baud, attempts int, gap time.Duration, log func(stri
 type PortInfo struct {
 	Name    string // "COM7", "/dev/ttyUSB0"
 	Product string // what the adapter calls itself, empty if it says nothing
+	Driver  string // Linux kernel driver, which names the chip (ch341-uart, pl2303)
 	VID     string
 	PID     string
 	Serial  string
@@ -89,6 +90,9 @@ func (p PortInfo) Label() string {
 	b.WriteString(p.Name)
 	if p.Product != "" {
 		fmt.Fprintf(&b, " - %s", p.Product)
+	}
+	if p.Driver != "" {
+		fmt.Fprintf(&b, " (%s)", p.Driver)
 	}
 	if p.VID != "" && p.PID != "" {
 		fmt.Fprintf(&b, " [%s:%s]", p.VID, p.PID)
