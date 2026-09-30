@@ -77,6 +77,7 @@ CATALOG = [
     ("P15",          "R1-33",                  "the application's start address stays 1024-aligned"),
     ("P16",          "R1-25",                  "the I-cache and the flash lock are restored on every exit"),
     ("P17",          "-",                      "the .cproject linker script is still the ${PLC_LD_SCRIPT} variable"),
+    ("P19",          "-",                      "nothing in the Arduino core writes flash sector 15"),
 ]
 COVERS = {cid: covers for cid, covers, _ in CATALOG}
 
@@ -222,6 +223,9 @@ def main():
 
     run_step("P17", "the .cproject linker script is still the ${PLC_LD_SCRIPT} variable",
              [python_exe(), HERE / "check_cproject_ld.py"], cwd=tool_repo)
+
+    run_step("P19", "nothing in the Arduino core writes flash sector 15",
+             [python_exe(), HERE / "check_no_sector15_writes.py"], cwd=tool_repo)
 
     # The pre-commit hook in OpenPLC_Docs runs these too, but --no-verify skips
     # it and core.hooksPath is not under version control, so the gate lives here.

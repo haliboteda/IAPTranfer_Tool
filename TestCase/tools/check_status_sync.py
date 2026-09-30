@@ -53,6 +53,7 @@ NOT_A_STATUS_ROW = {
     "P13":        "the stale-id check; also guards documents, not firmware",
     "P14":        "the CHANGE-LIST orphan gate; guards the planning artefacts, not firmware",
     "P17":        "the .cproject linker script guard; protects the port-tool build, not firmware",
+    "P19":        "the sector-15 write guard; keeps app code off the bootloader's sector, no one requirement",
     "P18":        "the generated id table; guards documents, not firmware",
     "S4":         "retired: SDRAM staging removed its meaning, split into T1-21 / T1-22",
     }
