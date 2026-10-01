@@ -21,6 +21,9 @@ Usage:  fake_board.py <pubkey-hex | "unknown" | "none"> [seconds] [--port N]
   seconds      how long to stay up (default 25)
   --port       port to serve, default 56865 -- must match "server_port" in the
                local_config.json IAPTool reads, or the tool dials nothing
+  --discovery-port
+               also answer discovery on this UDP port (the board package's
+               discovery tool always asks 56865); default: --port only
                placed below, at, or above what the "device" already runs.
   --uid        UID in the identity string (default: UID below)
   --app        start as a board running an app of this version (role CUSAPP,
@@ -54,6 +57,7 @@ def _take_opt(name, default):
 
 
 PORT = int(_take_opt("--port", 56865))
+DISCOVERY_PORT = int(_take_opt("--discovery-port", PORT))
 UID = _take_opt("--uid", UID)
 APP_VERSION = _take_opt("--app", None)
 
@@ -126,9 +130,9 @@ def handle_reboot(msg):
     go_silent(REBOOT_SILENCE, "BOOTLD")
 
 
-def udp_server(stop):
+def udp_server(stop, port=PORT):
     s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-    s.bind(("0.0.0.0", PORT))
+    s.bind(("0.0.0.0", port))
     s.settimeout(0.5)
     while not stop.is_set():
         try:
@@ -241,8 +245,11 @@ def tcp_server(stop):
 
 def main():
     stop = threading.Event()
-    for target in (udp_server, tcp_server):
-        t = threading.Thread(target=target, args=(stop,))
+    servers = [(udp_server, (stop,)), (tcp_server, (stop,))]
+    if DISCOVERY_PORT != PORT:
+        servers.append((udp_server, (stop, DISCOVERY_PORT)))
+    for target, args in servers:
+        t = threading.Thread(target=target, args=args)
         t.daemon = True
         t.start()
 

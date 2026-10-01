@@ -26,7 +26,13 @@ from common import (EXE, GOOS_DIR, Fail, Ok, Section, Warn, cfg,  # noqa: E402
                     read_text, run_capture)
 
 FAKE_BOARD = HERE / "fake_board.py"
-DEFAULT_PORT = "56865"
+# Not the product port 56865: something else on a bench may hold it (on the
+# development PC, airtcp binds 56865/TCP). The staged IAPTool is given the same
+# port, so the two cannot drift. See HOW-TO-RUN-TESTS.md, host/fakeboard.
+TEST_PORT = "61865"
+# The board package's discovery tool always asks this UDP port
+# ($CORE_REPO/tools/discovery/network_discovery.go, discoveryPort).
+DISCOVERY_PORT = "56865"
 
 
 def parse_pubkey(text):
@@ -66,17 +72,8 @@ def run_env(argv, env, cwd=None):
 
 
 def resolve_port():
-    """Read the port from the same config IAPTool reads, so the two cannot drift
-    apart. It is a string in that file, and is passed on as one."""
-    cfg_json = Path(cfg.TOOL_REPO) / "local_config.json"
-    if cfg_json.exists():
-        try:
-            value = json.loads(read_text(cfg_json)).get("server_port")
-        except ValueError:
-            value = None
-        if value:
-            return str(value)
-    return DEFAULT_PORT
+    """The port the fake board serves and the staged IAPTool dials."""
+    return TEST_PORT
 
 
 def build_iap_tool():

@@ -42,9 +42,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
-from _common import (Fail, Ok, Section, cfg, nonblank_lines,  # noqa: E402
-                     read_text, start_fake_board, stop_fake_board,
-                     wait_for_listener)
+from _common import (DISCOVERY_PORT, Fail, Ok, Section, cfg,  # noqa: E402
+                     nonblank_lines, read_text, resolve_port, start_fake_board,
+                     stop_fake_board, wait_for_listener)
 from common import EXE, get_iap_tool  # noqa: E402
 
 FQBN = ("OpenPLC_Alpha:stm32:OPEN-PLC:pnum=PLC_H743,usb=CDCgen,xusb=FS,"
@@ -155,7 +155,11 @@ def run_cases(scratch, env, user_keys, tmp, started):
     iap = stage_tool(tool_dir)
     if iap is None:
         return 2
-    port = json.loads(read_text(tool_dir / "local_config.json")).get("server_port") or "56865"
+    port = resolve_port()
+    cfg_path = tool_dir / "local_config.json"
+    staged = json.loads(read_text(cfg_path))
+    staged["server_port"] = port
+    cfg_path.write_text(json.dumps(staged), encoding="utf-8")
 
     for name in ("owner", "other"):
         run([iap, "genkey", name], env=env, cwd=scratch / "keys")
@@ -184,7 +188,8 @@ def run_cases(scratch, env, user_keys, tmp, started):
         if user_key is not None:
             shutil.copy2(str(user_key), str(user_dest))
 
-        board_argv = [trusted, "180", "--port", port, "--uid", FAKE_UID]
+        board_argv = [trusted, "180", "--port", port, "--discovery-port", DISCOVERY_PORT,
+                      "--uid", FAKE_UID]
         if not factory:
             board_argv += ["--app", BOARD_APP_VERSION]
         board, board_log, handles = start_fake_board(scratch, cid, board_argv)
