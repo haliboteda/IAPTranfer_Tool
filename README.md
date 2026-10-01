@@ -18,8 +18,10 @@ On Windows name the output `IAPTool.exe`. To build for another system, set
 `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o IAPTool .`
 
 `compile_tool.sh` and `build.py` are the maintainers' release scripts: they
-also build the bootloader and fill the Arduino board package, which needs the
-other OpenPLC repositories. They are not needed to build IAPTool.
+build all three platforms and copy them into the installed Arduino board
+package. They are not needed to build IAPTool.
+
+Tests: `python tests/selfcheck.py` (Go and Python 3 only).
 
 ## Usage
 

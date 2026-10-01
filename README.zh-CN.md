@@ -15,8 +15,10 @@ go build -o IAPTool .                     # 本机用的
 在 Windows 上把输出文件命名为 `IAPTool.exe`。要给别的系统编译，设置 `GOOS` / `GOARCH`
 （不需要 C 编译器），例如 `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o IAPTool .`
 
-`compile_tool.sh` 和 `build.py` 是维护者出版本用的脚本：它们还会编 bootloader、
-往 Arduino 板卡包里填东西，需要其他 OpenPLC 仓库。只编 IAPTool 用不到它们。
+`compile_tool.sh` 和 `build.py` 是维护者出版本用的脚本：编出三个平台的版本，
+并拷进本机装好的 Arduino 板卡包。只编 IAPTool 用不到它们。
+
+测试：`python tests/selfcheck.py`（只要 Go 和 Python 3）。
 
 ## 用法
 

@@ -30,7 +30,7 @@ import (
 	"strconv"
 	"strings"
 
-	"IAPTool/internal/iapproto"
+	"IAPTool/iapproto"
 )
 
 // Mirrors the owner area in open_plc_cube_ide/IAPServer/owner_slot.h: an 'O'

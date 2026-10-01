@@ -23,12 +23,6 @@
       "PowerShell(git diff *)",
       "PowerShell(git show *)",
       "PowerShell(git remote -v)",
-      "Bash(python tools/init_machine.py --check)",
-      "Bash(python3 tools/init_machine.py --check)",
-      "Bash(python tools/common.py --probe)",
-      "Bash(python3 tools/common.py --probe)",
-      "Bash(python tools/test_init_machine.py)",
-      "Bash(python3 tools/test_init_machine.py)",
       "Bash(ssh -T git@github.com)",
       "Bash(pwsh --version)",
       "Bash(git check-ignore *)",
@@ -44,18 +38,11 @@
       "Bash(openssl version *)",
       "Bash(./compile_tool.sh)",
       "Bash(bash compile_tool.sh)",
-      "Bash(cd TestCase && NO_COLOR=1 python tools/selfcheck.py*)",
-      "Bash(cd TestCase && NO_COLOR=1 python tools/init_machine.py --check*)",
-      "Bash(cd TestCase && python tools/check_status_sync.py*)",
-      "Bash(cd TestCase && python tools/check_doc_dupes.py*)",
-      "Bash(cd TestCase && python tools/check_doc_paths.py*)",
-      "Bash(cd TestCase && python tools/check_allow_hygiene.py*)",
-      "Bash(cd TestCase && python tools/build_image.py*)",
-      "Bash(cd TestCase && NO_COLOR=1 python tools/build_image.py*)",
-      "Bash(cd TestCase && python tools/common.py --probe*)",
       "Bash(python -m py_compile *)",
       "Bash(python3 -m py_compile *)",
-      "Bash(cd TestCase && python tools/test_init_machine.py*)"
+      "Bash(python tests/selfcheck.py*)",
+      "Bash(python tests/crypto_ref/run_checks.py*)",
+      "Bash(python tools/install_tool.py --check)"
     ]
   }
 }

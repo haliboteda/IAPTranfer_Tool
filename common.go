@@ -13,7 +13,7 @@ import (
 
 	"go.bug.st/serial"
 
-	"IAPTool/internal/iapproto"
+	"IAPTool/iapproto"
 )
 
 const (

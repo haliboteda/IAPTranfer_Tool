@@ -9,8 +9,8 @@ import (
 	"time"
 
 	"IAPTool/iapcert"
-	"IAPTool/internal/iapproto"
-	"IAPTool/internal/netiface"
+	"IAPTool/iapproto"
+	"IAPTool/netiface"
 )
 
 // UDP

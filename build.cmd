@@ -1,12 +1,9 @@
 @echo off
-rem Double-click entry point. The menu and every build rule live in build.py -
-rem this only starts it from the right directory and keeps the window open
-rem afterwards, which a double-clicked script otherwise closes before anyone
-rem has read the result.
-rem
-rem Arguments are passed through, so build.cmd --boot --tool works from a
-rem terminal too. The pause only happens when nobody gave any, because a
-rem scripted call should not sit waiting for a key.
+rem Double-click entry point. The build lives in build.py - this only starts it
+rem from the right directory and keeps the window open afterwards, which a
+rem double-clicked script otherwise closes before anyone has read the result.
+rem The pause only happens when nobody gave arguments, because a scripted call
+rem should not sit waiting for a key.
 
 cd /d "%~dp0"
 python build.py %*

@@ -32,10 +32,10 @@ done
 
 # The Arduino IDE's Upload button runs the copy inside the board package, not
 # the one in Output/. Every build lands there too, so the menu can never drive
-# an older binary -- P11 (TestCase/tools/check_tool_sync.py) is what catches it
-# when this step is skipped. Machine paths stay in TestCase/config/machine.py,
-# which is why the copying is done by the Python helper rather than here.
-INSTALLER="./TestCase/tools/install_tool.py"
+# an older binary -- OpenPLC_Test's P11 is what catches it when this step is
+# skipped. The package is found under Arduino's default data directory, which is
+# platform-specific, so the copying is done by the Python helper.
+INSTALLER="./tools/install_tool.py"
 if [ -f "$INSTALLER" ]; then
     # Try each candidate by actually running it: on Windows "python3" on PATH is
     # often the Store stub, which exists, is executable, and refuses to run.
