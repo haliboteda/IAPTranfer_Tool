@@ -1,4 +1,4 @@
-"""S3 -- the boot-time signature check, on its own.
+"""T1-13 -- the boot-time signature check, on its own.
 
     python3 tools/run_s3.py --bin <app.bin>               corrupt that app on the board, then restore it
     python3 tools/run_s3.py --bin <app.bin> --no-restore  leave the board broken (don't)
@@ -33,7 +33,7 @@ faults the CPU. The bootloader would crash while hashing instead of cleanly
 reporting a bad signature -- a different failure, and a confusing one. Writing a
 full, already-modified image into freshly erased flash avoids it.
 
-Exit 0 = S3 passed and the board is back to normal, 1 = failed, 2 = setup.
+Exit 0 = T1-13 passed and the board is back to normal, 1 = failed, 2 = setup.
 """
 
 import argparse

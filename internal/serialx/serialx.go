@@ -1,11 +1,7 @@
-// Package serialx is the one place either tool opens a serial port.
+// Package serialx is the one place IAPTool opens a serial port.
 //
-// IAPTool and PortTool both talk to the same boards through the same kinds of
-// USB adapter, and the retry and timeout behaviour here was arrived at by
-// watching real ones fail. The two repos each carry this package and it must
-// stay byte-identical in both: drift shows up as "works in one tool, flaky in
-// the other" on a bench. P2 compares them; see $PROD/docs/repo/ARCHITECTURE.md,
-// cross-repo mirror 14.
+// The retry and timeout behaviour here was arrived at by watching real USB
+// adapters fail.
 package serialx
 
 import (

@@ -1,4 +1,4 @@
-"""Leave the board sitting in the bootloader, which T1-T4 and T1-11 all require.
+"""Leave the board sitting in the bootloader, which T1-06-T1-10 and T1-11 all require.
 
     python tools/enter_bootloader.py
 
@@ -7,8 +7,9 @@ the running application into the bootloader as its first step, and only then
 offers the image -- which the board refuses at the size check, before erasing or
 staging anything. So the board ends up in the bootloader with nothing written.
 
-⚠ A CLAIMED board needs --key: the reboot request is signed, and one signed by
-the published root is rejected. Without it this script just times out.
+⚠ A CLAIMED board needs its owner key: the reboot request is signed, and one
+signed by any other key is rejected. Without --key IAPTool uses this computer's
+default key (decision 72), so pass --key when that is not the owner.
 
 Every step here is shipping code: IAPTool's real authenticated reboot, and the
 board's real size check (IAPServer/IAP_server.c:206). Nothing about the protocol
@@ -51,9 +52,9 @@ def main():
     ap.add_argument("--seconds", type=int, default=6)
     ap.add_argument("--ports", nargs="*", default=None)
     ap.add_argument("--key", default=None,
-                    help="owner private key (PEM). Required once the board is claimed: the "
-                         "reboot request is signed, and a claimed board rejects one signed "
-                         "by the published root. Omit it only for an unclaimed board.")
+                    help="owner private key (PEM). The reboot request is signed, and a claimed "
+                         "board rejects one signed by any other key. Omit it to use this "
+                         "computer's default key.")
     args = ap.parse_args()
 
     ports = args.ports if args.ports else cfg.LOG_PORTS
@@ -113,7 +114,7 @@ def main():
     # people looking at cabling when the board had answered in plain words.
     if "Rejected unauthenticated" in allof:
         Fail("the board refused the reboot request: it is CLAIMED, and this "
-             "request was signed by the published root")
+             "request was signed by a key it does not trust")
         if args.key:
             print("  --key was passed (%s) but the board still refused it." % args.key)
             print("  That key is not the one this board trusts - check with:")

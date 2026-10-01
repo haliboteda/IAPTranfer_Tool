@@ -22,24 +22,11 @@ import time
 from pathlib import Path
 
 # ---------------------------------------------------------------- platform
-# sys.platform says "win32" even on 64-bit Windows, and "darwin" for macOS.
-# Normalise once, here, so nothing below ever tests sys.platform again.
-if sys.platform.startswith("win"):
-    PLATFORM = "windows"
-elif sys.platform == "darwin":
-    PLATFORM = "macos"
-else:
-    PLATFORM = "linux"
-
-IS_WIN = PLATFORM == "windows"
-EXE = ".exe" if IS_WIN else ""
-
-# Three tool families, three different names for the same three platforms.
-# Keeping the mapping here is the whole point: no script below spells any of
-# them out.
-GOOS_DIR = {"windows": "windows", "linux": "linux", "macos": "darwin"}[PLATFORM]     # compile_tool.sh output layout
-A15_DIR = {"windows": "win", "linux": "linux", "macos": "macosx"}[PLATFORM]          # Arduino15 packages/*/tools/STM32Tools/*/
-CUBE_PLUG = {"windows": "win32", "linux": "linux64", "macos": "macos64"}[PLATFORM]   # CubeIDE externaltools plugin suffix
+# The platform names and the output helpers live in platform_info.py so that
+# init_machine.py, which runs before config/machine.py exists, can share them.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from platform_info import (PLATFORM, IS_WIN, EXE, GOOS_DIR, A15_DIR,  # noqa: E402,F401
+                           CUBE_PLUG, Section, Ok, Warn, Fail, _emit)
 
 
 # ---------------------------------------------------------------- config
@@ -61,67 +48,6 @@ def _load_machine():
 
 
 cfg = _load_machine()
-
-
-# ---------------------------------------------------------------- output
-# ANSI colours: cyan section, green ok, yellow warn, red fail. Windows
-# consoles only understand them once virtual terminal processing is on, which
-# python does not enable for us; NO_COLOR turns them off everywhere.
-def _colour_ok():
-    if os.environ.get("NO_COLOR"):
-        return False
-    if not sys.stdout.isatty():
-        return False
-    if IS_WIN:
-        try:
-            import ctypes
-            k = ctypes.windll.kernel32
-            k.SetConsoleMode(k.GetStdHandle(-11), 7)
-        except Exception:
-            return False
-    return True
-
-
-_COLOUR = _colour_ok()
-
-
-# One place, so every script that imports this gets it: a Windows console on a
-# legacy codepage (GBK here) cannot encode the warning signs these docstrings are
-# full of, and argparse writes --help straight to stdout without a guard. Without
-# this, `--help` dies with UnicodeEncodeError on scripts that are otherwise fine.
-try:
-    sys.stdout.reconfigure(errors="replace")
-    sys.stderr.reconfigure(errors="replace")
-except (AttributeError, ValueError):
-    pass
-
-
-def _paint(text, code):
-    return "\033[%sm%s\033[0m" % (code, text) if _COLOUR else text
-
-
-def _emit(text):
-    """print(), but never crash on a console that cannot encode the text.
-
-    Windows consoles default to a legacy codepage -- GBK on this machine -- and
-    these documents are Chinese and full of characters like the warning sign. On
-    2026-08-24 P8 found a real duplicated claim and then died with
-    UnicodeEncodeError while printing it, exit 1 with a traceback instead of the
-    finding. A check whose whole job is to tell you what it found must not be
-    silenced by the terminal it happens to run in, so unencodable characters are
-    replaced rather than fatal.
-    """
-    try:
-        print(text)
-    except UnicodeEncodeError:
-        enc = (sys.stdout.encoding or "ascii")
-        print(text.encode(enc, "replace").decode(enc, "replace"))
-
-
-def Section(t): _emit(""); _emit(_paint("===== " + t, "36"))
-def Ok(t):      _emit(_paint(t, "32"))
-def Warn(t):    _emit(_paint(t, "33"))
-def Fail(t):    _emit(_paint(t, "31"))
 
 
 # ---------------------------------------------------------------- files
@@ -684,10 +610,9 @@ def probe(verbose=True):
     show("BOOT_REPO", cfg.BOOT_REPO, "bootloader repo; set it in config/machine.py")
     show("CORE_REPO", cfg.CORE_REPO, "Arduino core repo; set it in config/machine.py")
     show("TOOL_REPO", cfg.TOOL_REPO, "this repo; set it in config/machine.py")
-    show("PORTTOOL_REPO", getattr(cfg, "PORTTOOL_REPO", ""), "PortTool repo; run tools/init_machine.py")
     show("CORE_LIVE", cfg.CORE_LIVE, "install the board package in the Arduino IDE first")
-    show_cmd("go", "go", "H1/H3 and every IAPTool build need it")
-    show_cmd("python", "python3" if not IS_WIN else "python", "K1-K7 / X1-X2 need it")
+    show_cmd("go", "go", "T1-15 / H3 and every IAPTool build need it")
+    show_cmd("python", "python3" if not IS_WIN else "python", "T1-18a-T1-18g / T1-19-T1-20 need it")
     show("arduino-cli", cfg.ARDUINO_CLI, "P4 and command-line app builds need it")
     show("CubeIDE", cfg.CUBEIDE, "needed to build and flash the bootloader, not for the checks below")
 

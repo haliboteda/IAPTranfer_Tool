@@ -1,4 +1,4 @@
-"""OW1 -- claim a board for a signing key, and check it took (requirement R2-02).
+"""T2-01 -- claim a board for a signing key, and check it took (requirement R2-02).
 
     python3 tools/run_takeown.py                    claim with a freshly generated key
     python3 tools/run_takeown.py --key owner.pem    claim with a specific key

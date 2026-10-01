@@ -10,38 +10,26 @@ import (
 	"strings"
 	"time"
 
-	"IAPTool/internal/netiface"
+	"IAPTool/internal/iapproto"
 )
 
-// dialBoard opens a UDP socket to the board with the source address pinned to
-// the physical interface on the board's subnet.
-//
-// Without the pin the routing table decides, and a VPN tunnel or a Docker
-// switch holding a better default route takes the datagram instead: every
-// probe then times out and the board reads as absent. That is exactly what
-// happened on 2026-09-18. See $PROD/docs/tables/DECISIONS.md decision 51.
-//
-// When no physical interface shares the board's subnet the board is reached
-// through a router, so the plain dial is correct and is used unchanged.
+// dialBoard opens a UDP socket to the board, pinned to the physical NIC the
+// way IAPTool pins it (iapproto.DialUDP).
 func dialBoard(cfg config) (net.Conn, error) {
-	target := net.JoinHostPort(cfg.ip, cfg.port)
-	raddr, err := net.ResolveUDPAddr("udp", target)
-	if err == nil {
-		if local := netiface.LocalIPFor(raddr.IP); local != nil {
-			return net.DialUDP("udp", &net.UDPAddr{IP: local}, raddr)
-		}
+	conn, err := iapproto.DialUDP(cfg.ip, cfg.port)
+	if err != nil {
+		return nil, err
 	}
-	return net.DialTimeout("udp", target, dialTimeout)
+	return conn, nil
 }
 
 // The board rate-limits discovery replies per source address.
 const discoveryRateWindow = 2 * time.Second
 
-// What IAPTool allows a discovery reply (common.go CommandTimeout). A reply
-// that arrives later is not merely slow: IAPTool has closed its socket by then
-// and binds a fresh ephemeral port for the next try, so the late answer is
-// dropped and the board looks absent.
-const toolReplyBudget = 2 * time.Second
+// What IAPTool allows a discovery reply. A reply that arrives later is not
+// merely slow: IAPTool has closed its socket by then and binds a fresh
+// ephemeral port for the next try, so the late answer is dropped.
+const toolReplyBudget = iapproto.CommandTimeout
 
 func init() {
 	register(testCase{id: "T1-01", title: "the board answers UDP discovery", run: runN1})

@@ -12,11 +12,13 @@ import (
 	"time"
 
 	"go.bug.st/serial"
+
+	"IAPTool/internal/iapproto"
 )
 
 const (
-	Buf_b = 8 * 1024 // big buffer ( KB)
-	Buf_s = 1024     // smnall buffer
+	Buf_b = iapproto.ChunkSize // one flash data frame
+	Buf_s = 1024               // smnall buffer
 
 	CM_Flash           = "flash"                           // Flash command
 	CM_FlashBoot       = "flashboot"                       // replace the bootloader in place; same frame as CM_Flash
@@ -30,7 +32,7 @@ const (
 	Rsp_OK             = "OK"
 
 	// One command, one reply -- the same budget on both channels.
-	CommandTimeout = 2 * time.Second
+	CommandTimeout = iapproto.CommandTimeout
 	// "flash" ack: erasing the app region takes longer than answering a command.
 	FlashAckTimeout = 10 * time.Second
 	// Broadcast discovery collects replies for the whole window, so this one is
@@ -41,11 +43,7 @@ const (
 )
 
 const configFile = "local_config.json"
-const defaultMAC = "00:80:e1:00:43:21"
 const defaultBaudRate = 115200
-const defaultParity = 0
-const defaultDataBits = 8
-const defaultStopBits = 0
 const defaultServerPort = "56865"
 const defaultRebootWaitSeconds = 4
 
@@ -230,13 +228,7 @@ func GetLocalConfigPath() string {
 func LoadConfig() {
 	l_config = LocalConfig{
 		BaudRate:          defaultBaudRate,
-		Parity:            defaultParity,
-		DataBits:          defaultDataBits,
-		StopBits:          defaultStopBits,
 		UID:               "",
-		BootIP:            "",
-		AppIP:             "",
-		MAC:               defaultMAC,
 		ServerPort:        defaultServerPort,
 		RebootWaitSeconds: defaultRebootWaitSeconds,
 		SigningKey:        "",
@@ -244,26 +236,9 @@ func LoadConfig() {
 
 	jsonFile, err := os.ReadFile(GetLocalConfigPath())
 	if err != nil {
-		logf("Config not found, using default MAC...")
+		logf("Config not found, using defaults...")
 	} else {
-		var raw struct {
-			LocalConfig
-			LegacyIP string `json:"ip"`
-		}
-		raw.LocalConfig = l_config
-		err = json.Unmarshal(jsonFile, &raw)
+		err = json.Unmarshal(jsonFile, &l_config)
 		logf(err, "Failed to parse JSON config")
-		l_config = raw.LocalConfig
-		if l_config.BootIP == "" && l_config.AppIP == "" && strings.TrimSpace(raw.LegacyIP) != "" {
-			l_config.AppIP = strings.TrimSpace(raw.LegacyIP)
-		}
 	}
-}
-
-func SaveConfig() error {
-	data, err := json.MarshalIndent(&l_config, "", "  ")
-	if err != nil {
-		return err
-	}
-	return os.WriteFile(GetLocalConfigPath(), data, 0644)
 }

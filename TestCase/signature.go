@@ -17,10 +17,11 @@ import (
 	"time"
 
 	"IAPTool/iapcert"
+	"IAPTool/internal/iapproto"
 )
 
 const (
-	chunkSize     = 8192
+	chunkSize     = iapproto.ChunkSize
 	verifyTimeout = 30 * time.Second
 )
 

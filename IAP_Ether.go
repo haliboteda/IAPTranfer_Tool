@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"IAPTool/iapcert"
+	"IAPTool/internal/iapproto"
 	"IAPTool/internal/netiface"
 )
 
@@ -299,11 +300,7 @@ func printDiscoveredBoards(boards []boardInfo, expectedRole string) {
 	for i, b := range boards {
 		fmt.Printf("  [%d] UID=%s IP=%s Role=%s Reply=%s\n", i+1, b.UID, b.IP, b.Role, b.Raw)
 	}
-	fmt.Printf("Default selection: [1]")
-	if expectedRole == "CUSAPP" {
-		fmt.Printf(" (you can modify local_config.json appIP if you want a different device)")
-	}
-	fmt.Printf("\n")
+	fmt.Printf("Default selection: [1]\n")
 }
 
 func selectDiscoveredBoard(boards []boardInfo, targetUID string) (boardInfo, bool) {
@@ -356,7 +353,7 @@ func udpPingAndGetStatus(ip string) (string, error) {
 // Send UDP message and wait for a response within timeout.
 // Returns response bytes and error (nil if success).
 func sendUDPWithResponseOnPort(serverAddr, port, msg string, timeout time.Duration) ([]byte, *net.UDPAddr, error) {
-	conn, err := dialUDPBoard(serverAddr, port)
+	conn, err := iapproto.DialUDP(serverAddr, port)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -398,7 +395,7 @@ func authenticatedUDPReboot(ip string, id uploadIdentity) error {
 
 // Send UDP message without waiting for a response.
 func sendUDPNoResponseOnPort(serverAddr, port, msg string) error {
-	conn, err := dialUDPBoard(serverAddr, port)
+	conn, err := iapproto.DialUDP(serverAddr, port)
 	if err != nil {
 		return err
 	}
@@ -410,57 +407,6 @@ func sendUDPNoResponseOnPort(serverAddr, port, msg string) error {
 	}
 
 	return nil
-}
-
-// dialUDPBoard opens a UDP connection to the board with the source address
-// pinned to the physical interface on the board's subnet, for every unicast
-// exchange in this file: identify, reboot challenge, and the authenticated
-// reboot command. Until 2026-09-18 only the broadcast discovery function had
-// this pin (decision 51); these four calls are the ones a real upload
-// actually hits every single time, so an unpinned socket here is worse, not
-// better, than the broadcast case -- a VPN with a better-metric default route
-// can take the packet even though the user already gave a specific IP, and on
-// Windows a VPN endpoint has been observed to complete the connection and then
-// reset it, which is why a connected socket (not a bare listen) is used here:
-// it only accepts replies from the address it dialed.
-//
-// netiface.LocalIPFor and its platform classifiers already cover Windows,
-// Linux and macOS (build-tag gated in internal/netiface/iface_*.go); nothing
-// platform-specific is added here.
-//
-// When no physical interface shares the board's subnet, the board is reached
-// through a router, so the plain dial (nil local address) is correct.
-func dialUDPBoard(serverAddr, port string) (*net.UDPConn, error) {
-	raddr, err := net.ResolveUDPAddr("udp4", serverAddr+":"+port)
-	if err != nil {
-		return nil, fmt.Errorf("UDP ResolveUDPAddr failed: %w", err)
-	}
-	var laddr *net.UDPAddr
-	if local := netiface.LocalIPFor(raddr.IP); local != nil {
-		laddr = &net.UDPAddr{IP: local}
-	}
-	conn, err := net.DialUDP("udp4", laddr, raddr)
-	if err != nil {
-		return nil, fmt.Errorf("UDP connection failed: %w", err)
-	}
-	return conn, nil
-}
-
-// dialTCPBoard is dialUDPBoard's sibling for the flash channel: RunEther_TCP
-// dials it once for the whole upload, and an unpinned TCP dial to a specific
-// IP is exactly what let a VPN endpoint answer for the board on 2026-09-18
-// (measured: connect completed in 0.03s, then reset, from a host that was
-// never on the board's subnet).
-func dialTCPBoard(serverIP string) (net.Conn, error) {
-	target := serverIP + ":" + getPort()
-	raddr, err := net.ResolveTCPAddr("tcp", target)
-	if err == nil {
-		if local := netiface.LocalIPFor(raddr.IP); local != nil {
-			d := net.Dialer{LocalAddr: &net.TCPAddr{IP: local}, Timeout: Timeout}
-			return d.Dial("tcp", target)
-		}
-	}
-	return net.DialTimeout("tcp", target, Timeout)
 }
 
 // Only physical interfaces are broadcast to. A VPN tunnel or a Docker switch
@@ -522,7 +468,7 @@ func RunEther_TCP(filePath, serverIP string, id uploadIdentity, verb, targetUID 
 
 	logf("Trying to connect to TCP server at %s...", serverIP)
 
-	conn, err := dialTCPBoard(serverIP)
+	conn, err := iapproto.DialTCP(serverIP, getPort(), Timeout)
 	if err != nil {
 		logf(true, "Failed to connect to server: %v", err)
 	}
@@ -589,19 +535,14 @@ func sendFile(conn net.Conn, filePath string, id uploadIdentity, sigHex, verb, t
 	defer file.(io.Closer).Close()
 	logf("CRC Checksum: %x", checksum)
 
-	authMsg := fmt.Sprintf("%s %d %x %s", verb, fileSize, checksum, sigHex)
-
-	nonceResp, err := sendAndReadResponse(conn, []byte(CM_AuthChallenge+"\n"))
-	if err != nil {
-		return fmt.Errorf("auth challenge failed: %v", err)
-	}
-	noncesigHex, err := iapcert.NonceSig(id.key, nonceResp, authMsg)
+	flashCmd, err := flashCommand(id, verb, fileSize, checksum, sigHex, func() (string, error) {
+		return sendAndReadResponse(conn, []byte(CM_AuthChallenge+"\n"))
+	})
 	if err != nil {
 		return err
 	}
 
 	// Send flash command
-	flashCmd := fmt.Sprintf("%s %s %s", authMsg, id.certHex, noncesigHex)
 	if err := sendAndWaitOK(conn, []byte(flashCmd+"\n")); err != nil {
 		return fmt.Errorf("failed to send FLASH: %v", err)
 	}

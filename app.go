@@ -9,14 +9,7 @@ import (
 // json file struct
 type LocalConfig struct {
 	BaudRate          int    `json:"BaudRate"`
-	Parity            int    `json:"Parity"`
-	DataBits          int    `json:"DataBits"`
-	StopBits          int    `json:"StopBits"`
-	ReadTimeout       int    `json:"ReadTimeout"`
 	UID               string `json:"uid"`
-	BootIP            string `json:"bootIP"`
-	AppIP             string `json:"appIP"`
-	MAC               string `json:"mac"`
 	ServerPort        string `json:"server_port"`
 	RebootWaitSeconds int    `json:"reboot_wait_seconds"`
 	SigningKey        string `json:"signing_key"`

@@ -87,8 +87,10 @@ PATH_TEXT = re.compile(r"^\$?(?:[\w.:+-]*/[\w./:+-]*|[\w.+-]+\.(?:md|c|h|cpp|go|
 # be written at all. A backticked $PROD/... is the only citation shape that gets
 # checked -- which means this name extends the check across a repo boundary
 # rather than costing it coverage.
-# $PORTTOOL joined on 2026-09-30, when PortTool got its own repo (decision 76).
-VAR_PATH = re.compile(r"\$(PORTTOOL|BOOT|TOOL|CORE|PROD)(?:_REPO)?[:/]([\w./+-]+)")
+VAR_PATH = re.compile(r"\$(BOOT|TOOL|CORE|PROD)(?:_REPO)?[:/]([\w./+-]+)")
+# $PORTTOOL/... names a file in a repo this one does not read (decision 76);
+# that repo checks its own paths.
+OTHER_REPO_PATH = re.compile(r"^\$PORTTOOL(?:_REPO)?[:/]")
 # `docs/...` in backticks. Only docs/, because that prefix pins the base to a
 # repo root -- every other bare path in these documents is relative to whichever
 # repo the surrounding paragraph is about, which is not knowable from here.
@@ -204,11 +206,9 @@ def sources(boot, tool, core, prod):
     """Source files that may name a document in a comment."""
     out = []
     for root, subs in ((boot, ["IAPServer", "LWIP", "Core/Src", "Core/Inc", "TestCase"]),
-                       (tool, ["TestCase/tools", "TestCase/host", "TestCase/plans",
+                       (tool, ["TestCase/tools", "TestCase/host",
                                "internal", "iapcert", "."]),
                        (core, ["libraries", "cores", "tools"]),
-                       (Path(getattr(cfg, "PORTTOOL_REPO", "") or ""),
-                        ["TestCase/tools", "TestCase/host", "TestCase/plans", "internal", "cmd", "."]),
                        (prod, ["tools"])):
         if root is None or not str(root) or not root.exists():
             continue
@@ -229,7 +229,7 @@ def sources(boot, tool, core, prod):
 
 def resolve(token, doc, doc_root, boot, tool, core, skills, prod):
     """Where a named path should be, or None if the token is not a claim."""
-    if SKIP_TOKEN.search(token):
+    if SKIP_TOKEN.search(token) or OTHER_REPO_PATH.match(token):
         return None
     token = token.split("#")[0]
     # fmc.c:153-193 -- the file must exist, the line number is a hint
@@ -240,7 +240,6 @@ def resolve(token, doc, doc_root, boot, tool, core, skills, prod):
     m = VAR_PATH.match(token)
     if m:
         base = {"BOOT": boot, "TOOL": tool, "CORE": core,
-                "PORTTOOL": Path(getattr(cfg, "PORTTOOL_REPO", "") or ""),
                 "PROD": prod_docs()}[m.group(1)]
         if not base or not str(base):
             return None

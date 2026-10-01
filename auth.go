@@ -220,3 +220,21 @@ func verifyIdentityMatchesDevice(id uploadIdentity, askDevice pubKeyQuery) error
 		"  local: %s...\n%s",
 		devicePubHex[:16], hex.EncodeToString(id.cert.LeafPub)[:16], otherOwnerHint(id.keyPath))
 }
+
+// flashCommand builds the authenticated flash (or flashboot) command, the same
+// on both channels: "<verb> <size> <crc> <imagesig> <cert> <noncesig>", where
+// noncesig covers the board's fresh nonce and the text before the cert.
+// challenge asks the board for that nonce over whichever channel is open.
+func flashCommand(id uploadIdentity, verb string, size int64, crc uint32, sigHex string,
+	challenge func() (string, error)) (string, error) {
+	authMsg := fmt.Sprintf("%s %d %x %s", verb, size, crc, sigHex)
+	nonce, err := challenge()
+	if err != nil {
+		return "", fmt.Errorf("auth challenge failed: %v", err)
+	}
+	nonceSig, err := iapcert.NonceSig(id.key, nonce, authMsg)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign auth challenge: %v", err)
+	}
+	return fmt.Sprintf("%s %s %s", authMsg, id.certHex, nonceSig), nil
+}

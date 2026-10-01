@@ -15,8 +15,6 @@ go build -o IAPTool .                     # 本机用的
 在 Windows 上把输出文件命名为 `IAPTool.exe`。要给别的系统编译，设置 `GOOS` / `GOARCH`
 （不需要 C 编译器），例如 `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o IAPTool .`
 
-端口测试面板（`PortTool`）在它自己的仓库 `OpenPLC_PortsTestingTool` 里。
-
 `compile_tool.sh` 和 `build.py` 是维护者出版本用的脚本：它们还会编 bootloader、
 往 Arduino 板卡包里填东西，需要其他 OpenPLC 仓库。只编 IAPTool 用不到它们。
 

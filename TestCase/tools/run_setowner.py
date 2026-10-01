@@ -1,4 +1,4 @@
-"""OW2 -- hand a claimed board to a new owner (requirement R2-02, M1 step 5).
+"""T2-03 -- hand a claimed board to a new owner (requirement R2-02, M1 step 5).
 
     python3 tools/run_setowner.py --current-key <owner.pem>                 new key generated
     python3 tools/run_setowner.py --current-key <owner.pem> --new-key <next.pem>
@@ -43,6 +43,11 @@ sys.path.insert(0, str(Path(__file__).resolve().parent))
 from common import (cfg, Section, Ok, Warn, Fail, get_go_bin,  # noqa: E402
                     run_capture, tcp_command)
 
+# Must match OWNER_FORMAT_VER in the bootloader's owner_slot.h; P2 checks it.
+# A stale value makes --bad-signature prove nothing: the board rejects the
+# record for its version before it ever looks at the signature.
+OWNER_FORMAT_VER = 4
+
 
 def signed_prefix(generation, new_key_hex, uid_hex):
     """The record's first 88 bytes, laid out exactly as the bootloader reads them.
@@ -59,7 +64,7 @@ def signed_prefix(generation, new_key_hex, uid_hex):
     # dropped it for a reserved byte, always 0, that keeps every later field
     # at the same offset. See open_plc_cube_ide/IAPServer/owner_slot.h.
     return (bytes([0x4F, 0])                      # type 'O', reserved0
-            + struct.pack("<H", 3)                # format_ver
+            + struct.pack("<H", OWNER_FORMAT_VER)
             + struct.pack("<I", generation)
             + struct.pack("<I", 0)                # flags
             + bytes.fromhex(new_key_hex)          # root_pubkey, 64 B

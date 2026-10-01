@@ -1,4 +1,4 @@
-"""SD1 -- build, flash and read out the SDRAM wrapper acceptance sketch.
+"""T3-02 -- build, flash and read out the SDRAM wrapper acceptance sketch.
 
     python3 tools/run_sdram.py               build, flash, collect
     python3 tools/run_sdram.py --skip-flash  the sketch is already on the board

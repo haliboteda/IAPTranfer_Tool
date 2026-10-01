@@ -9,6 +9,8 @@ package main
 import (
 	"fmt"
 	"os"
+	"path/filepath"
+	"runtime"
 	"sort"
 	"strconv"
 	"time"
@@ -59,7 +61,7 @@ func register(c testCase) { cases[c.id] = c }
 
 func usage() {
 	fmt.Fprintf(os.Stderr, "Usage:\n  TestCase <case-id|all> --ip=<addr> [--port=56865] [--bin=<file.bin>]\n"+
-		"      [--iaptool=<path>] [--password-file=<iap_fixed_password.txt>] [--minutes=N]\n"+
+		"      [--iaptool=<path>] [--key=<signing.pem>] [--minutes=N] [--interval=<ms>]\n"+
 		"      [--state=<file> --phase=1|2 --count=N]   (T1-17)\n\nCases:\n")
 	ids := make([]string, 0, len(cases))
 	for id := range cases {
@@ -69,7 +71,7 @@ func usage() {
 	for _, id := range ids {
 		fmt.Fprintf(os.Stderr, "  %-5s %s\n", id, cases[id].title)
 	}
-	fmt.Fprintf(os.Stderr, "\nSee TEST-CASES.md for what each case proves and what it needs.\n")
+	fmt.Fprintf(os.Stderr, "\nSee $PROD/docs/engineering/HOW-TO-RUN-TESTS.md for what each case proves and what it needs.\n")
 }
 
 func main() {
@@ -196,9 +198,16 @@ func main() {
 
 func hasPrefix(s, p string) bool { return len(s) >= len(p) && s[:len(p)] == p }
 
+// defaultIAPToolPath is this platform's build from compile_tool.sh, found from
+// the repo root or from TestCase/.
 func defaultIAPToolPath() string {
-	if _, err := os.Stat("Output/windows/IAPTool.exe"); err == nil {
-		return "Output/windows/IAPTool.exe"
+	name := "IAPTool"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
 	}
-	return "../Output/windows/IAPTool.exe"
+	p := filepath.Join("Output", runtime.GOOS, name)
+	if _, err := os.Stat(p); err == nil {
+		return p
+	}
+	return filepath.Join("..", p)
 }

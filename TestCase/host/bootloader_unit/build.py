@@ -1,5 +1,5 @@
 """Builds and runs the host-side IAP security test harness against the real
-bootloader source in open_plc_cube_ide/IAPServer. Case H2.
+bootloader source in open_plc_cube_ide/IAPServer. Case T1-16.
 
     python build.py
 

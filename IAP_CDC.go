@@ -1,40 +1,18 @@
 package main
 
 import (
-	"fmt"
 	"io"
 	"strings"
 	"time"
 
 	"go.bug.st/serial"
 
-	"IAPTool/iapcert"
 	"IAPTool/internal/serialx"
 )
 
 // Helper function to open a serial port with specified baud rate.
-// PortTool opens the same adapters the same way; internal/serialx is mirrored
-// byte for byte in its repo (P2).
 func openPort(comName string, baudRate int) (serial.Port, error) {
 	return serialx.Open(comName, baudRate)
-}
-
-// Retry logic for opening serial port
-func retryOpenPort(comName string, baudRate int, maxRetries int) serial.Port {
-	var port serial.Port
-	var err error
-	for attempt := 1; attempt <= maxRetries; attempt++ {
-		time.Sleep(2 * time.Second)
-		port, err = openPort(comName, baudRate)
-		if err == nil {
-			logf("Successfully opened port on attempt %d", attempt)
-			return port
-		}
-		logf("Failed to open port %s on attempt %d of %d. Retrying in 2 seconds...", comName, attempt, maxRetries)
-
-	}
-	logf(true, "Failed to open serial port %s after %d attempts", comName, maxRetries)
-	return nil
 }
 
 func RunCDC(portName, filePath string) {
@@ -166,20 +144,13 @@ func runCDCAttempt(portName, filePath, uidHex string) {
 		return
 	}
 
-	authMsg := fmt.Sprintf("%s %d %x %s", CM_Flash, fileSize, checksum, sigHex)
-
-	nonceResp, err := SendCommandReadResponse(port, CM_AuthChallenge, CommandTimeout)
+	flashCmd, err := flashCommand(id, CM_Flash, fileSize, checksum, sigHex, func() (string, error) {
+		return SendCommandReadResponse(port, CM_AuthChallenge, CommandTimeout)
+	})
 	if err != nil {
-		logf(err, "Auth challenge failed")
+		logf(err, "Flash authorisation failed")
 		return
 	}
-	noncesigHex, err := iapcert.NonceSig(id.key, nonceResp, authMsg)
-	if err != nil {
-		logf(err, "Failed to sign auth challenge")
-		return
-	}
-
-	flashCmd := fmt.Sprintf("%s %s %s", authMsg, id.certHex, noncesigHex)
 	if !SendCommandWaitForResponse(port, flashCmd, Rsp_OK, FlashAckTimeout) {
 		return
 	}

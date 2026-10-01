@@ -1,10 +1,10 @@
 // The CRC32 gate: an image whose checksum does not match is refused before the
 // signature is ever looked at.
 //
-// Requirement C1 ("the image passes CRC32 first") had no case at all -- it was
-// marked "manual" with no written steps. The shipping IAPTool cannot produce
-// this case: it computes the checksum itself and has no way to get it wrong, so
-// this drives the protocol directly, exactly as the signature cases do.
+// Requirement R1-22 ("the image passes CRC32 first"), case T1-24. The shipping
+// IAPTool cannot produce this case: it computes the checksum itself and has no
+// way to get it wrong, so this drives the protocol directly, exactly as the
+// signature cases do.
 //
 // The image also carries a bogus signature on purpose. That is what makes the
 // reply meaningful: "Checksum Failed" rather than "Signature Failed" proves the

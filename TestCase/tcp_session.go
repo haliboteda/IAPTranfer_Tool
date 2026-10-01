@@ -8,7 +8,7 @@ import (
 	"os/exec"
 	"time"
 
-	"IAPTool/internal/netiface"
+	"IAPTool/internal/iapproto"
 )
 
 const (
@@ -33,25 +33,12 @@ func init() {
 		destructive: true, run: runT3})
 }
 
-// dial pins the source address to the physical interface on the board's subnet
-// for the same reason dialBoard does, and with a sharper consequence: a VPN
-// endpoint will happily complete a TCP handshake for an address the board does
-// not even hold, so an unbound dial reports "the TCP server is up" for a board
-// that is switched off. Measured on 2026-09-18, and it made T1-01 blame the
-// board's UDP path. See $PROD/docs/tables/DECISIONS.md decision 51.
+// dial opens the board's TCP channel pinned to the physical NIC, as IAPTool
+// does: a VPN endpoint will complete a handshake for an address the board does
+// not hold, so an unpinned dial reports "the TCP server is up" for a board that
+// is switched off (2026-09-18). See $PROD/docs/tables/DECISIONS.md decision 51.
 func dial(cfg config) (net.Conn, error) {
-	target := net.JoinHostPort(cfg.ip, cfg.port)
-	raddr, err := net.ResolveTCPAddr("tcp", target)
-	if err == nil {
-		if local := netiface.LocalIPFor(raddr.IP); local != nil {
-			d := net.Dialer{
-				LocalAddr: &net.TCPAddr{IP: local},
-				Timeout:   dialTimeout,
-			}
-			return d.Dial("tcp", target)
-		}
-	}
-	return net.DialTimeout("tcp", target, dialTimeout)
+	return iapproto.DialTCP(cfg.ip, cfg.port, dialTimeout)
 }
 
 // alive reports whether the session still answers. "ping" is the cheapest

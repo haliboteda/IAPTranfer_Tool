@@ -142,7 +142,7 @@ def get_signed_bytes_recipe(path):
     return re.sub(r"\s+", " ", m.group(1)).strip()
 
 
-def compare_bytes(name, left, right, source="the bootloader (ARCHITECTURE.md rule 1)"):
+def compare_bytes(name, left, right):
     """Two files that must be identical to the byte. Reported like an anchor."""
     global failed, skipped
 
@@ -162,14 +162,14 @@ def compare_bytes(name, left, right, source="the bootloader (ARCHITECTURE.md rul
     Fail("        %s  (%d bytes)" % (left, len(a)))
     Fail("        %s  (%d bytes)" % (right, len(b)))
     Fail("        these two carry no repo-specific content -- sync them, do not")
-    Fail("        adjust this check. Source is %s." % source)
+    Fail("        adjust this check. Source is the bootloader (ARCHITECTURE.md rule 1).")
     failed += 1
 
 
 BOOT = Path(cfg.BOOT_REPO)
 LIVE = Path(cfg.CORE_LIVE)
 TOOL = Path(cfg.TOOL_REPO)
-PORTTOOL = Path(cfg.PORTTOOL_REPO)
+TESTTOOL_DIR = TOOL / "TestCase"
 
 boot_udp = BOOT / "IAPServer/udp_server.c"
 core_udp = LIVE / "libraries/OpenPLC_IAP/src/udp_server.c"
@@ -376,6 +376,10 @@ compare_anchor("owner record format version", {
     "bootloader IAPServer/owner_slot.h": get_anchor(boot_owner, r'#define\s+OWNER_FORMAT_VER\s+(\d+)U'),
     "core OpenPLC_IAP/src/owner_root_ro.c": get_anchor(core_owner, r'#define\s+OWNER_FORMAT_VER\s+(\d+)U'),
     "IAPTool owner.go": get_anchor(tool_owner, r'ownerRecordFormatVer\s*=\s*(\d+)'),
+    # Python copies that build records byte by byte; a stale one tests nothing.
+    "tool TestCase/tools/run_setowner.py": get_anchor(TESTTOOL_DIR / "tools/run_setowner.py", r'(?m)^OWNER_FORMAT_VER\s*=\s*(\d+)'),
+    "tool TestCase/tools/inject_owner_record.py": get_anchor(TESTTOOL_DIR / "tools/inject_owner_record.py", r'(?m)^OWNER_FORMAT_VER\s*=\s*(\d+)'),
+    "tool TestCase/host/renode/run.py": get_anchor(TESTTOOL_DIR / "host/renode/run.py", r'(?m)^OWNER_FORMAT_VER\s*=\s*(\d+)'),
 })
 
 compare_anchor("owner record signed prefix (bytes)", {
@@ -549,47 +553,10 @@ def get_calib_layout_c(path):
     return ";".join(parts)
 
 
-def get_calib_layout_go(path):
-    if not Path(path).exists():
-        return None
-    text = read_text(path)
-    parts = []
-    for c, k in (("Addr", "ADDR"), ("Magic", "MAGIC"), ("Version", "VERSION"), ("Channels", "CHANNELS")):
-        m = re.search(r'\b%s\s*=\s*(0x[0-9A-Fa-f]+|\d+)' % c, text)
-        if not m:
-            return None
-        parts.append("%s=%d" % (k, int(m.group(1), 0)))
-    m = re.search(r'\bSize\s*=\s*(\d+)', text)
-    st = re.search(r'type area struct \{(.*?)\n\}', text, re.S)
-    ch = re.search(r'const \(\n\s*AI1 = iota(.*?)\n\)', text, re.S)
-    if not (m and st and ch):
-        return None
-    parts.append("SIZE=%s" % m.group(1))
-    parts.append("fields=" + ",".join(re.findall(r'^\s*(\w+)\s', st.group(1), re.M)))
-    parts.append("channels=" + ",".join(["AI1"] + re.findall(r'^\s*(\w+)\s', ch.group(1), re.M)))
-    return ";".join(parts)
-
-
 compare_anchor("calibration area layout", {
     "bootloader IAPServer/calib_area.h": get_calib_layout_c(BOOT / "IAPServer/calib_area.h"),
     "core OpenPLC_Ports/src/openplc_calib.h": get_calib_layout_c(LIVE / "libraries/OpenPLC_Ports/src/openplc_calib.h"),
-    "porttool internal/calarea/calarea.go": get_calib_layout_go(PORTTOOL / "internal/calarea/calarea.go"),
 })
-
-# IAPTool and PortTool each carry the serial layer (decision 76). Neither copy
-# is the source: change one, copy it to the other in the same change.
-Section("serialx: IAPTool vs PortTool")
-_sx_tool, _sx_pt = TOOL / "internal/serialx", PORTTOOL / "internal/serialx"
-_names_tool = sorted(q.name for q in _sx_tool.glob("*.go"))
-_names_pt = sorted(q.name for q in _sx_pt.glob("*.go"))
-if _names_tool != _names_pt:
-    Fail("DIFF  serialx file list")
-    Fail("        only in tool:     %s" % sorted(set(_names_tool) - set(_names_pt)))
-    Fail("        only in porttool: %s" % sorted(set(_names_pt) - set(_names_tool)))
-    failed += 1
-for _name in sorted(set(_names_tool) & set(_names_pt)):
-    compare_bytes("serialx/" + _name, _sx_tool / _name, _sx_pt / _name,
-                  source="neither copy -- sync both in one change (ARCHITECTURE.md mirror 14)")
 
 # --- what this script does not check ----------------------------------------
 Section("not covered by this script -- still manual")

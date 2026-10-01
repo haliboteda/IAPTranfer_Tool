@@ -3,12 +3,6 @@
 # Define output directory
 OUTPUT_DIR="./Output"
 
-# Binaries to build: "name:package". PortTool is built in OpenPLC_PortsTestingTool
-# (decision 76).
-TARGETS=(
-    "IAPTool:."
-)
-
 # Platforms to build: "GOOS:extension"
 PLATFORMS=(
     "windows:.exe"
@@ -16,36 +10,24 @@ PLATFORMS=(
     "linux:"
 )
 
-for target in "${TARGETS[@]}"; do
-    BASE_NAME="${target%%:*}"
-    PACKAGE="${target#*:}"
-
-    for entry in "${PLATFORMS[@]}"; do
-        PLATFORM="${entry%%:*}"
-        EXTENSION="${entry#*:}"
-
-        PLATFORM_DIR="$OUTPUT_DIR/$PLATFORM"
-        OUTPUT_FILE="$PLATFORM_DIR/$BASE_NAME$EXTENSION"
-
-        mkdir -p "$PLATFORM_DIR"
-
-        echo "Building $BASE_NAME for the '$PLATFORM' platform..."
-        GOOS=$PLATFORM GOARCH=amd64 go build -o "$OUTPUT_FILE" "$PACKAGE"
-
-        if [ $? -eq 0 ]; then
-            echo "Build succeeded! The executable is saved at: $OUTPUT_FILE"
-        else
-            echo "Build failed for $BASE_NAME on '$PLATFORM'. Please check the error messages."
-            exit 1
-        fi
-    done
-done
-
-# No private key ships beside IAPTool: boards leave the factory with no root
-# and the first upload claims them (decision 72). Remove what older builds left.
 for entry in "${PLATFORMS[@]}"; do
     PLATFORM="${entry%%:*}"
-    rm -f "$OUTPUT_DIR/$PLATFORM/keys/published_root.TEST_ONLY.pem"
+    EXTENSION="${entry#*:}"
+
+    PLATFORM_DIR="$OUTPUT_DIR/$PLATFORM"
+    OUTPUT_FILE="$PLATFORM_DIR/IAPTool$EXTENSION"
+
+    mkdir -p "$PLATFORM_DIR"
+
+    echo "Building IAPTool for the '$PLATFORM' platform..."
+    GOOS=$PLATFORM GOARCH=amd64 go build -o "$OUTPUT_FILE" .
+
+    if [ $? -eq 0 ]; then
+        echo "Build succeeded! The executable is saved at: $OUTPUT_FILE"
+    else
+        echo "Build failed for IAPTool on '$PLATFORM'. Please check the error messages."
+        exit 1
+    fi
 done
 
 # The Arduino IDE's Upload button runs the copy inside the board package, not

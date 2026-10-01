@@ -17,9 +17,6 @@ On Windows name the output `IAPTool.exe`. To build for another system, set
 `GOOS` / `GOARCH` (no C compiler needed), e.g.
 `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o IAPTool .`
 
-The port test panel (`PortTool`) lives in its own repository,
-`OpenPLC_PortsTestingTool`.
-
 `compile_tool.sh` and `build.py` are the maintainers' release scripts: they
 also build the bootloader and fill the Arduino board package, which needs the
 other OpenPLC repositories. They are not needed to build IAPTool.

@@ -1,6 +1,6 @@
 """Asking for a CDC upload must not bring the ethernet stack up.
 
-Requirement A5. Core/Src/main.c calls MX_LWIP_Init() only for IAP_ETHERNET and
+Case T1-25, requirement R1-05. Core/Src/main.c calls MX_LWIP_Init() only for IAP_ETHERNET and
 IAP_ALL, so in CDC mode lwIP is never initialised and the board cannot answer
 anything on the network. Observable from the PC: broadcast UDP discovery at a
 board sitting in CDC upload mode and get silence.

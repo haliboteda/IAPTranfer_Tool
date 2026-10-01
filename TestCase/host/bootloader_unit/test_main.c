@@ -1,6 +1,6 @@
 /*
  * Host-side security test harness for the IAP certificate chain and
- * challenge-response protocol. Case H2.
+ * challenge-response protocol. Case T1-16.
  *
  * Compiles and runs the REAL bootloader source (sha256.c, iap_keyderive.c,
  * iap_cert.c, fw_verify.c + micro-ecc, iap_auth.c from

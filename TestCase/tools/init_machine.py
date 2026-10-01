@@ -56,47 +56,13 @@ TESTTOOL_DIR = TOOLS_DIR.parent
 CONFIG_DIR = TESTTOOL_DIR / "config"
 TOOL_REPO_GUESS = TESTTOOL_DIR.parent
 
-if sys.platform.startswith("win"):
-    PLATFORM = "windows"
-elif sys.platform == "darwin":
-    PLATFORM = "macos"
-else:
-    PLATFORM = "linux"
-IS_WIN = PLATFORM == "windows"
-EXE = ".exe" if IS_WIN else ""
-A15_DIR = {"windows": "win", "linux": "linux", "macos": "macosx"}[PLATFORM]
-CUBE_PLUG = {"windows": "win32", "linux": "linux64", "macos": "macos64"}[PLATFORM]
+# Not common.py: that exits when config/machine.py is missing, which is exactly
+# the state this script exists to fix.
+sys.path.insert(0, str(TOOLS_DIR))
+from platform_info import (PLATFORM, IS_WIN, EXE, A15_DIR, CUBE_PLUG,  # noqa: E402,F401
+                           Section, Ok, Warn, Fail)
+
 HOME = Path.home()
-
-
-def _c(text, code):
-    if os.environ.get("NO_COLOR") or not sys.stdout.isatty():
-        return text
-    if IS_WIN:
-        try:
-            import ctypes
-            k = ctypes.windll.kernel32
-            k.SetConsoleMode(k.GetStdHandle(-11), 7)
-        except Exception:
-            return text
-    return "\033[%sm%s\033[0m" % (code, text)
-
-
-def Section(t):
-    print()
-    print(_c("===== " + t, "36"))
-
-
-def Ok(t):
-    print(_c(t, "32"))
-
-
-def Warn(t):
-    print(_c(t, "33"))
-
-
-def Fail(t):
-    print(_c(t, "31"))
 
 
 def newest(pattern):
@@ -390,9 +356,6 @@ SETTINGS = [
      ["the Arduino board package, under version control"]),
     ("TOOL_REPO", "path", detect_repo("IAPTranfer_Tool"), True,
      ["this repo"]),
-    ("PORTTOOL_REPO", "path", detect_repo("OpenPLC_PortsTestingTool"), True,
-     ["PortTool, the port test panel, split out of this repo (decision 76).",
-      "selfcheck runs its tests and P2 compares its serialx copy with ours."]),
     ("HW_REPO", "path", detect_repo("Hardware"), False,
      ["schematics and production files. Optional -- but when a document and the",
       "schematic disagree, the schematic wins, so pin work needs it present."]),
@@ -490,7 +453,6 @@ EXAMPLES = {
         "BOOT_REPO": r"E:\WorkSpace\Schaeffer-AG\open_plc_cube_ide",
         "CORE_REPO": r"E:\WorkSpace\Schaeffer-AG\open_plc_arduino",
         "TOOL_REPO": r"E:\WorkSpace\Schaeffer-AG\IAPTranfer_Tool",
-        "PORTTOOL_REPO": r"E:\WorkSpace\Schaeffer-AG\OpenPLC_PortsTestingTool",
         "HW_REPO": r"E:\WorkSpace\Schaeffer-AG\Hardware",
         "REF_REPO": r"E:\WorkSpace\Schaeffer-AG\ref\Hello_World_OpenPLC",
         # One level OUT from the product workspace, not inside it -- AI-Skills is
@@ -514,7 +476,6 @@ EXAMPLES = {
         "BOOT_REPO": "/home/you/Documents/WorkSpace/open_plc_cube_ide",
         "CORE_REPO": "/home/you/Documents/WorkSpace/open_plc_arduino",
         "TOOL_REPO": "/home/you/Documents/WorkSpace/IAPTranfer_Tool",
-        "PORTTOOL_REPO": "/home/you/Documents/WorkSpace/OpenPLC_PortsTestingTool",
         "HW_REPO": "/home/you/Documents/WorkSpace/Hardware",
         "REF_REPO": "/home/you/Documents/WorkSpace/ref/Hello_World_OpenPLC",
         "DOCS_REPO": "/home/you/Documents/Schaeffer-AG/OpenPLC_Docs",
@@ -538,7 +499,6 @@ EXAMPLES = {
         "BOOT_REPO": "/Users/you/WorkSpace/open_plc_cube_ide",
         "CORE_REPO": "/Users/you/WorkSpace/open_plc_arduino",
         "TOOL_REPO": "/Users/you/WorkSpace/IAPTranfer_Tool",
-        "PORTTOOL_REPO": "/Users/you/WorkSpace/OpenPLC_PortsTestingTool",
         "HW_REPO": "/Users/you/WorkSpace/Hardware",
         "REF_REPO": "/Users/you/WorkSpace/ref/Hello_World_OpenPLC",
         "DOCS_REPO": "/Users/you/Schaeffer-AG/OpenPLC_Docs",
@@ -569,7 +529,6 @@ WHAT_IT_IS = {
     "BOOT_REPO": "the open_plc_cube_ide clone -- bootloader plus the shared docs",
     "CORE_REPO": "the open_plc_arduino clone -- the board package under git",
     "TOOL_REPO": "this repo, IAPTranfer_Tool",
-    "PORTTOOL_REPO": "the PortTool repo, OpenPLC_PortsTestingTool",
     "HW_REPO": "the Hardware clone -- schematics and production files. Forgejo only, "
                "there is no GitHub copy of it",
     "REF_REPO": "the Hello_World_OpenPLC clone -- CubeIDE reference project for this board",
@@ -605,7 +564,7 @@ def searched_in(key):
     if key == "CORE_LIVE":
         a15 = RESOLVED.get("A15") or "<A15>"
         return [str(Path(a15) / "packages/OpenPLC_Alpha/hardware/stm32/*")]
-    if key in ("BOOT_REPO", "CORE_REPO", "TOOL_REPO", "PORTTOOL_REPO", "HW_REPO", "REF_REPO"):
+    if key in ("BOOT_REPO", "CORE_REPO", "TOOL_REPO", "HW_REPO", "REF_REPO"):
         return ["next to %s, and one level further out" % TOOL_REPO_GUESS.parent]
     if key == "HOST_CC":
         return ["gcc or clang on PATH"] + (
@@ -818,14 +777,14 @@ def render_python(values):
 # absolute paths for one machine, and settings.json is the committed, shared
 # half. The local file is gitignored in every repo that has one.
 # Everything a session may need to read...
-GRANTED_KEYS = ("BOOT_REPO", "CORE_REPO", "TOOL_REPO", "PORTTOOL_REPO", "HW_REPO", "REF_REPO",
+GRANTED_KEYS = ("BOOT_REPO", "CORE_REPO", "TOOL_REPO", "HW_REPO", "REF_REPO",
                 "SKILLS_REPO", "DOCS_REPO", "A15", "CUBEIDE", "IDE")
 # ...written into every repo a session gets opened in. Hardware and
 # Hello_World_OpenPLC were excluded until 2026-08-24 as read-only references, but
 # the product-level documents moved into the AI-Skills checkout and are reached by
 # reading it -- so those two became the repos that most need a grant and had none
 # at all. SKILLS_REPO is in GRANTED_KEYS for the same reason.
-TARGET_KEYS = ("BOOT_REPO", "CORE_REPO", "TOOL_REPO", "PORTTOOL_REPO", "HW_REPO", "REF_REPO")
+TARGET_KEYS = ("BOOT_REPO", "CORE_REPO", "TOOL_REPO", "HW_REPO", "REF_REPO")
 
 
 def _same_path(a, b):

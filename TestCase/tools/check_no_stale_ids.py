@@ -56,6 +56,10 @@ ALLOW = {
     "M2-ownership.md",
     # This file quotes the ambiguous tokens in its own ALLOW comments.
     "check_no_stale_ids.py",
+    # Its range expander is documented with the old K1-K7 ids it was written for.
+    "check_status_sync.py",
+    # D3-D8 / R3-R8 there are diode and resistor designators on the relay board.
+    "relay_test.h",
     # A dated run record. It quotes the board's own log verbatim, and the
     # sketch that was installed prints "[M5] ready" -- a sketch name taken
     # from the old case id, not a document citing one. Quoting the log is
@@ -100,7 +104,7 @@ def roots():
     # HW_REPO is left out: it is the schematic and terminal-naming authority,
     # so every id-shaped token in it is a Klemmblock label (C10 = RS485 A),
     # never a requirement id.
-    for key in ("BOOT_REPO", "CORE_REPO", "DOCS_REPO", "REF_REPO", "PORTTOOL_REPO"):
+    for key in ("BOOT_REPO", "CORE_REPO", "DOCS_REPO", "REF_REPO"):
         p = getattr(cfg, key, "")
         if p and Path(p).is_dir():
             out.append(Path(p))
@@ -123,10 +127,15 @@ def patterns(ids):
     """
     alt = "|".join(sorted(ids, key=len, reverse=True))
     prose = re.compile(r"(?<![-\w\u2013])(%s)(?![-\w\u2013])" % alt)
+    # Marker words match in any case ("Case H5", "Requirement A5" slipped
+    # through when they were lowercase only). A docstring opening with an id,
+    # and a run of two old ids ("K1-K7", "H1/H3"), are citations too.
     source = re.compile(
-        r"(?:需求|用例|测试|requirement|case)\s*\*{0,2}(%s)(?![-\w])"
+        r"(?i:需求|用例|测试|requirement|case)\s*\*{0,2}(%s)(?![-\w])"
         r"|\*\*(%s)\*\*"
-        r"|\|\s*`?(%s)`?\s*\|" % (alt, alt, alt))
+        r"|\|\s*`?(%s)`?\s*\|"
+        r"|^\s*(?:\"\"\"|''')\s*(%s)(?![-\w])"
+        r"|(?<![-\w])(%s)[-/](?:%s)(?![-\w])" % (alt, alt, alt, alt, alt, alt))
     return prose, source
 
 

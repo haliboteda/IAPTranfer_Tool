@@ -1,15 +1,7 @@
 {
   "BaudRate": 115200,
-  "Parity": 0,
-  "DataBits": 8,
-  "StopBits": 0,
-  "ReadTimeout": 0,
   "uid": "",
-  "bootIP": "",
-  "appIP": "",
-  "mac": "",
   "server_port": "56865",
   "reboot_wait_seconds": 4,
-  "signing_key": "",
-  "password_file": "E:\\WorkSpace\\Schaeffer-AG\\open_plc_cube_ide\\IAPServer\\keys\\iap_fixed_password.txt"
+  "signing_key": ""
 }

@@ -140,7 +140,7 @@ func signImage(image []byte, key *ecdsa.PrivateKey) (hash [32]byte, sig []byte, 
 // what gets signed is 76 bytes of record rather than a firmware image. Kept
 // here beside signImage so both go through the same key loading and the same
 // r||s encoding -- a second implementation of that encoding is exactly the kind
-// of thing cases X1/X2 exist to catch, and not having one is better.
+// of thing cases T1-19 / T1-20 exist to catch, and not having one is better.
 func signRawHex(dataHex, keyPath string) (string, error) {
 	data, err := hex.DecodeString(strings.TrimSpace(dataHex))
 	if err != nil {

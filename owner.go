@@ -29,6 +29,8 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+
+	"IAPTool/internal/iapproto"
 )
 
 // Mirrors the owner area in open_plc_cube_ide/IAPServer/owner_slot.h: an 'O'
@@ -78,7 +80,8 @@ func ownerCommand(target, cmd string) (string, error) {
 		}
 		return reply, nil
 	}
-	conn, err := net.DialTimeout("tcp", net.JoinHostPort(target, getPort()), Timeout)
+	// Pinned to the physical NIC like every other dial to the board (decision 51).
+	conn, err := iapproto.DialTCP(target, getPort(), Timeout)
 	if err != nil {
 		return "", fmt.Errorf("cannot reach %s: %v", target, err)
 	}

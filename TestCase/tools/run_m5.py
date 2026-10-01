@@ -1,4 +1,4 @@
-"""M5 / E7 -- builds, flashes and drives the Serial_Test-vs-Serial conflict case.
+"""T3-03 (requirement R3-05) -- builds, flashes and drives the Serial_Test-vs-Serial conflict case.
 
     python3 tools/run_m5.py               build, flash, then test
     python3 tools/run_m5.py --skip-flash  the sketch is already on the board, just test
@@ -12,7 +12,7 @@ per peripheral, and the loser only loses its RX path. A check that watches for
 output alone passes on a board that is broken.
 
 So the test writes a byte INTO the RS232 terminal (C06) and waits for the sketch
-to echo it back. No echo = the diagnostic port is deaf = E7 fails.
+to echo it back. No echo = the diagnostic port is deaf = T3-03 fails.
 
 Exit 0 = Serial_Test received, 1 = it did not, 2 = setup problem.
 """

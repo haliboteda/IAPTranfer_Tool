@@ -5,9 +5,6 @@
     python build.py --boot            just the bootloader
     python build.py --tool            just IAPTool
 
-The fixture firmware, PortTool and the delivery folder are built from
-OpenPLC_PortsTestingTool's build.py (decision 76).
-
 ⚠️ CubeIDE must be CLOSED for a firmware build: a headless build cannot take a
 locked workspace.
 

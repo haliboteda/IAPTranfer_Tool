@@ -51,6 +51,7 @@ results = []
 CATALOG = [
     ("ENV",          "-",                      "this machine has the toolchain"),
     ("T1-15",        "R1-20",                  "host Go tests (certificate issuance, serial counter, challenge signing)"),
+    ("T1-35",        "R1-38",                  "IAPTool unit tests (key lookup order, serial layer, protocol and dialing)"),
     ("H3",           "-",                      "go vet over the whole module"),
     ("P1",           "ENG-02",                 "firmware version agrees in all three places"),
     ("P2",           "ENG-03 R1-06 R1-07 R2-01 R1-14 R3-04", "cross-repo mirrored code has not diverged"),
@@ -73,7 +74,6 @@ CATALOG = [
     ("T2-32",        "R2-01",                  "a factory reset returns the board to no root, and it can be claimed again"),
     ("T2-33",        "R2-02",                  "40 handovers in a row: the full owner segment is reclaimed, root and revocations survive"),
     ("T2-34",        "R2-02",                  "a sector-15 reclaim cut by a power loss: backup copy restores it, no copy means no root"),
-    ("T4-01",        "-",                      "port tool protocol contract (real porttool.c, then the Go parser)"),
     ("T1-18a-T1-18g", "R1-21",                  "IAPTool key/certificate match and first-upload claim against a stand-in board"),
     ("T1-19-T1-20",  "R1-24",                  "crypto cross-check against independent implementations"),
     ("P4",           "R3-04",                  "Arduino variant assertions (FMC reserved pins, UART routing)"),
@@ -99,7 +99,7 @@ def print_catalog():
     for cid, covers, name in CATALOG:
         print("  %-*s  covers %-*s  %s" % (width, cid, cov, covers, name))
     print("")
-    print("  %d steps. --quick skips T1-16 / T2-21 / T2-22-T2-23 / T1-33 / T2-24 / T2-27 / T2-31-T2-34 / T4-01 / T1-18a-T1-18g / T1-19-T1-20 / P4 / P15."
+    print("  %d steps. --quick skips T1-16 / T2-21 / T2-22-T2-23 / T1-33 / T2-24 / T2-27 / T2-31-T2-34 / T1-18a-T1-18g / T1-19-T1-20 / P4 / P15."
           % len(CATALOG))
     print("  P7, P8 and P9 check the documents, not the firmware.")
 
@@ -183,13 +183,8 @@ def main():
     run_step("H3", "go vet over the whole module",
              ["go", "vet", "./..."], needs="go", cwd=tool_repo, indent=2)
 
-    # PortTool moved to its own repo (decision 76); its Go checks still run here.
-    porttool_repo = cfg.PORTTOOL_REPO
-    run_step("T1-15", "host Go tests, PortTool repo",
-             ["go", "test", "./TestCase/..."], needs="go", cwd=porttool_repo, indent=2)
-
-    run_step("H3", "go vet over the whole module, PortTool repo",
-             ["go", "vet", "./..."], needs="go", cwd=porttool_repo, indent=2)
+    run_step("T1-35", "IAPTool unit tests (key lookup order, serial layer, protocol and dialing)",
+             ["go", "test", ".", "./internal/..."], needs="go", cwd=tool_repo, indent=2)
 
     run_step("P1", "firmware version agrees in all three places",
              [python_exe(), HERE / "check_version_sync.py"], cwd=tool_repo)
@@ -308,14 +303,6 @@ def main():
         run_step("T2-34", "a sector-15 reclaim cut by a power loss: backup copy restores it, no copy means no root",
                  [python_exe(), TESTTOOL / "host" / "sector15_reclaim" / "build.py"],
                  needs=cc_need, cwd=tool_repo)
-
-        # build.py runs both halves: the C harness against the real firmware
-        # source, then the Go test over the transcript it just wrote. They are
-        # one step because running either alone lets the two drift apart, which
-        # is the failure this case exists to prevent.
-        run_step("T4-01", "port tool protocol contract (real porttool.c, then the Go parser)",
-                 [python_exe(), Path(porttool_repo) / "TestCase" / "host" / "porttool_caps" / "build.py"],
-                 needs=cc_need, cwd=porttool_repo)
 
         run_step("T1-18a-T1-18g", "IAPTool key/certificate match and first-upload claim against a stand-in board",
                  [python_exe(), TESTTOOL / "host" / "fakeboard" / "run_cases.py"],

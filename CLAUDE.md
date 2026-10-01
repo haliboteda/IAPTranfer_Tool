@@ -11,8 +11,9 @@
 | 在哪 | 是什么 |
 |---|---|
 | 根目录的 `.go` | `IAPTool`：CDC / 以太网两条烧写通道、签名、认证、上传锁 |
-| `internal/serialx/` | 串口层：开口、重试、枚举（带 VID/PID）。**和 `$PORTTOOL/internal/serialx/` 逐字节相同，改一边必须同步另一边**，P2 查（`$PROD/docs/repo/ARCHITECTURE.md`「跨仓镜像的代码」第 14 条）。macOS 上不开 cgo，VID/PID 由系统自带的 `ioreg` 补 —— 见 `enum_darwin.go` |
-| `iapcrypto/` | 加密原语。**测试用例 import 它，不重写** |
+| `internal/serialx/` | 串口层：开口、重试、枚举（带 VID/PID）。macOS 上不开 cgo，VID/PID 由系统自带的 `ioreg` 补 —— 见 `enum_darwin.go` |
+| `internal/iapproto/` | IAPTool 和 `TestCase` 共用的协议常量（数据帧大小、命令超时）与绑物理网卡的 UDP / TCP 拨号（决策 51）。**`TestCase` import 它，不手抄**（决策 77） |
+| `iapcert/` | 证书与签名原语。**测试用例 import 它，不重写** |
 | `$PROD/docs/engineering/HOW-TO-RUN-TESTS.md` | **每个用例的判据、前置条件、怎么跑。**2026-09-16 搬进文档仓 |
 | `TestCase/tools/` | 自动化脚本（烧写、抓串口、跑用例、各种一致性检查） |
 | `TestCase/host/` | 不需要板子的检查：假板子、加密交叉验证、主机侧编译真实 bootloader C 源码 |
@@ -40,7 +41,7 @@ python tools/selfcheck.py --list   # 先看它会跑哪几步、各证明哪条�
 | 要做的事 | 用这个 | 不要用 | 为什么 |
 |---|---|---|---|
 | 判断平台 | `PLATFORM` | 直接读 `os.name` | 三个平台三套叫法，集中在一处映射 |
-| 拼可执行文件名 | `EXE`、`get_go_bin()`、`get_iap_tool()`、`get_programmer_cli()`、`get_cubeide_exe()` | 硬写 `.exe` | — |
+| 拼可执行文件名 | `EXE`、`get_go_bin()`、`get_iap_tool()`、`get_programmer_cli()`、`get_cube_ide_exe()` | 硬写 `.exe` | — |
 | 临时文件 | `get_scratch_file()` / `get_scratch_dir()` | 自己拼 `$TEMP` | 平台之间那个变量不一致，拼错会往文件系统根目录写 |
 | 相对路径 | `/` 分隔 | `\` | Windows 接受 `/`，Linux 不接受 `\` |
 | Go 输出目录 | `GOOS_DIR` | 硬写 `windows` | — |
@@ -82,7 +83,7 @@ python tools/selfcheck.py --list   # 先看它会跑哪几步、各证明哪条�
 
 | 目标 | 命令 |
 |---|---|
-| **编 bootloader / IAPTool（菜单）** | **双击 `build.cmd`**，或者 `python build.py`。`--boot` / `--tool` 可组合。⚠️ 编固件前 CubeIDE 要关掉。**工装固件、PortTool 和交付打包在 `$PORTTOOL`**（决策 76） |
+| **编 bootloader / IAPTool（菜单）** | **双击 `build.cmd`**，或者 `python build.py`。`--boot` / `--tool` 可组合。⚠️ 编固件前 CubeIDE 要关掉 |
 | `IAPTool`（三平台） | `./compile_tool.sh` —— 三平台各一个 amd64，并拷进板卡包（P11 查），别手搓 `go build` |
 | `TestCase`（本机） | `go build -o Output/<GOOS>/TestCase ./TestCase` |
 
