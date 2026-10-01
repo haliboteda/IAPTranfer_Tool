@@ -100,7 +100,7 @@ def roots():
     # HW_REPO is left out: it is the schematic and terminal-naming authority,
     # so every id-shaped token in it is a Klemmblock label (C10 = RS485 A),
     # never a requirement id.
-    for key in ("BOOT_REPO", "CORE_REPO", "DOCS_REPO", "REF_REPO"):
+    for key in ("BOOT_REPO", "CORE_REPO", "DOCS_REPO", "REF_REPO", "PORTTOOL_REPO"):
         p = getattr(cfg, key, "")
         if p and Path(p).is_dir():
             out.append(Path(p))
