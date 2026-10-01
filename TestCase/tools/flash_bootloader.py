@@ -10,7 +10,7 @@ give the BG1 verdict (is the SDRAM staging buffer usable).
 ⚠️ CubeIDE must be CLOSED for a build: a headless build cannot take a locked
 workspace. --reset-only and --skip-build do not care.
 
-⚠️ Debug/ can be configured as the PortTool fixture image (PORTTOOL_ENABLE=1),
+⚠️ Debug/ can hold $BOOT's fixture image (PORTTOOL_ENABLE=1),
 which is not a bootloader. An image carrying the fixture's command table is
 refused.
 
@@ -34,7 +34,7 @@ from common import (Fail, Ok, Section, Warn, assert_target_reachable,  # noqa: E
 # cap out of the linker script so the two cannot disagree.
 DEFAULT_LIMIT = 131072
 
-# "pt.caps" is a command only the PortTool fixture image parses; the bootloader
+# "pt.caps" is a command only the fixture image parses; the bootloader
 # answers "openplc_server_where_r_y". Both are string literals in the image.
 FIXTURE_MARK = b"pt.caps"
 BOOTLOADER_MARK = b"openplc_server_where_r_y"
@@ -44,7 +44,7 @@ def looks_like_bootloader(image_path):
     """None when the image is a bootloader, otherwise why it is not."""
     data = Path(image_path).read_bytes()
     if FIXTURE_MARK in data:
-        return "it is the PortTool fixture image (PORTTOOL_ENABLE=1), not a bootloader"
+        return "it is the fixture image (PORTTOOL_ENABLE=1), not a bootloader"
     if BOOTLOADER_MARK not in data:
         return "it does not answer IAP discovery, so it is not this bootloader"
     return None

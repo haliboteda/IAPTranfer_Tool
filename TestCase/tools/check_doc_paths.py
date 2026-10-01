@@ -88,9 +88,6 @@ PATH_TEXT = re.compile(r"^\$?(?:[\w.:+-]*/[\w./:+-]*|[\w.+-]+\.(?:md|c|h|cpp|go|
 # checked -- which means this name extends the check across a repo boundary
 # rather than costing it coverage.
 VAR_PATH = re.compile(r"\$(BOOT|TOOL|CORE|PROD)(?:_REPO)?[:/]([\w./+-]+)")
-# $PORTTOOL/... names a file in a repo this one does not read (decision 76);
-# that repo checks its own paths.
-OTHER_REPO_PATH = re.compile(r"^\$PORTTOOL(?:_REPO)?[:/]")
 # `docs/...` in backticks. Only docs/, because that prefix pins the base to a
 # repo root -- every other bare path in these documents is relative to whichever
 # repo the surrounding paragraph is about, which is not knowable from here.
@@ -229,7 +226,7 @@ def sources(boot, tool, core, prod):
 
 def resolve(token, doc, doc_root, boot, tool, core, skills, prod):
     """Where a named path should be, or None if the token is not a claim."""
-    if SKIP_TOKEN.search(token) or OTHER_REPO_PATH.match(token):
+    if SKIP_TOKEN.search(token):
         return None
     token = token.split("#")[0]
     # fmc.c:153-193 -- the file must exist, the line number is a hint
