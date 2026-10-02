@@ -179,10 +179,10 @@ func otherOwnerHint(keyPath string) string {
 // vouch for our certificate. For a self-signed certificate that reduces to
 // "is our key the board's root", which is why both cases are one check.
 //
-// A bootloader too old to know "getpubkey", or one that cannot be reached,
-// only produces a warning: the flash that follows fails on its own if
-// something is genuinely wrong, and refusing here would break boards that
-// worked before this check existed.
+// A board that cannot be reached only produces a warning: the flash that
+// follows fails on its own. A reply that is not a root is refused: every
+// bootloader since getpubkey answers it, and older ones are not supported
+// (decision 79).
 func verifyIdentityMatchesDevice(id uploadIdentity, askDevice pubKeyQuery) error {
 	reply, err := askDevice()
 	if err != nil {
@@ -196,9 +196,9 @@ func verifyIdentityMatchesDevice(id uploadIdentity, askDevice pubKeyQuery) error
 	}
 	devicePub, decodeErr := hex.DecodeString(devicePubHex)
 	if decodeErr != nil || len(devicePub) != sigLen {
-		logf("This bootloader does not support %q (replied %q) -- skipping key match check",
+		return fmt.Errorf("the board did not answer %q with a root (replied %q); "+
+			"its bootloader is too old for this IAPTool -- update it with ST-Link",
 			CM_GetPubKey, strings.TrimSpace(reply))
-		return nil
 	}
 
 	if id.cert.VerifiedBy(devicePub) {

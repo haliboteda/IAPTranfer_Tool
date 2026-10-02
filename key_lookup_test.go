@@ -199,6 +199,21 @@ func TestMismatchNamesBothWaysOut(t *testing.T) {
 	}
 }
 
+// A bootloader that cannot answer getpubkey used to be waved through; it is
+// refused now (decision 79), so nothing uploads without the key check.
+func TestNonRootReplyIsRefused(t *testing.T) {
+	cfgDir, _ := keyEnv(t)
+	writeKey(t, filepath.Join(cfgDir, "openplc", "keys", "fw_signing_key.pem"))
+	id, err := resolveUploadIdentity()
+	if err != nil {
+		t.Fatal(err)
+	}
+	err = verifyIdentityMatchesDevice(id, func() (string, error) { return "Unknown command", nil })
+	if err == nil || !strings.Contains(err.Error(), "too old") {
+		t.Fatalf("a board without getpubkey was not refused: %v", err)
+	}
+}
+
 func TestIsSerialTarget(t *testing.T) {
 	if isSerialTarget("192.168.0.3") || isSerialTarget("127.0.0.1") {
 		t.Fatal("an IP was taken for a serial port")
