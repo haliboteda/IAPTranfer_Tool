@@ -85,9 +85,13 @@ def main():
     if not have_cmd("go"):
         Warn("SKIP - go is not on PATH, cannot produce signatures")
     else:
-        iap_tool = REPO / "Output" / GOOS_DIR / ("IAPTool" + EXE)
+        # On macOS Output/darwin/IAPTool is the launcher, so build the CPU's own binary.
+        name = "IAPTool" + EXE
+        if GOOS_DIR == "darwin":
+            name = "IAPTool-" + ("arm64" if platform.machine() == "arm64" else "amd64")
+        iap_tool = REPO / "Output" / GOOS_DIR / name
         if not iap_tool.exists():
-            run_emit(["go", "build", "-o", "Output/%s/IAPTool%s" % (GOOS_DIR, EXE), "."],
+            run_emit(["go", "build", "-o", "Output/%s/%s" % (GOOS_DIR, name), "."],
                      cwd=REPO)
 
         if not Path(iap_tool).exists():

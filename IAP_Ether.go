@@ -35,22 +35,23 @@ type boardInfo struct {
 const bootloaderDiscoveryRetries = 3
 
 // How many times to ask a running application to reboot into the bootloader.
-//
-// The handshake is three UDP datagrams with no acknowledgement of its own --
-// challenge out, nonce back, signed reboot out -- and until 2026-09-22 it got
-// exactly one try, while the identify step next to it got three. A few percent
-// of loss is therefore almost invisible on identify and lands squarely on this,
-// which is what made "the reboot works sometimes" look like a certificate
-// problem for weeks (OWN-08).
-//
-// Asking twice is harmless: a board that already rebooted is in its bootloader,
-// which has no reboot command and ignores the datagram.
+// The handshake has no acknowledgement of its own, so one lost datagram must
+// not end the upload (OWN-08).
 const rebootAttempts = 3
 
-// The device replies to a given source at most once per DISCOVERY_MIN_REPLY_INTERVAL_MS
-// (2s, see IAPServer/udp_server.c). Retrying sooner than that would be answered
-// with the same silence, so the wait has to clear that window to be worth anything.
+// Pause between identify attempts. The board's discovery cap is device-wide,
+// not per source (IAPServer/udp_server.c), so this only spaces the retries.
 const identifyRetryDelay = 2500 * time.Millisecond
+
+// Waiting for a board to come back: the original IP is asked once a second and
+// broadcast joins only after it has been quiet for findQuietBeforeBroadcast, so
+// a normal upload sends no broadcast. $PROD/docs/modules/M1-firmware-upgrade.md
+// "等板子回来".
+const (
+	findInterval             = time.Second
+	findQuietBeforeBroadcast = 30 * time.Second
+	rebootWindow             = 20 * time.Second // per reboot request
+)
 
 // RunEtherUpgrade sends an application image. RunEtherFlashBoot sends a
 // bootloader image over the same path -- see $PROD/docs/modules/M1/FLASHBOOT.md
@@ -85,7 +86,7 @@ func runEtherFlow(filePath, ip, verb string) {
 	}
 
 	targetUID := board.UID
-	logf("[PATH] target device UID=%s cached for this upgrade", targetUID)
+	logv("[PATH] target device UID=%s cached for this upgrade", targetUID)
 
 	// Has to run here, before anything asks the board to leave the
 	// application: in the bootloader the app-version field is "-" and what is
@@ -125,76 +126,168 @@ func runEtherFlow(filePath, ip, verb string) {
 		RunEther_TCP(filePath, ip, id, verb, targetUID)
 
 	case "BOOTLD":
-		logf("[PATH] %s is bootloader -> tcp transfer", ip)
+		logf("[PATH] %s is bootloader (uid=%s) -> tcp transfer", ip, targetUID)
 		RunEther_TCP(filePath, ip, id, verb, targetUID)
 
 	case "CUSAPP":
 		logf("[PATH] %s is app -> reboot to bootloader", ip)
-		// Ask, wait, look -- and ask again if it is still running. Nothing in
-		// this handshake is acknowledged, so a lost datagram is only ever
-		// visible as "the board did not come back".
-		var bootBoard boardInfo
-		var ok bool
-		sent := 0
-		for attempt := 1; attempt <= rebootAttempts; attempt++ {
-			if err := authenticatedUDPReboot(ip, id); err != nil {
-				logf("Reboot request %d/%d did not get through: %v",
-					attempt, rebootAttempts, err)
-				continue
-			}
-			sent++
-
-			wait := getRebootWaitDuration()
-			logf("Waiting %.1f seconds for reboot...", wait.Seconds())
-			time.Sleep(wait)
-
-			if bootBoard, ok = discoverBootloader(bootloaderDiscoveryRetries, targetUID); ok {
-				break
-			}
-			if attempt < rebootAttempts {
-				logf("%s is still running its application; asking it to reboot again (%d/%d)",
-					ip, attempt+1, rebootAttempts)
-			}
-		}
-		if !ok && sent == 0 {
-			logf(true, "No reboot request could be sent to %s in %d attempt(s) (reasons above), exiting.",
-				ip, rebootAttempts)
+		res := rebootIntoBootloader(func() error { return authenticatedUDPReboot(ip, id) },
+			newBoardFinder(ip, targetUID))
+		if res.state != rebootInBootloader {
+			logf(true, "%s", rebootFailureText(res, ip, targetUID, id.keyPath))
 			return
 		}
-		if !ok {
-			// The app answers a rejected reboot with silence, so a wrong key and
-			// a board that failed to come back look the same from here.
-			logf(true, "%s (uid=%s) is still not in its bootloader after %d reboot request(s):\n"+
-				"  the board did not accept the reboot request.\n"+
-				"  Most likely the key %s is not the one this board trusts.\n"+
-				"  `IAPTool getowner %s` shows which key it trusts (the bootloader answers it, the running app does not).\n%s",
-				ip, targetUID, sent, id.keyPath, ip, otherOwnerHint(id.keyPath))
-			return
-		}
-		logf("[PATH] bootloader found at %s (uid=%s) -> tcp transfer", bootBoard.IP, bootBoard.UID)
-		RunEther_TCP(filePath, bootBoard.IP, id, verb, targetUID)
+		logf("[PATH] bootloader found at %s (uid=%s) -> tcp transfer", res.board.IP, res.board.UID)
+		RunEther_TCP(filePath, res.board.IP, id, verb, targetUID)
 
 	default:
 		logf(true, "Unexpected role %q from %s, exiting.", board.Role, ip)
 	}
 }
 
-// discoverBootloader repeats the broadcast discovery until a bootloader reply
-// carrying targetUID is seen, since multiple devices on the LAN may answer the
-// broadcast and only the one that was just rebooted should be flashed.
-func discoverBootloader(maxAttempts int, targetUID string) (boardInfo, bool) {
-	for attempt := 1; attempt <= maxAttempts; attempt++ {
-		boards, err := discoverBoardsViaDirectedBroadcast("BOOTLD")
-		if err != nil {
-			logf("Bootloader discovery attempt %d/%d: %v", attempt, maxAttempts, err)
-			continue
-		}
-		if board, ok := selectDiscoveredBoard(boards, targetUID); ok {
-			return board, true
-		}
-		logf("Bootloader discovery attempt %d/%d: target UID=%s not among %d discovered device(s)", attempt, maxAttempts, targetUID, len(boards))
+type rebootState int
+
+const (
+	rebootInBootloader rebootState = iota // the target UID answers as a bootloader
+	rebootStillApp                        // the target UID still answers as the application
+	rebootNoAnswer                        // nothing usable answered at the original IP
+	rebootOtherBoard                      // another board answers at the original IP
+)
+
+type rebootResult struct {
+	state rebootState
+	board boardInfo // the board that answered as the target
+	sent  int       // reboot requests that got through
+	other string    // the UID that answered, when state is rebootOtherBoard
+}
+
+// boardFinder looks for one board, by UID, at the address it was last seen.
+type boardFinder struct {
+	ip, uid   string
+	identify  func() (string, error)      // one unicast identify of ip
+	broadcast func() ([]boardInfo, error) // one broadcast discovery round
+	now       func() time.Time
+	sleep     func(time.Duration)
+	quietFrom time.Time // when ip stopped answering; zero while it answers
+}
+
+func newBoardFinder(ip, uid string) *boardFinder {
+	return &boardFinder{
+		ip: ip, uid: uid,
+		identify:  func() (string, error) { return udpIdentify(ip, findInterval) },
+		broadcast: func() ([]boardInfo, error) { return discoverBoardsViaDirectedBroadcast("") },
+		now:       time.Now,
+		sleep:     time.Sleep,
 	}
-	return boardInfo{}, false
+}
+
+// look makes one round and says what it saw.
+func (f *boardFinder) look() rebootResult {
+	if resp, err := f.identify(); err == nil {
+		f.quietFrom = time.Time{}
+		board, ok := parseBoardInfoFromReply(resp, f.ip)
+		if !ok {
+			return rebootResult{state: rebootNoAnswer}
+		}
+		if !strings.EqualFold(board.UID, f.uid) {
+			return rebootResult{state: rebootOtherBoard, other: board.UID}
+		}
+		return roleResult(board)
+	}
+	if f.quietFrom.IsZero() {
+		f.quietFrom = f.now()
+	}
+	if f.now().Sub(f.quietFrom) < findQuietBeforeBroadcast {
+		return rebootResult{state: rebootNoAnswer}
+	}
+	logv("%s has been quiet for %s; looking for uid=%s by broadcast", f.ip, findQuietBeforeBroadcast, f.uid)
+	boards, err := f.broadcast()
+	if err != nil {
+		return rebootResult{state: rebootNoAnswer}
+	}
+	if board, ok := selectDiscoveredBoard(boards, f.uid); ok {
+		return roleResult(board)
+	}
+	return rebootResult{state: rebootNoAnswer}
+}
+
+func roleResult(board boardInfo) rebootResult {
+	switch role := strings.ToUpper(board.Role); {
+	case strings.HasPrefix(role, "BOOTLD"):
+		return rebootResult{state: rebootInBootloader, board: board}
+	case role == "CUSAPP":
+		return rebootResult{state: rebootStillApp, board: board}
+	}
+	return rebootResult{state: rebootNoAnswer}
+}
+
+// awaitBootloader looks once a second until the target answers as a
+// bootloader, another board answers at its address, or window passes.
+func (f *boardFinder) awaitBootloader(window time.Duration) rebootResult {
+	end := f.now().Add(window)
+	for {
+		start := f.now()
+		res := f.look()
+		if res.state == rebootInBootloader || res.state == rebootOtherBoard || !f.now().Before(end) {
+			return res
+		}
+		if spent := f.now().Sub(start); spent < findInterval {
+			f.sleep(findInterval - spent)
+		}
+	}
+}
+
+// rebootIntoBootloader asks the application to reboot until the target board
+// answers as a bootloader. A bootloader does not answer the reboot challenge,
+// so a request that fails is followed by one look in case it is already there.
+func rebootIntoBootloader(request func() error, f *boardFinder) rebootResult {
+	var res rebootResult
+	for attempt := 1; attempt <= rebootAttempts; attempt++ {
+		var r rebootResult
+		if err := request(); err != nil {
+			logv("Reboot request %d/%d did not get through: %v", attempt, rebootAttempts, err)
+			r = f.look()
+		} else {
+			res.sent++
+			r = f.awaitBootloader(rebootWindow)
+		}
+		r.sent = res.sent
+		if r.state == rebootInBootloader || r.state == rebootOtherBoard {
+			return r
+		}
+		res = r
+		if attempt < rebootAttempts {
+			logv("Target uid=%s is not in its bootloader yet; asking it to reboot again (%d/%d)",
+				f.uid, attempt+1, rebootAttempts)
+		}
+	}
+	return res
+}
+
+// rebootFailureText explains a run that did not reach the bootloader. Only a
+// board still running its application can mean a key it does not trust, and
+// even then the request may simply have been lost: the application answers a
+// rejected reboot with silence.
+func rebootFailureText(res rebootResult, ip, targetUID, keyPath string) string {
+	switch {
+	case res.sent == 0 && res.state != rebootOtherBoard:
+		return fmt.Sprintf("No reboot request could be sent to %s in %d attempt(s) (reasons above).",
+			ip, rebootAttempts)
+	case res.state == rebootStillApp:
+		return fmt.Sprintf("%s (uid=%s) is still running its application after %d reboot request(s):\n"+
+			"  the board did not accept the reboot request. Either the key %s is not one\n"+
+			"  this board trusts, or the request was lost on the way.\n"+
+			"  To tell which: put the board in its bootloader (hold BOOT0 while it resets),\n"+
+			"  then `IAPTool getowner %s` shows which key it trusts.",
+			ip, targetUID, res.sent, keyPath, ip)
+	case res.state == rebootOtherBoard:
+		return fmt.Sprintf("%s now answers as a different board (uid=%s, expected %s); not uploading to it.",
+			ip, res.other, targetUID)
+	default:
+		return fmt.Sprintf("%s (uid=%s) did not come back after %d reboot request(s): it answers neither\n"+
+			"  discovery nor a direct identify. Check its power and cable, then run the upload again.",
+			ip, targetUID, res.sent)
+	}
 }
 
 func discoverBoardsViaDirectedBroadcast(expectedRole string) ([]boardInfo, error) {
@@ -219,14 +312,14 @@ func discoverBoardsViaDirectedBroadcast(expectedRole string) ([]boardInfo, error
 	for _, bcast := range broadcastAddrs {
 		remoteAddr, rerr := net.ResolveUDPAddr("udp4", bcast+":"+getPort())
 		if rerr != nil {
-			logf("Skip invalid broadcast addr %s: %v", bcast, rerr)
+			logv("Skip invalid broadcast addr %s: %v", bcast, rerr)
 			continue
 		}
 		if _, werr := conn.WriteToUDP([]byte(CM_PullIP), remoteAddr); werr != nil {
-			logf("Broadcast send failed to %s: %v", remoteAddr.String(), werr)
+			logv("Broadcast send failed to %s: %v", remoteAddr.String(), werr)
 			continue
 		}
-		logf("UDP broadcast sent to %s", remoteAddr.String())
+		logv("UDP broadcast sent to %s", remoteAddr.String())
 	}
 
 	var boards []boardInfo
@@ -237,20 +330,20 @@ func discoverBoardsViaDirectedBroadcast(expectedRole string) ([]boardInfo, error
 			if ne, ok := rerr.(net.Error); ok && ne.Timeout() {
 				break
 			}
-			logf("UDP receive error: %v", rerr)
+			logv("UDP receive error: %v", rerr)
 			continue
 		}
 
 		info, ok := parseBoardInfoFromReply(string(buffer[:n]), addr.IP.String())
 		if !ok {
-			logf("Ignore invalid discovery response from %s: %q", addr.IP.String(), strings.TrimSpace(string(buffer[:n])))
+			logv("Ignore invalid discovery response from %s: %q", addr.IP.String(), strings.TrimSpace(string(buffer[:n])))
 			continue
 		}
 		// An empty expectedRole means "whatever it is now": used to confirm a
 		// board came back after a write, when which role it lands in is the
 		// thing that depends on what was written.
 		if expectedRole != "" && !strings.EqualFold(info.Role, expectedRole) {
-			logf("Ignore %s response from %s while waiting for %s: %s", info.Role, info.IP, expectedRole, info.Raw)
+			logv("Ignore %s response from %s while waiting for %s: %s", info.Role, info.IP, expectedRole, info.Raw)
 			continue
 		}
 		boards = append(boards, info)
@@ -296,6 +389,9 @@ func parseBoardInfoFromReply(reply, fallbackIP string) (boardInfo, bool) {
 }
 
 func printDiscoveredBoards(boards []boardInfo, expectedRole string) {
+	if !g_verbose {
+		return
+	}
 	logf("Discovered %d %s device(s) in %.1f seconds:", len(boards), expectedRole, Timeout.Seconds())
 	for i, b := range boards {
 		fmt.Printf("  [%d] UID=%s IP=%s Role=%s Reply=%s\n", i+1, b.UID, b.IP, b.Role, b.Raw)
@@ -306,7 +402,7 @@ func printDiscoveredBoards(boards []boardInfo, expectedRole string) {
 func selectDiscoveredBoard(boards []boardInfo, targetUID string) (boardInfo, bool) {
 	for _, b := range boards {
 		if strings.EqualFold(b.UID, targetUID) {
-			logf("Matched cached target device: uid=%s ip=%s", b.UID, b.IP)
+			logv("Matched cached target device: uid=%s ip=%s", b.UID, b.IP)
 			return b, true
 		}
 	}
@@ -321,13 +417,13 @@ func udpIdentifyWithRetry(ip string) (string, error) {
 	var lastErr error
 
 	for attempt := 1; attempt <= bootloaderDiscoveryRetries; attempt++ {
-		resp, err := udpPingAndGetStatus(ip)
+		resp, err := udpIdentify(ip, CommandTimeout)
 		if err == nil {
 			return resp, nil
 		}
 		lastErr = err
 		if attempt < bootloaderDiscoveryRetries {
-			logf("Identify attempt %d/%d on %s got no usable reply (%v), retrying in %.1fs...",
+			logv("Identify attempt %d/%d on %s got no usable reply (%v), retrying in %.1fs...",
 				attempt, bootloaderDiscoveryRetries, ip, err, identifyRetryDelay.Seconds())
 			time.Sleep(identifyRetryDelay)
 		}
@@ -335,10 +431,10 @@ func udpIdentifyWithRetry(ip string) (string, error) {
 	return "", lastErr
 }
 
-func udpPingAndGetStatus(ip string) (string, error) {
+func udpIdentify(ip string, timeout time.Duration) (string, error) {
 	// CM_PullIP, not CM_Ping: "ping" answers with the identity string over UDP but
 	// with "OK" over CDC/TCP, and one command must not mean two things.
-	buffer, _, err := sendUDPWithResponseOnPort(ip, getPort(), CM_PullIP, CommandTimeout)
+	buffer, _, err := sendUDPWithResponseOnPort(ip, getPort(), CM_PullIP, timeout)
 	if err != nil {
 		return "", err
 	}
@@ -364,7 +460,7 @@ func sendUDPWithResponseOnPort(serverAddr, port, msg string, timeout time.Durati
 	if _, err := conn.Write([]byte(msg)); err != nil {
 		return nil, nil, fmt.Errorf("UDP Write failed: %w", err)
 	}
-	logf("UDP sent: %s", msg)
+	logv("UDP sent: %s", msg)
 
 	// A connected socket only accepts datagrams from the address it dialed, so
 	// this can no longer be answered by some other device on the network.
@@ -391,6 +487,74 @@ func authenticatedUDPReboot(ip string, id uploadIdentity) error {
 		return err
 	}
 	return sendUDPNoResponseOnPort(ip, getPort(), fmt.Sprintf("%s %s %s", CM_Reboot, id.certHex, noncesigHex))
+}
+
+// Boot log read over UDP. Wire format: $PROD/docs/modules/M1/IAP-PROTOCOL.md
+// "openplc_log". The whole 4 KB buffer is about five pieces; the cap only stops
+// a board whose log grows faster than we read it.
+const (
+	logReadMaxPieces  = 64
+	logReadAttempts   = 3
+	// The board drops requests over 20 replies/s; wait out its window before retrying.
+	logReadRetryDelay = time.Second
+)
+
+// RunReadLog prints every line of the board's SRAM4 boot log, oldest first,
+// as "<seq> <text>". The bootloader and the application both answer.
+func RunReadLog(ip string) {
+	var from uint64
+	printed := 0
+	defer func() {
+		if printed == 0 {
+			logf("The boot log on %s is empty.", ip)
+		}
+	}()
+	for piece := 0; piece < logReadMaxPieces; piece++ {
+		reply, err := readLogPieceWithRetry(ip, from)
+		if err != nil {
+			logf(true, "No boot log from %s (%v): no answer (old firmware?).", ip, err)
+		}
+		next, more, lines, err := parseLogPiece(reply)
+		logf(err, "Unexpected boot log reply from %s", ip)
+		for _, line := range lines {
+			fmt.Println(line)
+		}
+		printed += len(lines)
+		if !more || next <= from {
+			return
+		}
+		from = next
+	}
+}
+
+func readLogPieceWithRetry(ip string, from uint64) ([]byte, error) {
+	var lastErr error
+	for attempt := 1; attempt <= logReadAttempts; attempt++ {
+		reply, _, err := sendUDPWithResponseOnPort(ip, getPort(), fmt.Sprintf("%s %d", CM_ReadLog, from), CommandTimeout)
+		if err == nil {
+			return reply, nil
+		}
+		lastErr = err
+		if attempt < logReadAttempts {
+			logv("Boot log piece from seq %d: no reply (%v), retrying", from, err)
+			time.Sleep(logReadRetryDelay)
+		}
+	}
+	return nil, lastErr
+}
+
+// parseLogPiece splits "log <next> <more>\n<seq> <text>\n...".
+func parseLogPiece(reply []byte) (next uint64, more bool, lines []string, err error) {
+	text := strings.TrimRight(string(reply), "\n")
+	header, body, _ := strings.Cut(text, "\n")
+	var moreFlag int
+	if n, serr := fmt.Sscanf(header, "log %d %d", &next, &moreFlag); serr != nil || n != 2 {
+		return 0, false, nil, fmt.Errorf("bad header %q", header)
+	}
+	if body != "" {
+		lines = strings.Split(body, "\n")
+	}
+	return next, moreFlag == 1, lines, nil
 }
 
 // Send UDP message without waiting for a response.
@@ -456,17 +620,12 @@ func getDirectedBroadcastAddrs() ([]string, error) {
 // TCP
 //
 // One connection for the whole upload: dial, ping, confirm the board accepts
-// this identity, then send the file. An earlier version opened a second,
-// separate connection for the identity check because that check used to also
-// confirm a downgrade with the operator, and the board drops idle connections
-// while a human is being asked something. That confirmation is gone (see
-// DECISIONS.md decision 54); the identity check is now a plain round trip
-// with nothing to wait on, so there is no longer a reason to split it off.
+// this identity, then send the file.
 func RunEther_TCP(filePath, serverIP string, id uploadIdentity, verb, targetUID string) {
 	sigHex, err := signImageInMemory(filePath, id.key)
 	logf(err, "Failed to prepare signature for %s", filePath)
 
-	logf("Trying to connect to TCP server at %s...", serverIP)
+	logv("Trying to connect to TCP server at %s...", serverIP)
 
 	conn, err := iapproto.DialTCP(serverIP, getPort(), Timeout)
 	if err != nil {
@@ -484,7 +643,12 @@ func RunEther_TCP(filePath, serverIP string, id uploadIdentity, verb, targetUID 
 		logf(true, "Signing key check failed: %v", err)
 	}
 
-	if err := sendFile(conn, filePath, id, sigHex, verb, targetUID); err != nil {
+	f := newBoardFinder(serverIP, targetUID)
+	cameBack := func() bool {
+		st := f.look().state
+		return st == rebootInBootloader || st == rebootStillApp
+	}
+	if err := sendFile(conn, filePath, id, sigHex, verb, cameBack); err != nil {
 		logf(err, "File send failed")
 	}
 }
@@ -505,16 +669,16 @@ func getRebootWaitDuration() time.Duration {
 	return time.Duration(defaultRebootWaitSeconds) * time.Second
 }
 
-// 发送 ping 并等待 ok
+// ping sends "ping" and waits for "OK", retrying up to MaxRetries times.
 func ping(conn net.Conn) error {
 	var lastErr error
 	for attempt := 1; attempt <= MaxRetries; attempt++ {
-		logf("Sending ping...")
+		logv("Sending ping...")
 		if err := sendAndWaitOK(conn, []byte(CM_Ping+"\n")); err != nil {
-			logf("ping failed: %v", err)
+			logv("ping failed: %v", err)
 			lastErr = err
 		} else {
-			logf("Ping successful.")
+			logv("Ping successful.")
 			return nil
 		}
 
@@ -526,14 +690,13 @@ func ping(conn net.Conn) error {
 	return fmt.Errorf("ping failed after %d retries", MaxRetries)
 }
 
-// 文件发送函数（按 buffer 分块发送，每块等 ok）
 // sendFile carries no interactive step: the identity check already ran on
 // this same connection, in RunEther_TCP, before this is called.
-func sendFile(conn net.Conn, filePath string, id uploadIdentity, sigHex, verb, targetUID string) error {
+func sendFile(conn net.Conn, filePath string, id uploadIdentity, sigHex, verb string, cameBack func() bool) error {
 	// Calculate checksum and file size
 	checksum, fileSize, file := CalculateCRC32(filePath)
 	defer file.(io.Closer).Close()
-	logf("CRC Checksum: %x", checksum)
+	logv("CRC Checksum: %x", checksum)
 
 	flashCmd, err := flashCommand(id, verb, fileSize, checksum, sigHex, func() (string, error) {
 		return sendAndReadResponse(conn, []byte(CM_AuthChallenge+"\n"))
@@ -551,20 +714,24 @@ func sendFile(conn net.Conn, filePath string, id uploadIdentity, sigHex, verb, t
 	// state after the "OK" ack and treats every subsequent byte as image
 	// data, not text to scan for a newline.
 	buf := make([]byte, Buf_b)
+	bar := newProgress(fileSize)
+	defer bar.end()
 	for {
 		n, readErr := file.Read(buf)
 		if n > 0 {
 			if err := sendAndWaitOK(conn, buf[:n]); err != nil {
 				return fmt.Errorf("failed to send chunk: %v", err)
 			}
+			bar.add(n)
 		}
 		if readErr == io.EOF {
+			bar.end()
 			// The board has every byte now, but it has not judged them yet:
 			// it verifies the staged image and only then says whether it
 			// took it. Reading that verdict is the difference between
 			// "uploaded" and "accepted" -- without it a refused image was
 			// reported as a successful transfer.
-			if err := readFinalVerdict(conn, verb, targetUID); err != nil {
+			if err := readFinalVerdict(conn, verb, cameBack); err != nil {
 				return err
 			}
 			logf("File transfer complete.")
@@ -585,7 +752,7 @@ func sendFile(conn net.Conn, filePath string, id uploadIdentity, sigHex, verb, t
 // It answers ONLY to refuse -- "Signature Failed", "No Signature",
 // "Flash Failed". Both success paths reset the board instead, and a reset
 // takes the MAC down before anything queued for the peer leaves it, so there
-// is no "OK" to wait for and there cannot be one (measured 2026-09-22).
+// is no "OK" to wait for.
 //
 // So success is confirmed the only way it can be: the board comes back and
 // answers discovery again.
@@ -604,7 +771,7 @@ const (
 // but a refusal-shaped silence must not be read as one), or it came back on
 // the network, which only happens after it reset, which only happens when it
 // accepted. Anything the board says other than OK is a refusal.
-func readFinalVerdict(conn net.Conn, verb, targetUID string) error {
+func readFinalVerdict(conn net.Conn, verb string, cameBack func() bool) error {
 	deadline := time.Now().Add(verdictTimeout)
 
 	for time.Now().Before(deadline) {
@@ -617,27 +784,13 @@ func readFinalVerdict(conn net.Conn, verb, targetUID string) error {
 			}
 			return fmt.Errorf("the board refused the image: %s", said)
 		}
-		if boardCameBack(targetUID) {
+		if cameBack() {
 			logf("The board reset and is answering again - the image was accepted.")
 			return nil
 		}
 	}
 	return fmt.Errorf("the board neither refused the image nor came back within %s. "+
 		"It was NOT confirmed: check its log before assuming anything was written", verdictTimeout)
-}
-
-// boardCameBack reports whether the target is answering discovery again, in
-// whatever role the thing just written leaves it in.
-func boardCameBack(targetUID string) bool {
-	if targetUID == "" {
-		return false
-	}
-	boards, err := discoverBoardsViaDirectedBroadcast("")
-	if err != nil {
-		return false
-	}
-	_, ok := selectDiscoveredBoard(boards, targetUID)
-	return ok
 }
 
 // readWithIdleGap accumulates reads from conn until it goes quiet for
@@ -676,7 +829,7 @@ func readWithIdleGap(conn net.Conn, overallTimeout time.Duration) ([]byte, error
 	return accumulated, nil
 }
 
-// 通用函数：发送数据，等待 server 回复 "ok"
+// sendAndWaitOK sends data and waits for the board to answer "OK".
 func sendAndWaitOK(conn net.Conn, data []byte) error {
 	conn.SetWriteDeadline(time.Now().Add(Timeout))
 	dataLen, err := conn.Write(data)
@@ -684,7 +837,7 @@ func sendAndWaitOK(conn net.Conn, data []byte) error {
 		return fmt.Errorf("send error: %v", err)
 	}
 
-	logf("Sent %d bytes", dataLen)
+	logv("Sent %d bytes", dataLen)
 
 	resp, err := readWithIdleGap(conn, Timeout)
 	if err != nil {
@@ -704,7 +857,7 @@ func sendAndReadResponse(conn net.Conn, data []byte) (string, error) {
 	if _, err := conn.Write(data); err != nil {
 		return "", fmt.Errorf("send error: %v", err)
 	}
-	logf("Sent %d bytes", len(data))
+	logv("Sent %d bytes", len(data))
 
 	resp, err := readWithIdleGap(conn, Timeout)
 	if err != nil {

@@ -8,9 +8,8 @@ import (
 )
 
 // The IDE's network_discovery and this tool both send the same discovery query
-// from the same host, and the board rate-limits replies per source IP -- so
-// whichever of the two lands second is refused and reports the board missing.
-// While this file exists, discovery stands aside.
+// from the same host; while this file exists, discovery stands aside so its
+// poll never competes with an upload's own query for the board's reply budget.
 //
 // It is advisory in both directions: a lock that cannot be written never stops
 // a flash, and a discovery that cannot read it just carries on broadcasting.

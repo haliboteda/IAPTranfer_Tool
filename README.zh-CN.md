@@ -15,8 +15,8 @@ go build -o IAPTool .                     # 本机用的
 在 Windows 上把输出文件命名为 `IAPTool.exe`。要给别的系统编译，设置 `GOOS` / `GOARCH`
 （不需要 C 编译器），例如 `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o IAPTool .`
 
-`compile_tool.sh` 和 `build.py` 是维护者出版本用的脚本：编出三个平台的版本，
-并拷进本机装好的 Arduino 板卡包。只编 IAPTool 用不到它们。
+`build.py`（Windows 上双击 `build.cmd`）是维护者出版本用的脚本：编出 Windows、Linux（amd64）和 macOS（amd64 + arm64，由名为 `IAPTool` 的启动脚本按 CPU 选）的版本，
+并拷进本机装好的 Arduino 板卡包。只编 IAPTool 用不到它。
 
 测试：`python tests/selfcheck.py`（只要 Go 和 Python 3）。
 
@@ -34,7 +34,14 @@ IAPTool cert   [<leafPubHex>]          [--key=<root.pem>]
 IAPTool getowner <ip>
 IAPTool takeown  <ip> --key=<owner.pem>
 IAPTool setowner <ip> --current-key=<owner.pem> --new-key=<next.pem>
+
+IAPTool log      <ip>
 ```
+
+`log` 经网口打出板子的开机日志（bootloader 和系统行，复位后保留、断电清空），从旧到新，
+每行 `<序号> <文本>`。bootloader 和 app 都回答。
+
+上传（`cdc`、`ether`、`flashboot`）默认只打目标、进度条和板子的结论；加 `-v` 打出每一步。镜像被板子拒收时退出码 1。
 
 ## 固件签名
 
@@ -128,6 +135,9 @@ IAPTool getowner <board>             # 这块板子信任哪把密钥？
 IAPTool takeown  <board> --key=owner.pem       # 第一次上传自动做的就是这一步
 IAPTool setowner <board> --current-key=owner.pem --new-key=next.pem
 ```
+
+`getowner` 和 `getapprevoked` 在板子跑着 app 时也能用：经网口（UDP）问，不重启板子。
+走 USB 时，以及 `takeown`、`setowner`、`revoke`，板子要在 bootloader 里。
 
 ## 更换 bootloader
 

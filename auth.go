@@ -86,7 +86,7 @@ func resolveUploadIdentity() (uploadIdentity, error) {
 	}
 
 	if id.delegated {
-		logf("Using certificate %s for %s", certPath, keyPath)
+		logv("Using certificate %s for %s", certPath, keyPath)
 	}
 	return id, nil
 }
@@ -102,7 +102,7 @@ func signImageInMemory(binPath string, key *ecdsa.PrivateKey) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	logf("Signed %s in memory", filepath.Base(binPath))
+	logv("Signed %s in memory", filepath.Base(binPath))
 	return hex.EncodeToString(sig), nil
 }
 

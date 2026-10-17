@@ -16,7 +16,8 @@
 | `netiface/` | 物理网卡判定（决策 51）。公开包，理由同上（Go 不许别的 module 引用 `internal/`） |
 | `iapcert/` | 证书与签名原语。**测试 import 它，不重写** |
 | `tests/` | 本仓的测试：`iapcert/`（T1-15）、`crypto_ref/`（T1-19 / T1-20，独立实现交叉验证）、`selfcheck.py` |
-| `tools/install_tool.py` | 把编好的 IAPTool 拷进板卡包；`compile_tool.sh` 末尾自动调 |
+| `tools/install_tool.py` | 把编好的 IAPTool 拷进板卡包；`build.py` 末尾自动调 |
+| `tools/macos-launcher.sh` | 装成 macOS 的 `IAPTool`：按 CPU 调同目录的 `IAPTool-arm64` / `IAPTool-amd64`（IDE-18）。必须 LF，`.gitattributes` 管 |
 
 ## 开工前
 
@@ -25,13 +26,13 @@ python tests/selfcheck.py          # go vet、go test（T1-15、T1-35）、T1-19
 python tests/selfcheck.py --list   # 每一步证明哪条需求
 ```
 
-只要 Go 和 Python 3，**没有本机配置文件**：板卡包按平台默认的 Arduino15 位置找（`ARDUINO15` 可覆盖），Git Bash 按 `GIT_BASH` / PATH / 常见安装位置找。
+只要 Go 和 Python 3，**没有本机配置文件**：板卡包按平台默认的 Arduino15 位置找（`ARDUINO15` 可覆盖）。
 
 ## 构建
 
 | 目标 | 命令 |
 |---|---|
-| `IAPTool`（三平台）并装进板卡包 | **双击 `build.cmd`**，或者 `python build.py`（调 `./compile_tool.sh`），别手搓 `go build` |
+| `IAPTool`（Windows / Linux amd64，macOS amd64 + arm64）并装进板卡包 | **双击 `build.cmd`**；Linux / macOS 直接执行 `./build.py`。别手搓 `go build` |
 
 bootloader 用 STM32CubeIDE 编；测试要的命令行编译在 `$TEST`。
 
@@ -39,6 +40,6 @@ bootloader 用 STM32CubeIDE 编；测试要的命令行编译在 `$TEST`。
 
 **`IAPTool` 只管上传烧写，不加任何测试专用功能。** 为验证设备行为而存在的东西一律放 `$TEST`。
 
-客户的入口是 **Arduino IDE 的菜单**：IDE 按 `platform.txt` 的配方调**板卡包里的那份 IAPTool**。⚠️ **每次构建都要把 `Output/<平台>/IAPTool` 拷进板卡包的 `STM32Tools/<版本>/{win,macosx,linux}/`，旧的不留**（用户 2026-09-03 定）。`compile_tool.sh` 末尾自动做；漏了由 `$TEST` 的 **P11** 抓。不拷的后果实测过：包里那份停在 8-15，所有权那套从写出来起 IDE 一天都用不了。
+客户的入口是 **Arduino IDE 的菜单**：IDE 按 `platform.txt` 的配方调**板卡包里的那份 IAPTool**。⚠️ **每次构建都要把 `Output/<平台>/IAPTool`（macOS 连同 `IAPTool-amd64`、`IAPTool-arm64`）拷进板卡包的 `STM32Tools/<版本>/{win,macosx,linux}/`，旧的不留**（用户 2026-09-03 定）。`build.py` 末尾自动做；漏了由 `$TEST` 的 **P11** 抓。不拷的后果实测过：包里那份停在 8-15，所有权那套从写出来起 IDE 一天都用不了。
 
 ⚠️ **提交进 `.claude/settings.json` 的 allow 规则只放不碰硬件、不改产品文件的命令**（读文件、跑静态检查、编译到本地产物）。给板子刷固件、生成 / 替换密钥、往真实设备发升级命令的放个人的 `.claude/settings.local.json`：团队共享的那份一进去，就是给每个 clone 的人默认放行。

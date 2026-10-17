@@ -17,9 +17,10 @@ On Windows name the output `IAPTool.exe`. To build for another system, set
 `GOOS` / `GOARCH` (no C compiler needed), e.g.
 `GOOS=linux GOARCH=amd64 CGO_ENABLED=0 go build -o IAPTool .`
 
-`compile_tool.sh` and `build.py` are the maintainers' release scripts: they
-build all three platforms and copy them into the installed Arduino board
-package. They are not needed to build IAPTool.
+`build.py` (double-click `build.cmd` on Windows) is the maintainers' release
+script: it builds Windows and Linux (amd64) and macOS (amd64 + arm64, behind a launcher
+named `IAPTool` that picks by CPU) and copies them into the installed Arduino
+board package. It is not needed to build IAPTool.
 
 Tests: `python tests/selfcheck.py` (Go and Python 3 only).
 
@@ -37,7 +38,15 @@ IAPTool cert   [<leafPubHex>]          [--key=<root.pem>]
 IAPTool getowner <ip>
 IAPTool takeown  <ip> --key=<owner.pem>
 IAPTool setowner <ip> --current-key=<owner.pem> --new-key=<next.pem>
+
+IAPTool log      <ip>
 ```
+
+`log` prints the board's boot log over Ethernet (bootloader and system lines,
+kept across resets, lost on power-off), oldest first, as `<seq> <text>`. The
+bootloader and the application both answer.
+
+An upload (`cdc`, `ether`, `flashboot`) prints the target, a progress bar and the board's verdict; `-v` logs every step. A refused image exits 1.
 
 ## Firmware signing
 
@@ -150,6 +159,10 @@ IAPTool getowner <board>             # which key does this board trust?
 IAPTool takeown  <board> --key=owner.pem       # what the first upload does
 IAPTool setowner <board> --current-key=owner.pem --new-key=next.pem
 ```
+
+`getowner` and `getapprevoked` also work on a board running its application,
+over Ethernet (UDP), without restarting it. Over USB, and for `takeown`,
+`setowner` and `revoke`, the board has to be in its bootloader.
 
 ## Replacing the bootloader
 

@@ -8,12 +8,8 @@
 //
 //	leaf_pubkey[64] || root_sig[64]   (128 bytes)
 //
-// 2026-09-20: dropped the `serial` field this format used to carry. Revocation
-// ended up naming leaves by their public key instead of a tool-assigned
-// number (see
-// $PROD/maps/owner-revoke-and-boot-upgrade/issues/OWN-01-revoke-by-serial-or-by-pubkey.md)
-// -- a scheme that needs no counter file kept in sync with anything, and
-// still works if the machine that issued a certificate is never seen again.
+// No serial number: revocation names leaves by public key
+// ($PROD/docs/modules/M2-ownership.md, "定下来的取舍").
 //
 // Simple mode (LeafPubHex == "") self-signs: the certificate says "this
 // root's own key is authorised", and the board's iap_cert_verify() has no

@@ -41,7 +41,7 @@ func RunCDC(portName, filePath string) {
 			if board, ok = cdcIdentify(portName); ok {
 				break
 			}
-			logf("Bootloader identify attempt %d/%d on %s found nothing", attempt, bootloaderDiscoveryRetries, portName)
+			logv("Bootloader identify attempt %d/%d on %s found nothing", attempt, bootloaderDiscoveryRetries, portName)
 			time.Sleep(time.Second)
 		}
 		if !ok {
@@ -53,7 +53,7 @@ func RunCDC(portName, filePath string) {
 	case "BOOTLD-INVALID":
 		logf("[PATH] %s is bootloader with NO valid signed app installed (previous update failed, was rejected, or flash was tampered with) -> proceeding to flash a new image", portName)
 	case "BOOTLD":
-		logf("[PATH] %s is bootloader -> cdc transfer", portName)
+		logv("[PATH] %s is bootloader -> cdc transfer", portName)
 	default:
 		logf(true, "Unexpected role %q from %s, exiting.", board.Role, portName)
 	}
@@ -67,7 +67,7 @@ func RunCDC(portName, filePath string) {
 	}
 	logf("[PATH] target device UID=%s", board.UID)
 
-	runCDCAttempt(portName, filePath, board.UID)
+	runCDCAttempt(portName, filePath)
 }
 
 // cdcIdentify asks the port who it is, using the same identity string the UDP
@@ -77,7 +77,7 @@ func RunCDC(portName, filePath string) {
 func cdcIdentify(portName string) (boardInfo, bool) {
 	port, err := openPort(portName, l_config.BaudRate)
 	if err != nil {
-		logf("Failed to open serial port %s with baud rate %d: %v", portName, l_config.BaudRate, err)
+		logv("Failed to open serial port %s with baud rate %d: %v", portName, l_config.BaudRate, err)
 		return boardInfo{}, false
 	}
 	defer port.Close()
@@ -97,16 +97,13 @@ func triggerPortResetAndWait(portName string, wait time.Duration) {
 	if port, err := openPort(portName, MagicBaud); err == nil {
 		port.Close()
 	}
-	logf("Reboot requested on %s@%d. Waiting %.1f seconds for the bootloader...",
+	logv("Reboot requested on %s@%d. Waiting %.1f seconds for the bootloader...",
 		portName, MagicBaud, wait.Seconds())
 	time.Sleep(wait)
-	logf("Reconnecting with default baud now.")
+	logv("Reconnecting with default baud now.")
 }
 
-// uidHex comes from the identity reply, kept for the message but no longer
-// needed for auth (certificate-based session auth does not derive anything
-// from the device's UID).
-func runCDCAttempt(portName, filePath, uidHex string) {
+func runCDCAttempt(portName, filePath string) {
 	port, err := openPort(portName, l_config.BaudRate)
 	if err != nil {
 		logf(true, "Failed to open serial port %s with baud rate %d: %v", portName, l_config.BaudRate, err)
@@ -126,10 +123,10 @@ func runCDCAttempt(portName, filePath, uidHex string) {
 		return
 	}
 
-	logf("Proceeding with file transfer.")
+	logv("Proceeding with file transfer.")
 	checksum, fileSize, file := CalculateCRC32(filePath)
 	defer file.(io.Closer).Close()
-	logf("CRC Checksum: %x", checksum)
+	logv("CRC Checksum: %x", checksum)
 
 	sigHex, err := signImageInMemory(filePath, id.key)
 	if err != nil {
@@ -151,27 +148,29 @@ func runCDCAttempt(portName, filePath, uidHex string) {
 		logf(err, "Flash authorisation failed")
 		return
 	}
-	if !SendCommandWaitForResponse(port, flashCmd, Rsp_OK, FlashAckTimeout) {
-		return
+	if ok, reply := SendCommandWaitForResponse(port, flashCmd, Rsp_OK, FlashAckTimeout); !ok {
+		logf(true, "the board refused the flash command: %q", strings.TrimSpace(reply))
 	}
 
-	err = SendFile(port, file, fileSize)
-	logf(err, "File transfer failed")
+	err = SendFile(port, portName, file, fileSize)
+	logf(err, "Upload failed")
 }
 
 // SendCommandWaitForResponse sends a command through the serial port,
-// waits for a specific response string, and returns true if received within timeout.
+// waits for a specific response string, and returns true if received within
+// timeout, else false and whatever the board answered instead.
 //
 // The trailing "\n" frames the command so the bootloader knows where it
 // ends -- without it, a command longer than one USB CDC packet (e.g.
 // "flash ... <sig> <hmac>") can arrive split across multiple reads on the
 // device side with no way to tell it's still the same command.
-func SendCommandWaitForResponse(port serial.Port, command string, expected string, timeout time.Duration) bool {
+func SendCommandWaitForResponse(port serial.Port, command string, expected string, timeout time.Duration) (bool, string) {
 	if _, err := port.Write([]byte(command + "\n")); err != nil {
 		logf(err, "Failed to send command: %s", command)
-		return false
+		return false, ""
 	}
-	logf("Send command: %s", command)
+	logv("Send command: %s", command)
 
-	return ReadResponse(port, expected, timeout)
+	port.SetReadTimeout(timeout)
+	return readUntil(port, expected, timeout)
 }

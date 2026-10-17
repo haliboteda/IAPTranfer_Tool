@@ -59,6 +59,10 @@ const usageText = `Usage:
                    bytes, hex on stdout. For the bootloader's owner-record
                    chain (setowner), not for firmware images.
 
+  IAPTool log    <ip>        prints the board's boot log (bootloader and system
+                   lines kept across resets, lost on power-off), oldest first,
+                   as "<seq> <text>". The bootloader and the application both answer.
+
   The commands below take <board>: a serial port (the board's USB port, answered
   only while it is in its bootloader) or an IP.
   IAPTool getowner <board>   which key this board trusts, and at which generation
@@ -96,18 +100,21 @@ const usageText = `Usage:
                    One-shot: refused again until an upload arrives without it.
                    The Arduino IDE passes this from
                    Tools > Force flash (allow older version).
+  -v, --verbose    Log every step of an upload: each block, each command, each
+                   discovery round. Without it an upload prints the target,
+                   a progress bar and the verdict. The Arduino IDE passes it
+                   when "Show verbose output during upload" is ticked.
 
 A factory reset (hold BOOT0 for 10 s) makes a board forget its root; the next
 upload claims it again.`
 
 func main() {
-	// Load config from JSON file
-	LoadConfig()
-
 	args, err := parseSigningFlags(os.Args[1:])
 	if err != nil {
 		logf(true, "%v", err)
 	}
+	// After the flags: -v decides whether loading the config is logged.
+	LoadConfig()
 	if g_signing.keyPath == "" {
 		g_signing.keyPath = strings.TrimSpace(l_config.SigningKey)
 	}
@@ -211,6 +218,12 @@ func main() {
 		}
 		RunGetAppRevoked(args[1])
 
+	case "log":
+		if len(args) < 2 {
+			logf(true, usageText)
+		}
+		RunReadLog(args[1])
+
 	case "takeown":
 		if len(args) < 2 {
 			logf(true, usageText)
@@ -260,7 +273,7 @@ func main() {
 
 	default:
 		logf(true, "Invalid mode: %s. Use 'cdc', 'ether', 'flashboot', 'sign', 'genkey', "+
-			"'pubkey', 'cert', 'signraw', 'getowner', 'getapprevoked', 'takeown', "+
+			"'pubkey', 'cert', 'signraw', 'getowner', 'getapprevoked', 'log', 'takeown', "+
 			"'setowner' or 'revoke'", mode)
 	}
 }
@@ -273,6 +286,10 @@ func parseSigningFlags(args []string) ([]string, error) {
 
 	for i := 0; i < len(args); i++ {
 		arg := args[i]
+		if arg == "-v" {
+			g_verbose = true
+			continue
+		}
 		if !strings.HasPrefix(arg, "--") {
 			positional = append(positional, arg)
 			continue
@@ -284,6 +301,10 @@ func parseSigningFlags(args []string) ([]string, error) {
 		// argument the way the value-taking options below do.
 		if name == "force" {
 			g_forceFlash = true
+			continue
+		}
+		if name == "verbose" {
+			g_verbose = true
 			continue
 		}
 		if name == "wipe" {

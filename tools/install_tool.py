@@ -7,7 +7,7 @@ OpenPLC_Test's P11 catches a forgotten copy.
     python3 tools/install_tool.py            copy every platform it can find
     python3 tools/install_tool.py --check    only report what would be copied
 
-Called at the end of compile_tool.sh, so building is installing. The old binary
+Called at the end of build.py, so building is installing. The old binary
 is overwritten, not kept: a stale copy beside a fresh one only ever gets picked
 up by mistake.
 
@@ -28,8 +28,11 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 
-# Output/<GOOS> in this repo -> <platform> directory in the board package
-TARGETS = [("windows", "win", ".exe"), ("darwin", "macosx", ""), ("linux", "linux", "")]
+# Output/<GOOS> in this repo -> <platform> directory in the board package, and
+# the files copied. macOS's IAPTool is the launcher for the two builds (IDE-18).
+TARGETS = [("windows", "win", ["IAPTool.exe"]),
+           ("darwin", "macosx", ["IAPTool", "IAPTool-amd64", "IAPTool-arm64"]),
+           ("linux", "linux", ["IAPTool"])]
 
 # No longer shipped: boards leave the factory with no root (decision 72). A copy
 # an older build left in the package is removed so nothing can pick it up.
@@ -67,20 +70,23 @@ def main():
     print("board package: %s" % root)
 
     copied, problems = 0, 0
-    for goos, plat, ext in TARGETS:
-        src = REPO / "Output" / goos / ("IAPTool" + ext)
-        dst = root / plat / ("IAPTool" + ext)
-        if not src.exists():
-            print("  %-8s no build at %s" % (goos, src))
+    for goos, plat, names in TARGETS:
+        srcs = [REPO / "Output" / goos / n for n in names]
+        dst_dir = root / plat
+        missing = [s for s in srcs if not s.exists()]
+        if missing:
+            print("  %-8s no build at %s" % (goos, missing[0]))
             continue
-        if not dst.parent.exists():
+        if not dst_dir.exists():
             print("  %-8s no %s/ directory in the package" % (goos, plat))
             continue
-        print("  %-8s %s -> %s" % (goos, src.name, dst))
-        stale_key = dst.parent / "keys" / PUBLISHED_KEY
+        for src in srcs:
+            print("  %-8s %s -> %s" % (goos, src.name, dst_dir / src.name))
+        stale_key = dst_dir / "keys" / PUBLISHED_KEY
         if not args.check:
             try:
-                shutil.copy2(src, dst)
+                for src in srcs:
+                    shutil.copy2(src, dst_dir / src.name)
                 if stale_key.exists():
                     stale_key.unlink()
                 copied += 1
@@ -95,7 +101,7 @@ def main():
         print("%d platform(s) could not be copied" % problems)
         return 1
     if copied == 0:
-        print("nothing was copied - run compile_tool.sh first")
+        print("nothing was copied - run build.py first")
         return 2
     print("%d platform(s) installed; the IDE now drives this build" % copied)
     return 0

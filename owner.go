@@ -14,6 +14,11 @@ package main
 //   revoke   <leafhex> <sig>           revoke one leaf; refused unless the CURRENT owner signed
 //   getapprevoked                      "yes" / "no" / "none" - was the installed image's signer revoked
 //
+// The read-only ones (getpubkey, getowner, getapprevoked, getuid) a running
+// application also answers, over UDP only, with the same text (decision 148);
+// ownerQuery asks it there instead of rebooting the board. The others stay
+// bootloader-only. Protocol: $PROD/docs/modules/M1/IAP-PROTOCOL.md.
+//
 // See $PROD/docs/modules/M2-ownership.md for why the first claim has no
 // gate and every later one needs a signature. Revocation names a
 // leaf by the first 16 bytes of its public key, not a tool-assigned number --
@@ -29,6 +34,7 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"IAPTool/iapproto"
 )
@@ -75,18 +81,66 @@ func ownerCommand(target, cmd string) (string, error) {
 		defer port.Close()
 		reply, err := SendCommandReadResponse(port, cmd, CommandTimeout)
 		if err != nil {
-			// A running sketch owns the USB port and answers nothing.
-			return "", fmt.Errorf("%v (is the board in its bootloader? only the bootloader answers on %s)", err, target)
+			// A running sketch owns the USB port and answers nothing yet.
+			return "", fmt.Errorf("%v (is the board in its bootloader? a running sketch answers these only over the network for now)", err)
 		}
 		return reply, nil
 	}
 	// Pinned to the physical NIC like every other dial to the board (decision 51).
 	conn, err := iapproto.DialTCP(target, getPort(), Timeout)
 	if err != nil {
-		return "", fmt.Errorf("cannot reach %s: %v", target, err)
+		// A running sketch never answers TCP; ownerQuery already sent the read-only commands over UDP.
+		return "", fmt.Errorf("cannot reach %s: %v (is the board in its bootloader? a running sketch does not take this command)", target, err)
 	}
 	defer conn.Close()
 	return sendAndReadResponse(conn, []byte(cmd+"\n"))
+}
+
+// ownerQueryAttempts covers a lost datagram; the board's 20 replies/s cap is
+// far above what one command sends.
+const ownerQueryAttempts = 3
+
+// appRole caches, per network target, whether it answered discovery as a
+// running application, so a command reading several values identifies once.
+var appRole = map[string]bool{}
+
+// boardRunsApp says whether the board at ip answers discovery as a running
+// application. No answer counts as "no": the TCP path then reports it.
+func boardRunsApp(ip string) bool {
+	if v, ok := appRole[ip]; ok {
+		return v
+	}
+	isApp := false
+	if resp, err := udpIdentifyWithRetry(ip); err == nil {
+		if board, ok := parseBoardInfoFromReply(resp, ip); ok {
+			isApp = strings.EqualFold(board.Role, "CUSAPP")
+		}
+	}
+	appRole[ip] = isApp
+	return isApp
+}
+
+// ownerQuery runs a read-only query (getpubkey, getowner, getapprevoked,
+// getuid). A board running its application is asked over UDP and keeps
+// running; anything else goes through ownerCommand as before.
+func ownerQuery(target, cmd string) (string, error) {
+	if isSerialTarget(target) || !boardRunsApp(target) {
+		return ownerCommand(target, cmd)
+	}
+	var lastErr error
+	for attempt := 1; attempt <= ownerQueryAttempts; attempt++ {
+		reply, _, err := sendUDPWithResponseOnPort(target, getPort(), cmd, CommandTimeout)
+		if err == nil {
+			return string(reply), nil
+		}
+		lastErr = err
+		if attempt < ownerQueryAttempts {
+			logv("%s on %s: no UDP reply (%v), retrying", cmd, target, err)
+			time.Sleep(time.Second)
+		}
+	}
+	return "", fmt.Errorf("%s runs its application and did not answer %s over UDP: %v "+
+		"(application built with an older board package?)", target, cmd, lastErr)
 }
 
 // ownerPublicKeyHex reads a PEM private key and returns its public half in the
@@ -102,11 +156,11 @@ func ownerPublicKeyHex(keyPath string) (string, error) {
 // ownerReadState returns the generation in force and the trusted key; the key
 // is "" on a board with no root.
 func ownerReadState(ip string) (uint32, string, error) {
-	genReply, err := ownerCommand(ip, "getowner")
+	genReply, err := ownerQuery(ip, "getowner")
 	if err != nil {
 		return 0, "", err
 	}
-	key, err := ownerCommand(ip, "getpubkey")
+	key, err := ownerQuery(ip, "getpubkey")
 	if err != nil {
 		return 0, "", err
 	}
@@ -114,7 +168,7 @@ func ownerReadState(ip string) (uint32, string, error) {
 	if key == noRootReply {
 		key = ""
 	} else if !pubKeyPattern.MatchString(key) {
-		return 0, "", fmt.Errorf("the board answered getpubkey with %q - is it in the bootloader?", key)
+		return 0, "", fmt.Errorf("the board answered getpubkey with %q", key)
 	}
 	gen, err := strconv.ParseUint(strings.TrimSpace(genReply), 10, 32)
 	if err != nil {
@@ -182,7 +236,7 @@ func ownerRevokeSignedPrefix(leafPrefixHex string, uidHex string) ([]byte, error
 // ownerGetUID asks the board for its own hardware UID ("getuid"), the same
 // value it will fill into a new owner record's uid field itself.
 func ownerGetUID(ip string) (string, error) {
-	reply, err := ownerCommand(ip, "getuid")
+	reply, err := ownerQuery(ip, "getuid")
 	if err != nil {
 		return "", err
 	}
@@ -219,7 +273,7 @@ func RunGetOwner(ip string) {
 // to find the boards that want a re-upload after revoking somebody. One board
 // per call, by design: scanning a subnet is the caller's job, from discovery.
 func RunGetAppRevoked(ip string) {
-	reply, err := ownerCommand(ip, "getapprevoked")
+	reply, err := ownerQuery(ip, "getapprevoked")
 	logf(err, "cannot ask this board about its installed firmware")
 
 	switch strings.TrimSpace(reply) {
@@ -232,7 +286,7 @@ func RunGetAppRevoked(ip string) {
 	case "none":
 		fmt.Println("No signed firmware installed - nothing to re-upload.")
 	default:
-		logf(true, fmt.Sprintf("the board answered getapprevoked with %q - is it in the bootloader?", reply))
+		logf(true, fmt.Sprintf("the board answered getapprevoked with %q", reply))
 	}
 }
 
