@@ -4,7 +4,7 @@
 // proves only that the reimplementation agrees with itself.
 //
 // The wire format mirrors iap_cert_t in
-// open_plc_cube_ide/IAPServer/iap_cert.h byte-for-byte:
+// OpenPLC_BootLoader/IAPServer/iap_cert.h byte-for-byte:
 //
 //	leaf_pubkey[64] || root_sig[64]   (128 bytes)
 //
@@ -68,7 +68,7 @@ func ParseHex(certHex string) (*Cert, error) {
 
 // VerifiedBy answers the one question the board asks of a certificate: did
 // this root sign it. Mirrors iap_cert_verify() in
-// open_plc_cube_ide/IAPServer/iap_cert.c, so the tool can refuse a
+// OpenPLC_BootLoader/IAPServer/iap_cert.c, so the tool can refuse a
 // certificate the board would refuse -- before spending a transfer on it.
 //
 // Says nothing about the image or the challenge that certificate will go on

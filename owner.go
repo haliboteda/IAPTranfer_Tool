@@ -39,7 +39,7 @@ import (
 	"IAPTool/iapproto"
 )
 
-// Mirrors the owner area in open_plc_cube_ide/IAPServer/owner_slot.h: an 'O'
+// Mirrors the owner area in OpenPLC_BootLoader/IAPServer/owner_slot.h: an 'O'
 // segment of 160-byte ownership records and an 'R' segment of 32-byte
 // revocation records, sharing one format_ver. Only the bytes the board signs
 // over are built here -- the first 88 of an 'O' record

@@ -25,7 +25,7 @@ const sigLen = 64
 // Where the tool looks for a signing key when none was given explicitly. The
 // Arduino IDE passes no options (see platform.txt), so the key has to be
 // findable by convention. Order and rationale: RELEASE-NOTES.md in
-// open_plc_cube_ide, "Where IAPTool finds the upload key".
+// OpenPLC_BootLoader, "Where IAPTool finds the upload key".
 const keysDirName = "keys"
 const defaultKeyName = "fw_signing_key.pem"
 
